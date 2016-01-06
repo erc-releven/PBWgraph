@@ -1,8 +1,8 @@
-import cleandata as pbw
+import pbw
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-engine = create_engine('mysql+pymysql://pbw:Alexios@localhost/pbw?charset=utf8mb4')
+engine = create_engine('mysql+pymysql://pbwuser:AlexConstantine@localhost/pbw?charset=utf8mb4')
 smaker = sessionmaker(bind=engine)
 session = smaker()
 

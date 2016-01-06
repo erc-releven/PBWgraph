@@ -2,10 +2,11 @@ import re
 from sqlalchemy import Column, ForeignKey, Table  # DB components
 from sqlalchemy import DateTime, Integer, SmallInteger, String, Text  # Column types
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship, backref, validates
+from sqlalchemy.orm import relationship, backref
 from sqlalchemy.ext.associationproxy import association_proxy
 
 Base = declarative_base()
+
 
 # ## Simple key-value lookup tables
 class Accuracy(Base):
@@ -136,7 +137,8 @@ class ActivityFactoid(Base):
     origLang = association_proxy('_oLangVal', 'oLanguage')
     # Only put the activity record on the Factoid object if there is any content.
     factoid = relationship('Factoid', backref=backref('activityRecord', uselist=False,
-                                                      primaryjoin='and_(ActivityFactoid.factoidKey==Factoid.factoidKey, ActivityFactoid.sourceDate!="")'))
+                                                      primaryjoin='and_(ActivityFactoid.factoidKey==Factoid.factoidKey,'
+                                                                  ' ActivityFactoid.sourceDate!="")'))
 
 
 class CollDB(Base):
@@ -302,7 +304,7 @@ class Seal(Base):
     boulloterion = relationship('Boulloterion', backref='seals')
 
 
-### Association tables
+# Association tables
 vname_association = Table('VNameFactoid', Base.metadata,
                           Column('vNameKey', Integer, ForeignKey('VariantName.vnameKey')),
                           Column('factoidKey', Integer, ForeignKey('Factoid.factoidKey')))
@@ -336,7 +338,7 @@ occupation_association = Table('OccupationFactoid', Base.metadata,
                                Column('factoidKey', Integer, ForeignKey('Factoid.factoidKey')))
 
 
-### Association classes
+# Association classes
 class DignityFactoid(Base):
     __tablename__ = 'DignityFactoid'
     AppointedBy = Column(Text)
@@ -425,7 +427,8 @@ class PersonCollDB(Base):
     person = relationship('Person', lazy='joined', innerjoin=True, backref='collDBRef')
     collDB = relationship('CollDB', lazy='joined', innerjoin=True, backref='_assoc_persons')
 
-### Primary entity tables
+
+# Primary entity tables
 class Boulloterion(Base):
     __tablename__ = 'Boulloterion'
     scDateKey = Column(Integer, ForeignKey('ScDate.scDateKey'))
@@ -551,19 +554,20 @@ class Factoid(Base):
     # These come from association classes and return a value or another class.
     dignityOffice = association_proxy('_assoc_dignity', 'dignity')
     possession = association_proxy('possessionRecord', 'possessionName')
-    narrativeUnit = association_proxy('_nunit_name', 'narrativeUnit')
+    narrativeUnit = association_proxy('_assoc_nunit', 'narrativeUnit')
 
     def associated_person(self, refKey):
-        '''Return the Person object for the given key, which comes out of a PERSREF
-        in the factoid text.'''
+        """Return the Person object for the given key, which comes out of a PERSREF
+        in the factoid text.
+        :param refKey: the associated key"""
         for pf in self._assoc_persons:
             if pf.fpKey == refKey:
                 return pf.person
         return None
 
     def main_person(self):
-        '''Return the Person objects for the primary person of this factoid.
-        There will almost, but not quite, always be one, so we return a list.'''
+        """Return the Person objects for the primary person of this factoid.
+        There will almost, but not quite, always be one, so we return a list."""
         main_persons = []
         for pf in self._assoc_persons:
             if pf.fpType == 'Primary':
@@ -676,7 +680,9 @@ class Person(Base):
     collDBEntries = association_proxy('_assoc_colldb', 'collDB')
 
     def main_factoids(self, ftype=None):
-        '''Return the list of factoids for which this person is the primary referent.'''
+        """Return the list of factoids for which this person is the primary referent.
+        :param ftype: the factoid type
+        """
         main_set = [x.factoid for x in self._person_factoids if x.fpType == 'Primary']
         if ftype is not None:
             return [x for x in main_set if x.factoidType == ftype]
@@ -684,12 +690,12 @@ class Person(Base):
             return main_set
 
     def ref_factoids(self):
-        '''Return the list of factoids for which this person is a secondary referent.'''
+        """Return the list of factoids for which this person is a secondary referent."""
         return [x.factoid for x in self._person_factoids if x.fpType == 'DescRef']
 
     def may_also_be(self):
-        '''Return a set of Person objects who may or may not be the same person.
-        Depends on the "Uncertain Ident" factoids for this.'''
+        """Return a set of Person objects who may or may not be the same person.
+        Depends on the "Uncertain Ident" factoids for this."""
         uncertain = self.main_factoids('Uncertain Ident')
         if len(uncertain) == 0:
             return None
@@ -713,4 +719,3 @@ class VariantName(Base):
     # Direct foreign key associations
     _oLangVal = relationship('OrigLangAuth')
     origLang = association_proxy('_oLangVal', 'oLanguage')
-

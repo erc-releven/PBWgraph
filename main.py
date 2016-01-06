@@ -1,6 +1,6 @@
 # coding=utf-8
 import unittest
-import cleandata as pbw
+import pbw
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -10,7 +10,7 @@ class TestConnections(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        engine = create_engine('mysql+mysqldb://pbw:Alexios@localhost/pbw?charset=utf8&use_unicode=0')
+        engine = create_engine('mysql+pymysql://pbwuser:AlexConstantine@localhost/pbw')
         smaker = sessionmaker(bind=engine)
         cls.session = smaker()
 
@@ -41,7 +41,8 @@ class TestConnections(unittest.TestCase):
         self.assertEqual(len(alexios1.main_factoids('Location')), 387)
         self.assertEqual(len(alexios1.main_factoids('Possession')), 2)
         self.assertEqual(len(alexios1.ref_factoids()), 2585)
-        for t in ['(Unspecified)', 'Education', 'Ethnic label', 'Language Skill', 'Occupation/Vocation', 'Religion', 'Eunuchs', 'Alternative Name', 'Uncertain Ident']:
+        for t in ['(Unspecified)', 'Education', 'Ethnic label', 'Language Skill', 'Occupation/Vocation',
+                  'Religion', 'Eunuchs', 'Alternative Name', 'Uncertain Ident']:
             self.assertListEqual(alexios1.main_factoids(t), [])
         self.assertIsNone(alexios1.may_also_be())
 
@@ -173,7 +174,6 @@ class TestConnections(unittest.TestCase):
         for ci in cursus_items:
             self.assertIsNotNone(ci.scDate)
 
-
     def test_activity(self):
         factoidWith = self.session.query(pbw.Factoid).filter_by(factoidKey=222270).scalar()
         self.assertIsNotNone(factoidWith.activityRecord)
@@ -191,17 +191,18 @@ class TestConnections(unittest.TestCase):
         self.assertEqual(boull.obvType, 'Bust')
         self.assertIsNone(boull.revType)
         self.assertEqual(len(boull.seals), 27)
-        expected_collections = ['Preslav, Museum of Archaeology ', 'Preslav, Archaeology Museum ', 'Munich, Zarnitz collection ', 'Shumen, Regional Historical Museum ', 'Bulgaria (private collection)']
+        expected_collections = ['Preslav, Museum of Archaeology ', 'Preslav, Archaeology Museum ',
+                                'Munich, Zarnitz collection ', 'Shumen, Regional Historical Museum ',
+                                'Bulgaria (private collection)']
         for s in boull.seals:
             self.assertIn(s.collection.shortName, expected_collections)
         self.assertEqual(boull.found.foundDesc, 'Preslav')
         self.assertEqual(boull.found.country, 'Bulgaria')
         self.assertEqual(len(boull.publication), 4)
-        expected_pubs = {'Jordanov, Preslav': 'no. 32- 54', 'Seibt, review of Jordanov, Preslav': 'p. 135', 'Jordanov, Corpus II': 'no. 482- 511', 'Jordanov - Zhekova, Shumen': 'no. 132'}
+        expected_pubs = {'Jordanov, Preslav': 'no. 32- 54', 'Seibt, review of Jordanov, Preslav': 'p. 135',
+                         'Jordanov, Corpus II': 'no. 482- 511', 'Jordanov - Zhekova, Shumen': 'no. 132'}
         for p in boull.publication:
             self.assertEqual(p.publicationRef, expected_pubs[p.bibSource.shortName])
-
-
 
 
 if __name__ == '__main__':
