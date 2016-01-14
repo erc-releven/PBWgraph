@@ -1,8 +1,9 @@
 import pbw
+import config
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-engine = create_engine('mysql+pymysql://pbwuser:AlexConstantine@localhost/pbw?charset=utf8mb4')
+engine = create_engine('mysql+pymysql://' + config.dbstring)
 smaker = sessionmaker(bind=engine)
 session = smaker()
 

@@ -1,6 +1,7 @@
 # coding=utf-8
 import unittest
 import pbw
+import config
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -10,7 +11,7 @@ class TestConnections(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        engine = create_engine('mysql+pymysql://pbwuser:AlexConstantine@localhost/pbw')
+        engine = create_engine('mysql+pymysql://' + config.dbstring)
         smaker = sessionmaker(bind=engine)
         cls.session = smaker()
 

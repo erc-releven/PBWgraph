@@ -1,3 +1,6 @@
+# Local run configuration
+config.py
+
 # IDE droppings
 .idea/
 
