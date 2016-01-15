@@ -208,6 +208,10 @@ class Location(Base):
     creationDate = Column(DateTime)
     notes = Column(Text)
     locationKey = Column(Integer, primary_key=True)
+    latitude = Column(String)
+    longitude = Column(String)
+    radius = Column(String)
+    geosource = Column(String)
     # Direct foreign key associations
     _oLangVal = relationship('OrigLangAuth')
     origLang = association_proxy('_oLangVal', 'oLanguage')

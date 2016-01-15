@@ -58,7 +58,7 @@ class TestConnections(unittest.TestCase):
         sourceref = "%s %s" % (mourtzouphlos.source, mourtzouphlos.sourceRef)
         self.assertEqual(sourceref, 'Kleinchroniken 63.3, 150.92, 174.1, 229.8, 298.1, 534.38')
         self.assertEqual(mourtzouphlos.origLang, '(Unspecified)')
-        self.assertEqual(mourtzouphlos.origLDesc, "τὸν λεγ\xe1\xbd\xb9μενον Μο\xe1\xbd\xbbρτζουφλον")
+        self.assertEqual(mourtzouphlos.origLDesc, "τὸν λεγόμενον Μούρτζουφλον")
         self.assertEqual(mourtzouphlos.factoidType, 'Alternative Name')
         self.assertEqual(len(mourtzouphlos.persons), 1)
         self.assertEqual(mourtzouphlos.persons[0], alexios5)
@@ -107,7 +107,7 @@ class TestConnections(unittest.TestCase):
         self.assertEqual(len(death_factoids), 7)
         for df in death_factoids:
             if len(df.deathRecord.sourceDate) > 0:
-                self.assertRegexpMatches(df.deathRecord.sourceDate, 'August 15')
+                self.assertRegex(df.deathRecord.sourceDate, 'August 15')
 
     def test_dignity(self):
         person = self.lookup_person('Nikephoros', 117)

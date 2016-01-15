@@ -30,7 +30,8 @@ for lfact in josc.main_factoids("Location"):
                                                          nfact.narrativeUnit.dates,
                                                          nfact.narrativeUnit.dateType))
     if not foundSource:
-        print("%s: Joscelin was at %s at an unknown time" % (lfact.factoidKey, lfact.locationInfo.location.locName))
+        print("%s: Joscelin was at %s at an unknown time according to %s %s"
+              % (lfact.factoidKey, lfact.locationInfo.location.locName, lfact.sourceKey, lfact.sourceRef))
 
 # Location factoids are not associated with a narrative unit
 # Narrative factoids are; match them up by source string
