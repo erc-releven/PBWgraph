@@ -1,30 +1,16 @@
 import pbw
 import config
 import geonames
+import gplaces
+import re
 from geopy.distance import vincenty
-import requests
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 engine = create_engine('mysql+pymysql://' + config.dbstring)
 smaker = sessionmaker(bind=engine)
 session = smaker()
-
-
-# Here is how we look something up
-def lookup_place(querystring):
-    search_endpoint = 'https://maps.googleapis.com/maps/api/place/textsearch/json'
-    search_params = {
-        'query': querystring,
-        'key': config.places_apikey,
-        'language': 'en'
-        }
-
-    r = requests.get(search_endpoint, params=search_params).json()
-    if 'results' in r:
-        return r['results']
-    else:
-        return None
+resultcache = {}
 
 
 def filterloc(locresult):
@@ -50,24 +36,52 @@ def getradius(viewport):
     return vincenty(sw, ne).kilometers / 4
 
 
-# For each location in the database, look it up
-for place in session.query(pbw.Location).filter(pbw.Location.geosource.like("google")).all():
-    print("Looking up place %s: %s" % (place.locationKey, place.locName))
-    lookupresult = lookup_place(place.locName)
+def lookup_place(querystring):
+    if querystring in resultcache:
+        return resultcache[querystring]
+    lookupsource = 'google'
+    lookupresult = [x for x in gplaces.lookup_place(querystring) if filterloc(x)]
     if lookupresult is None or len(lookupresult) == 0:
+        lookupsource = 'geonames'
+        lookupresult = [x for x in geonames.lookup_place(querystring) if filterloc(x)]
+    if len(lookupresult) > 0:
+        resultcache[querystring] = (lookupsource, lookupresult)
+    return lookupsource, lookupresult
+
+
+# For each location in the database, look it up
+found = 0
+total = 0
+for place in session.query(pbw.Location).filter(pbw.Location.longitude.is_(None)).all():
+    print("Looking up place %s: %s" % (place.locationKey, place.locName))
+    total += 1
+    source, result = lookup_place(place.locName)
+    if len(result) == 0:
+        # Try again if we can dequalify the name. Is it something like
+        # Athos: Phakenou ?
+        colonmatch = re.match(r"\w+(?=:)", place.locName)
+        if colonmatch is not None:
+            source, result = lookup_place(colonmatch.group(0))
+        else:
+            # Or is it something like Philippi (Macedonia) ?
+            parenmatch = re.search(r"\((.*)\)", place.locName)
+            if parenmatch is not None:
+                source, result = lookup_place(parenmatch.group(1))
+
+    if result is None or len(result) == 0:
         print("No lookup results for %s" % place.locName)
         place.latitude = "NONE"
     else:
-        results = [x for x in lookupresult if filterloc(x)]
-        if len(results) == 0:
+        found += 1
+        if len(result) == 0:
             print("No sensible results for %s" % place.locName)
             place.latitude = "RECHECK"
         else:
-            firstresult = results[0]
+            firstresult = result[0]
 
             place.latitude = firstresult['geometry']['location']['lat']
             place.longitude = firstresult['geometry']['location']['lng']
-            place.geosource = 'google'
+            place.geosource = source
             if 'viewport' in firstresult['geometry']:
                 place.radius = getradius(firstresult['geometry']['viewport'])
             else:
@@ -75,3 +89,5 @@ for place in session.query(pbw.Location).filter(pbw.Location.geosource.like("goo
             print("Found the result %s of type %s at %s %s, radius %s"
                   % (firstresult['name'], firstresult['types'], place.latitude, place.longitude, place.radius))
             session.commit()
+
+print("Queried %d places, found %d" % (total, found))

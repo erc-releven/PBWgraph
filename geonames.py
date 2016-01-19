@@ -36,4 +36,7 @@ def lookup_place(querystring):
     }
 
     r = requests.get(search_endpoint, params=search_params)
-    return etree_to_json(etree.fromstring(r.content))
+    if r.ok:
+        return etree_to_json(etree.fromstring(r.content))
+    else:
+        return []
