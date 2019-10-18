@@ -21,7 +21,10 @@ class TestConnections(unittest.TestCase):
 
     def test_persons(self):
         alexioi = self.session.query(pbw.Person).filter_by(name="Alexios").all()
-        self.assertEqual(len(alexioi), 63)
+        self.assertEqual(66, len(alexioi))
+        ## A couple of these Alexioi have no factoids. Filter them out and we should have 63.
+        realalexioi = [x for x in alexioi if len(x.factoids) > 0]
+        self.assertEqual(63, len(realalexioi))
 
     def test_person_attributes(self):
         alexios5 = self.lookup_person('Alexios', 5)
@@ -31,20 +34,20 @@ class TestConnections(unittest.TestCase):
 
     def test_person_factoids(self):
         alexios1 = self.lookup_person('Alexios', 1)
-        self.assertEqual(len(alexios1.main_factoids()), 1990)
-        self.assertEqual(len(alexios1.main_factoids('Narrative')), 1223)
-        self.assertEqual(len(alexios1.main_factoids('Authorship')), 2)
-        self.assertEqual(len(alexios1.main_factoids('Death')), 7)
-        self.assertEqual(len(alexios1.main_factoids('Description')), 110)
-        self.assertEqual(len(alexios1.main_factoids('Dignity/Office')), 87)
-        self.assertEqual(len(alexios1.main_factoids('Second Name')), 34)
-        self.assertEqual(len(alexios1.main_factoids('Kinship')), 138)
-        self.assertEqual(len(alexios1.main_factoids('Location')), 387)
-        self.assertEqual(len(alexios1.main_factoids('Possession')), 2)
-        self.assertEqual(len(alexios1.ref_factoids()), 2585)
+        self.assertEqual(1999, len(alexios1.main_factoids()))
+        self.assertEqual(1224, len(alexios1.main_factoids('Narrative')))
+        self.assertEqual(2, len(alexios1.main_factoids('Authorship')))
+        self.assertEqual(7, len(alexios1.main_factoids('Death')))
+        self.assertEqual(111, len(alexios1.main_factoids('Description')))
+        self.assertEqual(88, len(alexios1.main_factoids('Dignity/Office')))
+        self.assertEqual(34, len(alexios1.main_factoids('Second Name')))
+        self.assertEqual(142, len(alexios1.main_factoids('Kinship')))
+        self.assertEqual(389, len(alexios1.main_factoids('Location')))
+        self.assertEqual(2, len(alexios1.main_factoids('Possession')))
+        self.assertEqual(2595, len(alexios1.ref_factoids()))
         for t in ['(Unspecified)', 'Education', 'Ethnic label', 'Language Skill', 'Occupation/Vocation',
                   'Religion', 'Eunuchs', 'Alternative Name', 'Uncertain Ident']:
-            self.assertListEqual(alexios1.main_factoids(t), [])
+            self.assertListEqual([], alexios1.main_factoids(t))
         self.assertIsNone(alexios1.may_also_be())
 
     def test_alter_ego(self):
@@ -112,7 +115,7 @@ class TestConnections(unittest.TestCase):
     def test_dignity(self):
         person = self.lookup_person('Nikephoros', 117)
         dignity_factoids = person.main_factoids('Dignity/Office')
-        self.assertEqual(len(dignity_factoids), 17)
+        self.assertEqual(18, len(dignity_factoids))
         expected_dignities = set(self.session.query(pbw.DignityOffice).filter(
             pbw.DignityOffice.stdName.in_(['Despotes', 'Kaisar', 'Majesty', 'Panhypersebastos'])).all())
         self.assertSetEqual(set([x.dignityOffice for x in dignity_factoids]), expected_dignities)
@@ -131,14 +134,14 @@ class TestConnections(unittest.TestCase):
         self.assertEqual(len(location_factoids), 83)
         expected_locations = {'Almeas (?)', 'Asia', 'Athos: Amalphenon', 'Bosporos', 'Chrysopolis (Bithynia)',
                               'Constantinople', 'Constantinople: Blachernai',
-                              'Constantinople: Blachernai: Hagia Thekla', 'Constantinople: Great Palace',
+                              'Constantinople: Blachernai, Hagia Thekla', 'Constantinople: Great Palace',
                               'Constantinople: Hagia Sophia', 'Constantinople: Mangana', 'Constantinople: Stoudios',
                               'Damatrys', 'Gounaria', 'Honoratos', 'Iberia (theme)', 'Kastamon (Paphlagonia)',
                               'Lobitzos (Bulgaria)', 'Marmara', 'Nea Mone, Chios', 'Neapolis (on Bosporos)', 'Nicaea',
                               'Nikomedeia', 'Orient', 'Pemolissa  (Asia Minor)', 'Reai (Bithynia)', 'Sangarios (river)',
                               'Serdica (Bulgaria)', 'Theotokos Dekapolitissa (Mitylene?)',
                               'Triaditza (Serdica, Bulgaria)', 'Vaspurakan'}
-        self.assertSetEqual(set([x.locationInfo.location.locName for x in location_factoids]), expected_locations)
+        self.assertSetEqual(expected_locations, set([x.locationInfo.location.locName for x in location_factoids]))
 
     def test_kinship(self):
         person = self.lookup_person('Michael', 11)
