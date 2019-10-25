@@ -189,22 +189,74 @@ def setup_constants(sqlsession, graphdriver):
         # Create and collect predicates for the explicit factoid categories
         for r in sqlsession.query(pbw.FactoidType).all():
             label = r.typeName.lower().replace('/', '_').replace(' ', '_')
-            if label not in ['uncertain_ident', 'alternative_name', 'eunuchs', '(unspecified)']:
-                label = 'in_' + label if label == 'narrative' else 'has_' + label
+            if label == "authorship":
+                label = "authored"
+            elif label == "narrative":
+                label = "involved_in"
+            elif label in ['uncertain_ident', 'alternative_name', 'eunuchs', '(unspecified)']:
+                label = None
+            else:
+                label = "has_" + label
+            if label is not None:
                 fpred = session.run("MERGE (p:Predicate {label:'%s'}) RETURN p" % label).single()['p']
                 factoid_predicates[r.typeName] = fpred
     # Return our agent, our sex objects, and our predicates
     return generic_agent, pbw_sexes, factoid_predicates
 
 
+def get_source_node(session, factoid):
+    return session.run("MERGE (src:Source {identifier:'%s', reference:'%s'}) RETURN src"
+                       % (escape_text(factoid.source), escape_text(factoid.sourceRef))).single()['src']
+
+
 def get_object_node(session, factoid_type, factoid):
-    if factoid_type == "Dignity/Office":
+    if factoid_type == "Narrative":
+        pass
+    elif factoid_type == "Authorship":
+        # We are asserting that the person authored the source in question, so the source is the object.
+        return get_source_node(session, factoid)
+    elif factoid_type == "Death":
+        return session.run("MERGE (d:DeathRecord {text:'%s'}) RETURN d" % escape_text(factoid.engDesc)).single()['d']
+    elif factoid_type == "Description":
+        return session.run("MERGE (d:Description {text:'%s', orig_text:'%s'}) RETURN d"
+                           % (escape_text(factoid.engDesc), escape_text(factoid.origLDesc))).single()['d']
+    elif factoid_type == "Dignity/Office":
         if factoid.dignityOffice is None:
             return None
         return session.run("MERGE (do:DignityOffice {name:'%s', name_en:'%s'}) RETURN do"
                            % (escape_text(factoid.dignityOffice.stdNameOL),
                               escape_text(factoid.dignityOffice.stdName))).single()['do']
+    elif factoid_type == "Education":
+        return session.run("MERGE (e:Education {description:'%s'}) RETURN e" % escape_text(factoid.engDesc)).single()['e']
+    elif factoid_type == "Ethnic label":
+        return None if factoid.ethnicityInfo is None else \
+            session.run("MERGE (e:Ethnicity {identifier:'%s'}) RETURN e"
+                        % escape_text(factoid.ethnicityInfo.ethnicity.ethName)).single()['e']
+    elif factoid_type == "Second Name":
+        return session.run("MERGE (i:Identifier {text:'%s'}) RETURN i").single()['i']
+    elif factoid_type == "Kinship":
+        pass  # This will be a bit complex
+    elif factoid_type == "Language Skill":
+        return session.run("MERGE (l:Language {identifier: '%s'}) RETURN l" % factoid.languageSkill).single()['l']
+    elif factoid_type == "Location":
+        pass
+    elif factoid_type == "Occupation/Vocation":
+        return session.run("MERGE (o:Occupation {identifier: '%s'}) RETURN o" % factoid.occupation).single()['o']
+    elif factoid_type == "Possession":
+        pass  # Need to see if these records make any sense
+    elif factoid_type == "Religion":
+        return session.run("MERGE (r:Religion {identifier:'%s'}) RETURN r" % factoid.religion).single()['r']
     return None
+
+
+def get_qualifier_properties(factoid):
+    props = []
+    if factoid.notes:
+        props.append("notes: '%s'" % escape_text(factoid.notes))
+    if factoid.factoidType == "Ethnic label":
+        # Is the ethnicity doubtful?
+        props.append("certainty: %s" % ("true" if factoid.ethnicityInfo.isDoubtful == 0 else "false"))
+    return " {%s}" % ', '.join(props) if len(props) else ""
 
 
 def process_persons(personlist, graphdriver, agent, sexes, predicates):
@@ -277,10 +329,9 @@ def process_persons(personlist, graphdriver, agent, sexes, predicates):
                                   % (ftype, person.personKey, person.name, person.mdbCode))
                             continue
                         # Get the qualifier, if there is one
-                        qualifier = " {notes:'%s'}" % escape_text(f.notes) if f.notes else ""
+                        qualifier = get_qualifier_properties(f)
                         # Get the source and the authority
-                        source_node = session.run("MERGE (src:Source {identifier:'%s', reference:'%s'}) RETURN src"
-                                                  % (escape_text(f.source), escape_text(f.sourceRef))).single()['src']
+                        source_node = get_source_node(session, f)
                         factoid_auth = auth_map.get(f.source, [])
                         # Make sure the assertion itself exists, and then add the source and authorities.
                         # This lets us have multiple sources making the same assertion, or multiple notes on
