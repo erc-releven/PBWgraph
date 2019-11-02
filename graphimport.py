@@ -18,6 +18,7 @@ def get_authmap():
     bs = 'Bruna Soravia'
     hm = 'Harry Munt'
     lo = 'Letizia Osti'
+    cr = 'Charlotte Roueché'
 
     authorities = {
         'Albert of Aachen': [mj],
@@ -51,6 +52,7 @@ def get_authmap():
         'Eustathios Romaios': [mj],
         'Eustathios: Capture of Thessalonike': [mj],
         'Fulcher of Chartres': [mj],
+        'Geonames': [cr],
         'Glykas': [tp],
         'Gregory VII, Epistolae vagantes': [jr],
         'Gregory VII, in Caspar': [jr],
@@ -113,6 +115,7 @@ def get_authmap():
         'Peri metatheseon': [mj],
         'Petros of Antioch  ': [tp],
         'Petros of Antioch, ep. 2': [tp],
+        'Pleiades': [cr],
         'Prodromos, Historische Gedichte': [mj],
         'Protaton': [tp],
         'Psellos': [mj, tp],
@@ -193,6 +196,8 @@ def setup_constants(sqlsession, graphdriver):
                 label = "authored"
             elif label == "narrative":
                 label = "involved_in"
+            elif label == "kinship":
+                label = "kin_to"
             elif label in ['uncertain_ident', 'alternative_name', 'eunuchs', '(unspecified)']:
                 label = None
             else:
@@ -209,7 +214,31 @@ def get_source_node(session, factoid):
                        % (escape_text(factoid.source), escape_text(factoid.sourceRef))).single()['src']
 
 
-def get_object_node(session, factoid_type, factoid):
+def get_location_node(session, pbwloc):
+    # The location record has an identifer, plus a couple of assertions by Charlotte about its
+    # correspondence in the GeoNames and/or Pleiades database.
+    loc_query = session.run("MATCH (l:Location {identifier: '%s', pbwid: %d}) RETURN l"
+                            % (escape_text(pbwloc.locName), pbwloc.locationKey)).single()
+    if loc_query is None:
+        # We need to create it.
+        loc_node = session.run("CREATE (l:Location {identifier: '%s', pbwid: %d}) RETURN l"
+                               % (escape_text(pbwloc.locName), pbwloc.locationKey)).single()['l']
+        for db in ("pleiades", "geonames"):
+            dbid = pbwloc.__getattribute__("%s_id" % db)
+            if dbid is not None:
+                ag = session.run("MERGE (ag:Agent {identifier:'Charlotte Roueché'}) RETURN ag").single()['ag']
+                dbloc = session.run("MERGE (l:DatabaseLocation {db: '%s', id: %d}) RETURN l" % (db, dbid)).single()['l']
+                pred = session.run("MERGE (p:Predicate {label:'same_as'}) RETURN p").single()['p']
+                session.run(
+                    "MATCH (l), (ag), (dbl), (p) WHERE id(l) = %d AND id(ag) = %d AND id(dbl) = %d AND id(p) = %d "
+                    "MERGE (a:ASSERTION)-[:SUBJECT]->(l) MERGE (a)-[:PREDICATE]->(p) MERGE (a)-[:OBJECT]->(dbl) "
+                    "MERGE (a)-[:AUTHORITY]->(ag)" % (loc_node.id, ag.id, dbloc.id, pred.id))
+    else:
+        loc_node = loc_query['l']
+    return loc_node
+
+
+def get_object_node(session, factoid_type, factoid, person):
     if factoid_type == "Narrative":
         pass
     elif factoid_type == "Authorship":
@@ -227,7 +256,8 @@ def get_object_node(session, factoid_type, factoid):
                            % (escape_text(factoid.dignityOffice.stdNameOL),
                               escape_text(factoid.dignityOffice.stdName))).single()['do']
     elif factoid_type == "Education":
-        return session.run("MERGE (e:Education {description:'%s'}) RETURN e" % escape_text(factoid.engDesc)).single()['e']
+        return session.run("MERGE (e:Education {description:'%s'}) RETURN e"
+                           % escape_text(factoid.engDesc)).single()['e']
     elif factoid_type == "Ethnic label":
         return None if factoid.ethnicityInfo is None else \
             session.run("MERGE (e:Ethnicity {identifier:'%s'}) RETURN e"
@@ -235,17 +265,32 @@ def get_object_node(session, factoid_type, factoid):
     elif factoid_type == "Second Name":
         return session.run("MERGE (i:Identifier {text:'%s'}) RETURN i").single()['i']
     elif factoid_type == "Kinship":
-        pass  # This will be a bit complex
+        if factoid.kinshipType is None:
+            return None
+        # The object is the other person in the factoid.
+        kin = [x for x in factoid.persons if x != person]
+        if len(kin) != 1:
+            print("Skipping kinship factoid with more or less than 1 other person")
+            return None
+        return session.run("MERGE (p:PBWPerson {name:'%s', code:%d}) RETURN p"
+                           % (kin[0].name, kin[0].mdbCode)).single()['p']
     elif factoid_type == "Language Skill":
         return session.run("MERGE (l:Language {identifier: '%s'}) RETURN l" % factoid.languageSkill).single()['l']
     elif factoid_type == "Location":
-        pass
+        if factoid.locationInfo is None:
+            return None
+        if factoid.locationInfo.location is None:
+            print("Broken location link for factoid %d: %s" % (factoid.factoidKey, factoid.engDesc))
+            return None
+        return get_location_node(session, factoid.locationInfo.location)
     elif factoid_type == "Occupation/Vocation":
         return session.run("MERGE (o:Occupation {identifier: '%s'}) RETURN o" % factoid.occupation).single()['o']
     elif factoid_type == "Possession":
         pass  # Need to see if these records make any sense
     elif factoid_type == "Religion":
         return session.run("MERGE (r:Religion {identifier:'%s'}) RETURN r" % factoid.religion).single()['r']
+    else:
+        print("Unhandled factoid type: %s" % factoid_type)
     return None
 
 
@@ -256,6 +301,10 @@ def get_qualifier_properties(factoid):
     if factoid.factoidType == "Ethnic label":
         # Is the ethnicity doubtful?
         props.append("certainty: %s" % ("true" if factoid.ethnicityInfo.isDoubtful == 0 else "false"))
+    elif factoid.factoidType == "Kinship":
+        # What is the given kin relationship?
+        props.append("relation_general: '%s'" % escape_text(factoid.kinshipType.gunspecRelat))
+        props.append("relation_specific: '%s'" % escape_text(factoid.kinshipType.gspecRelat))
     return " {%s}" % ', '.join(props) if len(props) else ""
 
 
@@ -321,9 +370,9 @@ def process_persons(personlist, graphdriver, agent, sexes, predicates):
                     for f in person.main_factoids(ftype):
                         # The factoid has the same subject, the predicate we created, some object (which will depend
                         # on the factoid type), a source from which the information comes, and an authority who
-                        # interpreted the source. It might also have a qualifier in "notes".
+                        # interpreted the source. The predicate might also have qualifier properties.
                         # First thing: collect the object in question.
-                        obj = get_object_node(session, ftype, f)
+                        obj = get_object_node(session, ftype, f, person)
                         if obj is None:
                             print("Skipping un-factoided %s on person %d (%s %d)"
                                   % (ftype, person.personKey, person.name, person.mdbCode))
