@@ -26,10 +26,24 @@ def julian_eom(year, month):
 
 def produce_range(datestr):
     """Produce a pair of strings where a dash has been decomposed"""
+    # Regex all the ones that don't register algorithmically
+    splitstr = re.match(r'(\d+)\s+(\w+)-(\d+)', datestr)
+    if splitstr is not None:  # 1083 Winter-1085
+        return "%s %s" % (splitstr.group(1), splitstr.group(2)), splitstr.group(3)
+    splitstr = re.match(r'(\d+)-(\d+)\s+(\w+)-(\w+)', datestr)
+    if splitstr is not None:  # 1046-1047 December-January
+        return "%s %s" % (splitstr.group(1), splitstr.group(3)), "%s %s" % (splitstr.group(2), splitstr.group(4))
+    splitstr = re.match(r'(\d+)\s+(\w+\s+\d+)-(\w+\s+\d+)', datestr)
+    if splitstr is not None:  # 1033 February 20-March 15
+        return "%s %s" % (splitstr.group(1), splitstr.group(2)), "%s %s" % (splitstr.group(1), splitstr.group(3))
+    splitstr = re.match(r'(\d+)\s+(\w+(\s+\d+)?) to (\w+(\s+\d+)?)', datestr)
+    if splitstr is not None:  # 1168 October to November 3
+        return "%s %s" % (splitstr.group(1), splitstr.group(2)), "%s %s" % (splitstr.group(1), splitstr.group(4))
+    # Now the algorithm.
     # First split the thing into space-separated words
     words = datestr.split()
     # Now find the index of the word with a dash
-    result = []
+    rng = []
     for ridx in range(len(words)):
         if '-' in words[ridx]:
             # Split it
@@ -37,8 +51,8 @@ def produce_range(datestr):
             for p in parts:
                 lst = words[0:ridx]
                 lst.append(p)
-                result.append(' '.join(lst))
-    return tuple(result)
+                rng.append(' '.join(lst))
+    return tuple(rng)
 
 
 def day_string(jd):
@@ -53,55 +67,109 @@ def parse_date(datestr):
     dt = None
     dmin = None
     dmax = None
-    try:
+    try:  # 1085
         dt = datetime.strptime(datestr, "%Y")
         dmin = julian_day(dt.year, dt.month, dt.day)
         dmax = julian_day(dt.year, 12, 31)
     except ValueError:
         pass
     if dt is None:
-        try:
+        try:  # 1085 January
             dt = datetime.strptime(datestr, "%Y %B")
             dmin = julian_day(dt.year, dt.month, dt.day)
             dmax = julian_eom(dt.year, dt.month)
         except ValueError:
             pass
     if dt is None:
-        try:
+        try:  # 1085 Jan
             dt = datetime.strptime(datestr, "%Y %b")
             dmin = julian_day(dt.year, dt.month, dt.day)
             dmax = julian_eom(dt.year, dt.month)
         except ValueError:
             pass
     if dt is None:
-        try:
+        try:  # 1085 mid-January
             dt = datetime.strptime(datestr, "%Y mid-%B")
             dmin = julian_day(dt.year, dt.month, 9)
             dmax = julian_day(dt.year, dt.month, 21)
         except ValueError:
             pass
     if dt is None:
-        try:
+        try:  # 1085 middle of January
             dt = datetime.strptime(datestr, "%Y middle of %B")
             dmin = julian_day(dt.year, dt.month, 9)
             dmax = julian_day(dt.year, dt.month, 21)
         except ValueError:
             pass
     if dt is None:
-        try:
+        try:  # 1085 January 23
             dt = datetime.strptime(datestr, "%Y %B %d")
             dmin = julian_day(dt.year, dt.month, dt.day)
             dmax = julian_day(dt.year, dt.month, dt.day)
         except ValueError:
             pass
     if dt is None:
-        try:
+        try:  # 1085 23 January
+            dt = datetime.strptime(datestr, "%Y %d %B")
+            dmin = julian_day(dt.year, dt.month, dt.day)
+            dmax = julian_day(dt.year, dt.month, dt.day)
+        except ValueError:
+            pass
+    if dt is None:
+        try:  # 1085 January23
+            dt = datetime.strptime(datestr, "%Y %B%d")
+            dmin = julian_day(dt.year, dt.month, dt.day)
+            dmax = julian_day(dt.year, dt.month, dt.day)
+        except ValueError:
+            pass
+    if dt is None:
+        try:  # 1085 Jan 23
             dt = datetime.strptime(datestr, "%Y %b %d")
             dmin = julian_day(dt.year, dt.month, dt.day)
             dmax = julian_day(dt.year, dt.month, dt.day)
         except ValueError:
             pass
-    if dt is None and '-' in datestr:
+    if dt is None:
+        try:  # 1085 after January
+            dt = datetime.strptime(datestr, "%Y after %B")
+            dmin = julian_day(dt.year, dt.month + 1, 1)
+            dmax = julian_day(dt.year, 12, 31)
+        except ValueError:
+            pass
+    if dt is None:
+        try:  # c. 1085
+            dt = datetime.strptime(datestr, "c. %Y")
+            dmin = julian_day(dt.year - 3, 1, 1)
+            dmax = julian_day(dt.year + 3, 12, 31)
+        except ValueError:
+            pass
+    if dt is None:
+        timeofday = re.match(r'(.*?),?\s+(morning|evening)$', datestr)
+        if timeofday is not None:
+            return parse_date(timeofday.group(1))
+    if dt is None:
+        easterdate = re.match(r'(\d+)\s+easter', datestr, flags=re.I)
+        if easterdate is not None:
+            # Get the date for Orthodox Easter that year
+            dt = convertdate.holidays.easter(int(easterdate.group(1)), church="orthodox")
+            dmin = julian_day(*dt)
+            dmax = dmin
+            print("Easter for year %d falls on %d/%d" % dt)
+    if dt is None:
+        lentdate = re.match(r'(\d+)\s+lent', datestr, flags=re.I)
+        if lentdate is not None:
+            # Get the date for Orthodox Easter that year
+            dt = convertdate.holidays.easter(int(lentdate.group(1)), church="orthodox")
+            dmax = julian_day(*dt) - 1
+            dmin = dmax - 46
+    if dt is None:
+        pentdate = re.match(r'(\d+)\s+pentecost', datestr, flags=re.I)
+        if pentdate is not None:
+            # Get the date for Orthodox Easter that year
+            dt = convertdate.holidays.easter(int(pentdate.group(1)), church="orthodox")
+            dmin = julian_day(*dt) + 50
+            dmax = dmin
+    if dt is None and '-' in datestr or ' to ' in datestr:
         # See if we can parse two ends of a range.
         daterange = produce_range(datestr)
         if len(daterange) == 2:
@@ -111,14 +179,58 @@ def parse_date(datestr):
             dmin = dt
             dmax = secondrange[1]
             # if dmin and dmax:
-            #     print("Parsed range %s as %s - %s" % (nu.dates, day_string(dmin), day_string(dmax)))
-    # TODO handle interstitial qualifiers
-    # TODO handle inversions
+            #     print("Parsed string %s as %s - %s" % (datestr, day_string(dmin), day_string(dmax)))
+    # Handle interstitial qualifiers
     if dt is None:
-        seasonal = re.match('(\d+)\s+(winter|spring|summer|autumn|beginning|early|mid(dle)?|late|end)', datestr.lower())
+        beforeafter = re.match(r'(\d+)\s+(before|after|early|late|around|mid(dle)?|end)( of)?\s+(.*)$', datestr, flags=re.I)
+        if beforeafter is not None:
+            year = int(beforeafter.group(1))
+            qualifier = beforeafter.group(2)
+            rest = beforeafter.group(5)
+            dt = parse_date("%d %s" % (year, rest))
+            if dt[0] is not None:
+                if qualifier.lower() == "before":
+                    dmin = julian_day(year, 1, 1)
+                    dmax = dt[0] - 1
+                elif qualifier.lower() == "after":
+                    dmin = dt[1] + 1
+                    dmax = julian_day(year, 12, 31)
+                elif qualifier.lower() == "early":
+                    dmin = dt[0]
+                    dmax = dt[0] + (dt[1] - dt[0]) / 2
+                elif qualifier.lower() == "late":
+                    dmin = dt[0] + (dt[1] - dt[0]) / 2
+                    dmax = dt[1]
+                elif qualifier.lower() == "around":
+                    magnitude = dt[1] - dt[0]
+                    if magnitude < 10:
+                        # Add 3 days each side if it's a matter of days
+                        dmin = dt[0] - 3
+                        dmax = dt[1] + 3
+                    else:  # Add half the timespan
+                        dmin = dt[0] - magnitude / 2
+                        dmax = dt[1] + magnitude / 2
+                elif "mid" in qualifier.lower():
+                    # Take the middle half of the timespan
+                    magnitude = dt[1] - dt[0]
+                    dmin = dt[0] + magnitude / 4
+                    dmax = dt[1] - magnitude / 4
+                elif qualifier.lower() == "end":
+                    # Take the last 25% of the timespan
+                    magnitude = dt[1] - dt[0]
+                    dmin = dt[1] - magnitude / 4
+                    dmax = dt[1]
+                # print("Parsed interstitial %s as %s - %s" % (datestr, day_string(dmin), day_string(dmax)))
+    if dt is None:
+        inverted = False
+        seasonstring = r'(winter|spring|summer|autumn|beginning|early|mid(dle)?|late|end|(first|second) half)'
+        seasonal = re.match(r'(\d+)\s+%s$' % seasonstring, datestr.lower())
+        if seasonal is None:
+            inverted = True
+            seasonal = re.match(r'%s\s+(\d+)$' % seasonstring, datestr.lower())
         if seasonal is not None:
-            year = int(seasonal.group(1))
-            season = seasonal.group(2)
+            year = int(seasonal.group(4 if inverted else 1))
+            season = seasonal.group(1 if inverted else 2)
             if season == "winter":
                 dmin = julian_day(year-1, 12, 1)
                 dmax = julian_day(year, 3, 20)
@@ -146,6 +258,12 @@ def parse_date(datestr):
             elif season == "end":
                 dmin = julian_day(year, 11, 1)
                 dmax = julian_day(year, 12, 31)
+            elif season == "first half":
+                dmin = julian_day(year, 1, 1)
+                dmax = julian_day(year, 6, 30)
+            elif season == "second half":
+                dmin = julian_day(year, 7, 1)
+                dmax = julian_day(year, 12, 31)
     return dmin, dmax
 
 
@@ -158,7 +276,7 @@ def clean_datestring(dstr):
     # Get rid of trailing colons or spaces, condense all spaces to a single space
     datestr = re.sub(r'\s+', ' ', re.sub(r':?\s*$', '', datestr)).replace(' - ', '-')
     # Get rid of commas and colons after the year
-    datestr = re.sub(r'^(\d+)[,:]', r'\1', datestr)
+    datestr = re.sub(r'^(\d+)[,:;]', r'\1', datestr)
     return datestr
 
 
