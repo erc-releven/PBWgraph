@@ -167,7 +167,7 @@ def parse_date(datestr):
         if pentdate is not None:
             # Get the date for Orthodox Easter that year
             dt = convertdate.holidays.easter(int(pentdate.group(1)), church="orthodox")
-            dmin = julian_day(*dt) + 50
+            dmin = julian_day(*dt) + 49
             dmax = dmin
     if dt is None and '-' in datestr or ' to ' in datestr:
         # See if we can parse two ends of a range.

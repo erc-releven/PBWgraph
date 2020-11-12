@@ -231,7 +231,7 @@ def get_location_node(session, pbwloc):
                 pred = session.run("MERGE (p:Predicate {label:'same_as'}) RETURN p").single()['p']
                 session.run(
                     "MATCH (l), (ag), (dbl), (p) WHERE id(l) = %d AND id(ag) = %d AND id(dbl) = %d AND id(p) = %d "
-                    "MERGE (a:ASSERTION)-[:SUBJECT]->(l) MERGE (a)-[:PREDICATE]->(p) MERGE (a)-[:OBJECT]->(dbl) "
+                    "MERGE (a:Assertion)-[:SUBJECT]->(l) MERGE (a)-[:PREDICATE]->(p) MERGE (a)-[:OBJECT]->(dbl) "
                     "MERGE (a)-[:AUTHORITY]->(ag)" % (loc_node.id, ag.id, dbloc.id, pred.id))
     else:
         loc_node = loc_query['l']
@@ -408,7 +408,7 @@ if __name__ == '__main__':
     smaker = sessionmaker(bind=engine)
     mysqlsession = smaker()
     # Connect to the graph DB
-    driver = GraphDatabase.driver(config.graphuri, auth=(config.graphuser, config.passphrase))
+    driver = GraphDatabase.driver(config.graphuri, auth=(config.graphuser, config.graphpw))
     # Get our authority map
     auth_map = get_authmap()
     # Make / retrieve the global nodes
