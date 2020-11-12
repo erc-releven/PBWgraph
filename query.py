@@ -1,5 +1,6 @@
 import pbw
 import config
+import re
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -13,7 +14,7 @@ def lookup_person(name, num):
     return q.scalar()
 
 
-person = lookup_person('Gregorios', 127)
+person = lookup_person('Anna', 61)
 for f in person.main_factoids('Narrative'):
     print(f.factoidKey, f.engDesc)
 
@@ -51,6 +52,7 @@ type_vars = {
     'Uncertain Ident': None}
 
 counter = 0
+persref_re = re.compile(r'PERSREF ID="(\d+)"')
 for f in session.query(pbw.Factoid).all():
     counter += 1
     if counter % 1000 == 0:
@@ -77,3 +79,17 @@ for f in session.query(pbw.Factoid).all():
     if extra_data is None:
         print("Factoid %d (%s) has type %s but lacks associated info. Attached to person %s" % (
             f.factoidKey, f.engDesc, f.factoidType, person))
+    # Check the refs in the factoids
+    match = persref_re.search(f.engDesc)
+    if match is not None:
+        persref = int(match.group(1))
+        fprecord = session.query(pbw.FactoidPerson).get(persref)
+        person = None
+        if fprecord is not None:
+            person = session.query(pbw.Person).get(fprecord.personKey)
+        if person is None or fprecord is None:
+            print("Factoid %d (%s) has an invalid person reference %d" % (f.factoidKey, f.engDesc, persref))
+    match = persref_re.search(f.origLDesc)
+    if match is not None:
+        print("Factoid %d (%s) has a misplaced person reference" % (f.factoidKey, f.engDesc))
+
