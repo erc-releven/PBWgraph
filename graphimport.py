@@ -172,17 +172,19 @@ def setup_constants(sqlsession, graphdriver):
     """Set up the necessary object and predicate nodes that will be shared by the individual records"""
     with graphdriver.session() as session:
         # Make our anonymous agent PBW for the un-sourced information
-        generic_agent = session.run("MERGE (a:Agent {identifier:'PBW'}) return a").single()['a']
+        generic_agent = session.run("MERGE (a:E39_Actor {identifier:'PBW'}) return a").single()['a']
         # Set up the distinct sexes in the database
         pbw_sexes = session.run(
-            "MERGE (Female:Sex {value:'female'}) MERGE (Male:Sex {value:'male'}) MERGE (Eunuch:Sex {value:'eunuch'}) "
+            "MERGE (Female:E62_String {class:'sex', value:'female'}) "
+            "MERGE (Male:E62_String {class:'sex', value:'male'}) "
+            "MERGE (Eunuch:E62_String {class:'sex', value:'eunuch'}) "
             "RETURN Female, Male, Eunuch").single()
         # Set up the is_of_sex predicate
-        sex_predicate = session.run("MERGE (p:Predicate {label:'is_of_sex'}) RETURN p").single()['p']
+        sex_predicate = session.run("MERGE (p:E55_Type {property:'P2_has_type'}) RETURN p").single()['p']
         # Set up the has_disambiguation predicate
-        disambig_predicate = session.run("MERGE (p:Predicate {label:'has_disambiguation'}) RETURN p").single()['p']
+        disambig_predicate = session.run("MERGE (p:E55_Type {property:'P3_has_note'}) RETURN p").single()['p']
         # Set up the identified_as predicate
-        identified_predicate = session.run("MERGE (p:Predicate {label:'identified_as'}) RETURN p").single()['p']
+        identified_predicate = session.run("MERGE (p:E55_Type {property:'P1_is_identified_by'}) RETURN p").single()['p']
         # Collect these into a dictionary
         factoid_predicates = {
             'sex': sex_predicate,
@@ -191,48 +193,51 @@ def setup_constants(sqlsession, graphdriver):
         }
         # Create and collect predicates for the explicit factoid categories
         for r in sqlsession.query(pbw.FactoidType).all():
+            # TODO finish mapping these to CIDOC properties
             label = r.typeName.lower().replace('/', '_').replace(' ', '_')
             if label == "authorship":
-                label = "authored"
+                label = "PXX_authored"
             elif label == "narrative":
-                label = "involved_in"
+                label = "P11r_participated_in"
             elif label == "kinship":
-                label = "kin_to"
+                label = "PXX_kin_to"
             elif label in ['uncertain_ident', 'alternative_name', 'eunuchs', '(unspecified)']:
                 label = None
             else:
-                label = "has_" + label
+                label = "PXX_has_" + label
             if label is not None:
-                fpred = session.run("MERGE (p:Predicate {label:'%s'}) RETURN p" % label).single()['p']
+                fpred = session.run("MERGE (p:E55_Type {property:'%s'}) RETURN p" % label).single()['p']
                 factoid_predicates[r.typeName] = fpred
     # Return our agent, our sex objects, and our predicates
     return generic_agent, pbw_sexes, factoid_predicates
 
 
 def get_source_node(session, factoid):
-    return session.run("MERGE (src:Source {identifier:'%s', reference:'%s'}) RETURN src"
+    return session.run("MERGE (src:E31_Document {identifier:'%s', reference:'%s'}) RETURN src"
                        % (escape_text(factoid.source), escape_text(factoid.sourceRef))).single()['src']
 
 
 def get_location_node(session, pbwloc):
     # The location record has an identifer, plus a couple of assertions by Charlotte about its
     # correspondence in the GeoNames and/or Pleiades database.
-    loc_query = session.run("MATCH (l:Location {identifier: '%s', pbwid: %d}) RETURN l"
+    loc_query = session.run("MATCH (l:E53_Place {identifier: '%s', pbwid: %d}) RETURN l"
                             % (escape_text(pbwloc.locName), pbwloc.locationKey)).single()
     if loc_query is None:
         # We need to create it.
-        loc_node = session.run("CREATE (l:Location {identifier: '%s', pbwid: %d}) RETURN l"
+        loc_node = session.run("CREATE (l:E53_Place {identifier: '%s', pbwid: %d}) RETURN l"
                                % (escape_text(pbwloc.locName), pbwloc.locationKey)).single()['l']
         for db in ("pleiades", "geonames"):
             dbid = pbwloc.__getattribute__("%s_id" % db)
             if dbid is not None:
-                ag = session.run("MERGE (ag:Agent {identifier:'Charlotte Roueché'}) RETURN ag").single()['ag']
-                dbloc = session.run("MERGE (l:DatabaseLocation {db: '%s', id: %d}) RETURN l" % (db, dbid)).single()['l']
-                pred = session.run("MERGE (p:Predicate {label:'same_as'}) RETURN p").single()['p']
+                ag = session.run("MERGE (ag:E39_Actor {identifier:'Charlotte Roueché'}) RETURN ag").single()['ag']
+                dbloc = session.run("MERGE (l:E94_Space_Primitive {db: '%s', id: %d}) "
+                                    "RETURN l" % (db, dbid)).single()['l']
+                pred = session.run("MERGE (p:E55_Type {property:'P168_place_is_defined_by'}) RETURN p").single()['p']
                 session.run(
                     "MATCH (l), (ag), (dbl), (p) WHERE id(l) = %d AND id(ag) = %d AND id(dbl) = %d AND id(p) = %d "
-                    "MERGE (a:Assertion)-[:SUBJECT]->(l) MERGE (a)-[:PREDICATE]->(p) MERGE (a)-[:OBJECT]->(dbl) "
-                    "MERGE (a)-[:AUTHORITY]->(ag)" % (loc_node.id, ag.id, dbloc.id, pred.id))
+                    "MERGE (a:E13_Attribute_Assignment)-[:P140_assigned_attribute_to]->(l) "
+                    "MERGE (a)-[:P177_assigned_property_type]->(p) MERGE (a)-[:P141_assigned]->(dbl) "
+                    "MERGE (a)-[:P14_carried_out_by]->(ag)" % (loc_node.id, ag.id, dbloc.id, pred.id))
     else:
         loc_node = loc_query['l']
     return loc_node
@@ -242,28 +247,32 @@ def get_object_node(session, factoid_type, factoid, person):
     if factoid_type == "Narrative":
         pass
     elif factoid_type == "Authorship":
+        # TODO model this as event
         # We are asserting that the person authored the source in question, so the source is the object.
         return get_source_node(session, factoid)
     elif factoid_type == "Death":
-        return session.run("MERGE (d:DeathRecord {text:'%s'}) RETURN d" % escape_text(factoid.engDesc)).single()['d']
+        # TODO model this as event
+        return session.run("MERGE (d:E69_Death {text:'%s'}) RETURN d" % escape_text(factoid.engDesc)).single()['d']
     elif factoid_type == "Description":
-        return session.run("MERGE (d:Description {text:'%s', orig_text:'%s'}) RETURN d"
+        return session.run("MERGE (d:E62_String {class:'description', text:'%s', orig_text:'%s'}) RETURN d"
                            % (escape_text(factoid.engDesc), escape_text(factoid.origLDesc))).single()['d']
     elif factoid_type == "Dignity/Office":
         if factoid.dignityOffice is None:
             return None
-        return session.run("MERGE (do:DignityOffice {name:'%s', name_en:'%s'}) RETURN do"
+        return session.run("MERGE (do:E62_String {class:'dignity_office', name:'%s', name_en:'%s'}) RETURN do"
                            % (escape_text(factoid.dignityOffice.stdNameOL),
                               escape_text(factoid.dignityOffice.stdName))).single()['do']
     elif factoid_type == "Education":
-        return session.run("MERGE (e:Education {description:'%s'}) RETURN e"
+        return session.run("MERGE (e:E62_String {class:'education', description:'%s'}) RETURN e"
                            % escape_text(factoid.engDesc)).single()['e']
     elif factoid_type == "Ethnic label":
         return None if factoid.ethnicityInfo is None else \
-            session.run("MERGE (e:Ethnicity {identifier:'%s'}) RETURN e"
+            session.run("MERGE (e:E74_Group {class:'ethnicity', identifier:'%s'}) RETURN e"
                         % escape_text(factoid.ethnicityInfo.ethnicity.ethName)).single()['e']
     elif factoid_type == "Second Name":
-        return session.run("MERGE (i:Identifier {text:'%s'}) RETURN i").single()['i']
+        return None if factoid.secondName is None else \
+            session.run("MERGE (i:E41_Appellation {text:'%s'}) RETURN i"
+                        % escape_text(factoid.secondName.famName)).single()['i']
     elif factoid_type == "Kinship":
         if factoid.kinshipType is None:
             return None
@@ -272,10 +281,10 @@ def get_object_node(session, factoid_type, factoid, person):
         if len(kin) != 1:
             print("Skipping kinship factoid with more or less than 1 other person")
             return None
-        return session.run("MERGE (p:PBWPerson {name:'%s', code:%d}) RETURN p"
+        return session.run("MERGE (p:E21_Person {name:'%s', code:%d}) RETURN p"
                            % (kin[0].name, kin[0].mdbCode)).single()['p']
     elif factoid_type == "Language Skill":
-        return session.run("MERGE (l:Language {identifier: '%s'}) RETURN l" % factoid.languageSkill).single()['l']
+        return session.run("MERGE (l:E56_Language {identifier: '%s'}) RETURN l" % factoid.languageSkill).single()['l']
     elif factoid_type == "Location":
         if factoid.locationInfo is None:
             return None
@@ -284,11 +293,13 @@ def get_object_node(session, factoid_type, factoid, person):
             return None
         return get_location_node(session, factoid.locationInfo.location)
     elif factoid_type == "Occupation/Vocation":
-        return session.run("MERGE (o:Occupation {identifier: '%s'}) RETURN o" % factoid.occupation).single()['o']
+        return session.run("MERGE (o:E7_Activity {class:'occupation_vocation', identifier: '%s'}) "
+                           "RETURN o" % factoid.occupation).single()['o']
     elif factoid_type == "Possession":
         pass  # Need to see if these records make any sense
     elif factoid_type == "Religion":
-        return session.run("MERGE (r:Religion {identifier:'%s'}) RETURN r" % factoid.religion).single()['r']
+        return session.run("MERGE (r:E74_Group {class:'religion', identifier:'%s'}) "
+                           "RETURN r" % factoid.religion).single()['r']
     else:
         print("Unhandled factoid type: %s" % factoid_type)
     return None
@@ -318,7 +329,7 @@ def process_persons(personlist, graphdriver, agent, sexes, predicates):
         processed += 1
         # Create or find the person node
         print("Making/finding node for person %s %d" % (person.name, person.mdbCode))
-        nodelookup = "MERGE (p:PBWPerson {name:'%s', code:%d}) RETURN p" % (person.name, person.mdbCode)
+        nodelookup = "MERGE (p:E21_Person {name:'%s', code:%d}) RETURN p" % (person.name, person.mdbCode)
         with graphdriver.session() as session:
             graph_person = session.run(nodelookup).single()['p']
             # Add the assertions that are in the direct person record:
@@ -330,6 +341,8 @@ def process_persons(personlist, graphdriver, agent, sexes, predicates):
                     our_sex = person.sex
                     if our_sex == 'Mixed':  # we have already excluded Anonymi
                         our_sex = 'Unknown'
+                    elif our_sex == 'Eunach':  # correct misspelling in source DB
+                        our_sex = 'Eunuch'
                     elif our_sex == '(Unspecified)':
                         our_sex = 'Unknown'
                     elif our_sex == 'Eunuch (Probable)':
@@ -342,27 +355,30 @@ def process_persons(personlist, graphdriver, agent, sexes, predicates):
                     if our_sex != "Unknown":
                         print("...setting sex to %s%s" % (our_sex, " (maybe)" if uncertain else ""))
                         sexassertion = "MATCH (p), (sp), (s), (pbw) WHERE id(p) = %d AND id(sp) = %d AND id(s) = %d " \
-                                       "AND id(pbw) = %d MERGE (sp)<-[:PREDICATE]-(a:Assertion%s)-[:SUBJECT]->(p) " \
-                                       "MERGE (pbw)<-[:AUTHORITY]-(a)-[:OBJECT]->(s) RETURN a" \
+                                       "AND id(pbw) = %d MERGE (sp)<-[:P177_assigned_property_type]-" \
+                                       "(a:E13_Attribute_Assignment%s)-[:P140_assigned_attribute_to]->(p) " \
+                                       "MERGE (pbw)<-[:P14_carried_out_by]-(a)-[:P141_assigned]->(s) RETURN a" \
                                        % (graph_person.id, predicate.id, sexes[our_sex].id, agent.id, assertion_props)
                         session.run(sexassertion)
                 elif ftype == 'disambiguation':
                     # - description / disambiguator
                     print("...setting disambiguating description to %s" % person.descName)
-                    disamb_node = session.run("MERGE (d:Disambiguation {text:'%s'}) RETURN d"
+                    disamb_node = session.run("MERGE (d:E62_String {class:'disambiguation', text:'%s'}) RETURN d"
                                               % escape_text(person.descName)).single()['d']
                     disassertion = "MATCH (p), (dp), (pbw), (d) WHERE id(p) = %d AND id(dp) = %d AND id(pbw) = %d AND "\
-                                   "id(d) = %d MERGE (dp)<-[:PREDICATE]-(a:Assertion)-[:SUBJECT]->(p) MERGE (pbw)<-[" \
-                                   ":AUTHORITY]-(a)-[:OBJECT]->(d) RETURN a" % (graph_person.id, predicate.id,
-                                                                                agent.id, disamb_node.id)
+                                   "id(d) = %d MERGE (dp)<-[:P177_assigned_property_type]-" \
+                                   "(a:E13_Attribute_Assignment)-[:P140_assigned_attribute_to]->(p) MERGE (pbw)<-[" \
+                                   ":P14_carried_out_by]-(a)-[:P141_assigned]->(d) RETURN a" % \
+                                   (graph_person.id, predicate.id, agent.id, disamb_node.id)
                     session.run(disassertion)
                 elif ftype == 'identified':
                     # - name/identifier
                     print("...setting identifier to %s" % person.nameOL)
-                    ident_node = session.run("MERGE (i:Identifier {text:'%s'}) RETURN i").single()['i']
+                    ident_node = session.run("MERGE (i:E41_Appellation {text:'%s'}) RETURN i").single()['i']
                     identassertion = "MATCH (p), (ip), (pbw), (i) WHERE id(p) = %d AND id(ip) = %d AND id(pbw) = %d " \
-                                     "AND id(i) = %d MERGE (ip)<-[:PREDICATE]-(a:Assertion)-[:SUBJECT]->(p) MERGE (" \
-                                     "pbw)<-[:AUTHORITY]-(a)-[:OBJECT]->(i) RETURN a" \
+                                     "AND id(i) = %d MERGE (ip)<-[:P177_assigned_property_type]-" \
+                                     "(a:E13_Attribute_Assignment)-[:P140_assigned_attribute_to]->(p) MERGE (" \
+                                     "pbw)<-[:P14_carried_out_by]-(a)-[:P141_assigned]->(i) RETURN a" \
                                      % (graph_person.id, predicate.id, agent.id, ident_node.id)
                     session.run(identassertion)
                 else:
@@ -386,16 +402,20 @@ def process_persons(personlist, graphdriver, agent, sexes, predicates):
                         # This lets us have multiple sources making the same assertion, or multiple notes on
                         # the assertion predicate.
                         doassertion = "MATCH (p), (dop), (do) WHERE id(p) = %d AND id(dop) = %d AND id(do) = %d MERGE "\
-                                      "(do)<-[:OBJECT]-(a:Assertion)-[:SUBJECT]->(p) MERGE (a)-[:PREDICATE%s]->(dop) " \
+                                      "(do)<-[:P141_assigned]-(a:E13_Attribute_Assignment)-" \
+                                      "[:P140_assigned_attribute_to]->(p) " \
+                                      "MERGE (a)-[:P177_assigned_property_type%s]->(dop) " \
                                       "RETURN DISTINCT a" % (graph_person.id, predicate.id, obj.id, qualifier)
                         a = session.run(doassertion).single()['a']
                         # Now add the source
-                        session.run("MATCH (a), (src) WHERE id(a) = %d AND id(src) = %d MERGE (a)-[:SOURCE]->(src)"
+                        session.run("MATCH (a), (src) WHERE id(a) = %d AND id(src) = %d "
+                                    "MERGE (a)-[:P17_was_motivated_by]->(src)"
                                     % (a.id, source_node.id))
                         for auth in factoid_auth:
-                            auth_node = session.run("MERGE (ag:Agent {identifier:'%s'}) RETURN ag"
+                            auth_node = session.run("MERGE (ag:E39_Actor {identifier:'%s'}) RETURN ag"
                                                     % auth).single()['ag']
-                            session.run("MATCH (a), (ag) WHERE id(a) = %d AND id(ag) = %d MERGE (a)-[:AUTHORITY]->(ag)"
+                            session.run("MATCH (a), (ag) WHERE id(a) = %d AND id(ag) = %d "
+                                        "MERGE (a)-[:P14_carried_out_by]->(ag)"
                                         % (a.id, auth_node.id))
 
     print("Processed %d person records." % processed)
