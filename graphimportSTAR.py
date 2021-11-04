@@ -167,36 +167,38 @@ def collect_person_records(sqlsession):
     print("Found %d relevant people" % len(relevant))
     return relevant
 
+def _init_typology(graphdriver, superclass, instances):
+    with graphdriver.session() as session:
+        cypherq = "MERGE (`%s`:crm_E55_Type {value:`%s`} " % (superclass, superclass)
+        for inst in instances:
+            cypherq += "MERGE (`%s`:crm_E55_Type {value:`%s`}) " \
+                       "MERGE (`%s`)-[:P127_has_broader_term]->(`%s`) " % (inst, inst, inst, superclass)
+        cypherq += "RETURN %s" % ', '.join(["`%s`" % x for x in instances])
+        types = session.run(cypherq).single()
+    return types
+
 
 def setup_constants(sqlsession, graphdriver):
     """Set up the necessary object and predicate nodes that will be shared by the individual records"""
     with graphdriver.session() as session:
         # Make our anonymous agent PBW for the un-sourced information
         generic_agent = session.run("MERGE (a:E39_Actor {identifier:'PBW'}) return a").single()['a']
-        # Set up the distinct sexes in the database as Types (with
-        pbw_sexes = session.run(
-            # Get the string constants
-            "MERGE (fstr:crm_E62_String {value:'female'}) "
-            "MERGE (mstr:crm_E62_String {value:'male'}) "
-            "MERGE (estr:crm_E62_String {value:'eunuch'}) "
-            "MERGE (Female:crm_E55_Type)-[:crm_P3_has_note]->(fstr) "
-            "MERGE (Male:crm_E55_Type)-[:crm_P3_has_note]->(mstr) "
-            "MERGE (Eunuch:crm_E55_Type)-[:crm_P3_has_note]->(estr) "
-            "RETURN Female, Male, Eunuch").single()
-        # Set up the is_of_sex attribute assignment
-        gender_ptype = session.run("MERGE (gstr:crm_E62_String {value:'gender'})").single()['gstr']
+        # Set up the vocabularies and classifications that exist in the PBW database
+        pbw_sexes = _init_typology(graphdriver, 'gender', ['female', 'male', 'eunuch'])
+        pbw_occupations = _init_typology(graphdriver, 'occupation', [x.occupationName for x in session.query(pbw.Occupation).all()])
+        pbw_kinships = _init_typology(graphdriver, 'kinship', [x.gspecRelat for x in session.query(pbw.KinshipType).all()])
+        pbw_dignities = _init_typology(graphdriver, 'dignity', [x.stdName for x in session.query(pbw.DignityOffice).all()])
+
         # Set up the has_disambiguation attribute assignment
-        disambig_predicate = session.run("MERGE (p:crm_P3_has_note) RETURN p").single()['p']
+        disambig_predicate = session.run("MERGE (p:crm_P1_is_identified_by) RETURN p").single()['p']
         # Set up the identified_as attribute assignment
         identified_predicate = session.run("MERGE (istr:crm_E62_String {value:'identifier'}) "
                                            "MERGE (p:crm_E14_Identifier_Assignment)-[:crm_P3_has_note]->(istr) RETURN p").single()['p']
         # Collect these into a dictionary
-        base_assertions = {
-            'sex': gender_ptype,
+        factoid_predicates = {
             'disambiguation': disambig_predicate,
             'identified': identified_predicate
         }
-        factoid_predicates = {}
         # Create and collect predicates for the explicit factoid categories
         for r in sqlsession.query(pbw.FactoidType).all():
             # TODO finish mapping these to CIDOC properties
@@ -215,7 +217,7 @@ def setup_constants(sqlsession, graphdriver):
                 fpred = session.run("MERGE (p:crm_E55_Type {property:'%s'}) RETURN p" % label).single()['p']
                 factoid_predicates[r.typeName] = fpred
     # Return our agent, our sex objects, and our predicates
-    return generic_agent, base_assertions, pbw_sexes, factoid_predicates
+    return generic_agent, pbw_sexes, factoid_predicates
 
 
 def get_source_node(session, factoid):
@@ -247,6 +249,7 @@ def get_location_node(session, pbwloc):
     else:
         loc_node = loc_query['l']
     return loc_node
+
 
 
 def get_object_node(session, factoid_type, factoid, person):
@@ -325,7 +328,7 @@ def get_qualifier_properties(factoid):
     return " {%s}" % ', '.join(props) if len(props) else ""
 
 
-def process_persons(personlist, graphdriver, agent, base_assertions, sexes, predicates):
+def process_persons(personlist, graphdriver, agent, sexes, predicates):
     """Go through the relevant person records and process them for factoids"""
     processed = 0
     for person in personlist:
@@ -341,7 +344,6 @@ def process_persons(personlist, graphdriver, agent, base_assertions, sexes, pred
             # Add the assertions that are in the direct person record:
             # - sex
             for ftype in predicates:
-                assertion =
                 predicate = predicates[ftype]
                 if ftype == 'sex':
                     uncertain = False
@@ -364,8 +366,8 @@ def process_persons(personlist, graphdriver, agent, base_assertions, sexes, pred
                         print("...setting gender assignment to %s%s" % (our_sex, " (maybe)" if uncertain else ""))
                         sexassertion = "MATCH (p), (s), (pbw) WHERE id(p) = %d AND id(sp) = %d AND id(s) = %d " \
                                        "AND id(pbw) = %d MERGE (a:E17_Type_Assignment%s)-[:P3_has_note]->(g) " \
-                                       "MERGE (s)<-[]-(a)-[:P41_classified]->(p)"
-                                       % (graph_person.id, sexes[our_sex].id, agent.id, assertion_props)
+                                       "MERGE (s)<-[]-(a)-[:P41_classified]->(p)" \
+                                       % (graph_person.id, 100, sexes[our_sex].id, agent.id, assertion_props)
                         session.run(sexassertion)
                 elif ftype == 'disambiguation':
                     # - description / disambiguator
@@ -439,7 +441,7 @@ if __name__ == '__main__':
     # Get our authority map
     auth_map = get_authmap()
     # Make / retrieve the global nodes
-    (pbwagent, base_assertions, pbwsexes, pbwpredicates) = setup_constants(mysqlsession, driver)
+    (pbwagent, pbwsexes, pbwpredicates) = setup_constants(mysqlsession, driver)
     # Process the person records
-    process_persons(collect_person_records(mysqlsession), driver, pbwagent, base_assertions, pbwsexes, pbwpredicates)
+    process_persons(collect_person_records(mysqlsession), driver, pbwagent, pbwsexes, pbwpredicates)
     print("Done!")
