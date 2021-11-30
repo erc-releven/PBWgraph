@@ -161,16 +161,20 @@ def escape_text(t):
 
 
 def collect_person_records(sqlsession):
-    # Get a list of people whose floruit matches our needs
+    """Get a list of people whose floruit matches our needs"""
     floruit = r'XI(?!I)|10[3-8]\d'
-    relevant = [x for x in sqlsession.query(pbw.Person).all() if re.match(floruit, x.floruit) and len(x.factoids) > 0]
+    relevant = [x for x in sqlsession.query(pbw.Person).all() if re.search(floruit, x.floruit) and len(x.factoids) > 0]
     print("Found %d relevant people" % len(relevant))
     return relevant
+
 
 def _init_typology(graphdriver, superclass, instances):
     with graphdriver.session() as session:
         cypherq = "MERGE (`%s`:crm_E55_Type {value:`%s`} " % (superclass, superclass)
         for inst in instances:
+            # Leave out blank instances
+            if inst == '':
+                continue
             cypherq += "MERGE (`%s`:crm_E55_Type {value:`%s`}) " \
                        "MERGE (`%s`)-[:P127_has_broader_term]->(`%s`) " % (inst, inst, inst, superclass)
         cypherq += "RETURN %s" % ', '.join(["`%s`" % x for x in instances])
@@ -178,51 +182,201 @@ def _init_typology(graphdriver, superclass, instances):
     return types
 
 
+def _smooth_labels(label):
+    if label == 'Dignity/Office':
+        return 'Dignity'
+    if label == 'Occupation/Vocation':
+        return 'Occupation'
+    if label == 'Language Skill':
+        return 'Language'
+    if label == 'Ethnic label':
+        return 'Ethnicity'
+    if label == 'Second Name' or label == 'Alternative Name':
+        return 'Appellation'
+    return label
+
+
 def setup_constants(sqlsession, graphdriver):
     """Set up the necessary object and predicate nodes that will be shared by the individual records"""
     with graphdriver.session() as session:
         # Make our anonymous agent PBW for the un-sourced information
         generic_agent = session.run("MERGE (a:E39_Actor {identifier:'PBW'}) return a").single()['a']
-        # Set up the vocabularies and classifications that exist in the PBW database
-        pbw_sexes = _init_typology(graphdriver, 'gender', ['female', 'male', 'eunuch'])
-        pbw_occupations = _init_typology(graphdriver, 'occupation', [x.occupationName for x in session.query(pbw.Occupation).all()])
-        pbw_kinships = _init_typology(graphdriver, 'kinship', [x.gspecRelat for x in session.query(pbw.KinshipType).all()])
-        pbw_dignities = _init_typology(graphdriver, 'dignity', [x.stdName for x in session.query(pbw.DignityOffice).all()])
+        # Get the list of factoid types
+        pbw_factoid_types = [x.typeName for x in sqlsession.query(pbw.FactoidType).all()
+                             if x.typeName != '(Unspecified)']
+        # Add the info that is directly in the person record
+        pbw_pr_info = ['Gender', 'Disambiguation', 'Identifier']
 
-        # Set up the has_disambiguation attribute assignment
-        disambig_predicate = session.run("MERGE (p:crm_P1_is_identified_by) RETURN p").single()['p']
-        # Set up the identified_as attribute assignment
-        identified_predicate = session.run("MERGE (istr:crm_E62_String {value:'identifier'}) "
-                                           "MERGE (p:crm_E14_Identifier_Assignment)-[:crm_P3_has_note]->(istr) RETURN p").single()['p']
-        # Collect these into a dictionary
-        factoid_predicates = {
-            'disambiguation': disambig_predicate,
-            'identified': identified_predicate
-        }
-        # Create and collect predicates for the explicit factoid categories
-        for r in sqlsession.query(pbw.FactoidType).all():
-            # TODO finish mapping these to CIDOC properties
-            label = r.typeName.lower().replace('/', '_').replace(' ', '_')
-            if label == "authorship":
-                label = "PXX_authored"
-            elif label == "narrative":
-                label = "crm_P11r_participated_in"
-            elif label == "kinship":
-                label = "PXX_kin_to"
-            elif label in ['uncertain_ident', 'alternative_name', 'eunuchs', '(unspecified)']:
-                label = None
-            else:
-                label = "PXX_has_" + label
-            if label is not None:
-                fpred = session.run("MERGE (p:crm_E55_Type {property:'%s'}) RETURN p" % label).single()['p']
-                factoid_predicates[r.typeName] = fpred
-    # Return our agent, our sex objects, and our predicates
-    return generic_agent, pbw_sexes, factoid_predicates
+        # Some of these factoid types have their own controlled vocabularies. Extract them here and
+        # simplify the broader term.
+        controlled_vocabs = dict()
+        controlled_vocabs['Gender'] = _init_typology(graphdriver, 'Gender', ['female', 'male', 'eunuch'])
+        controlled_vocabs['Occupation'] = _init_typology(graphdriver, 'Occupation',
+                                                         [x.occupationName for x
+                                                          in sqlsession.query(pbw.Occupation).all()])
+        controlled_vocabs['Kinship'] = _init_typology(graphdriver, 'Kinship',
+                                                      [x.gspecRelat for x in sqlsession.query(pbw.KinshipType).all()])
+        controlled_vocabs['Dignity'] = _init_typology(graphdriver, 'Dignity',
+                                                      [x.stdName for x in sqlsession.query(pbw.DignityOffice).all()])
+        controlled_vocabs['Ethnicity'] = _init_typology(graphdriver, 'Ethnicity',
+                                                        [x.ethName for x in sqlsession.query(pbw.Ethnicity).all()])
+        controlled_vocabs['Language'] = _init_typology(graphdriver, 'Language',
+                                                       [x.languageName for x
+                                                        in sqlsession.query(pbw.LanguageSkill).all()])
+        controlled_vocabs['Religion'] = _init_typology(graphdriver, 'Religion',
+                                                       [x.religionName for x in sqlsession.query(pbw.Religion).all()])
+
+        # Set up the predicates that we will be using
+        our_predicates = [
+            'crm_P1_is_identified_by',
+            'crm_P41_classified',
+            'crm_P100_was_death_of',
+            'crm_P3_has_note',
+            'crm_P4_has_time_span'
+        ]
+        prednodes = dict()
+        for pred in our_predicates:
+            npred = session.run("MERGE (n:`%s`) RETURN n").single()['n']
+            prednodes[pred] = npred
+        controlled_vocabs['Predicates'] = prednodes
+
+    return generic_agent, pbw_factoid_types, pbw_pr_info, controlled_vocabs
+
+
+def gender_handler(graphdriver, agent, sqlperson, graphperson, constants):
+    with graphdriver.session() as session:
+        uncertain = False
+        pbw_sex = sqlperson.sex
+        if pbw_sex == 'Mixed':  # we have already excluded Anonymi
+            pbw_sex = 'Unknown'
+        elif pbw_sex == 'Eunach':  # correct misspelling in source DB
+            pbw_sex = 'Eunuch'
+        elif pbw_sex == '(Unspecified)':
+            pbw_sex = 'Unknown'
+        elif pbw_sex == 'Eunuch (Probable)':
+            pbw_sex = 'Eunuch'
+            uncertain = True
+        if uncertain:
+            assertion_props = ' {uncertain:true}'
+        else:
+            assertion_props = ''
+        if pbw_sex != "Unknown":
+            print("...setting gender assignment to %s%s" % (pbw_sex, " (maybe)" if uncertain else ""))
+            # Make the event tied to this person
+            genderassertion = "MATCH (p), (s), (pbw) WHERE id(p) = %d AND id(s) = %d AND id(pbw) = %d "
+            genderassertion += "MERGE (sp42:crm_P42_assigned%s) MERGE (sp41:crm_P41_classified) "
+            genderassertion += "CREATE (a1:crm_E13_Attribute_Assignment)-[:crm_P140_assigned_attribute_to]" \
+                               "->(ga:crm_E17_Type_Assignment), "
+            genderassertion += "(a1)-[:crm_P177_assigned_property_type]->(sp41), (a1)-[:crm_P141_assigned]->(p), "
+            genderassertion += "(a1)-[:crm_P14_carried_out_by]->(pbw) "
+            genderassertion += "CREATE (a2:crm_E13_Attribute_Assignment)-[:crm_P140_assigned_attribute_to]" \
+                               "->(ga:crm_E17_Type_Assignment), "
+            genderassertion += "(a2)-[:crm_P177_assigned_property_type]->(sp42), (a2)-[:crm_P141_assigned]->(s), "
+            genderassertion += "(a2)-[:crm_P14_carried_out_by]->(pbw)"
+            session.run(genderassertion % (graphperson.id, constants[pbw_sex].id, agent.id, assertion_props))
+
+
+def identifier_handler(graphdriver, agent, sqlperson, graphperson, constants):
+    pass
+
+
+def death_handler(graphdriver, agent, factoid, graphperson, constants):
+    with graphdriver.session() as session:
+        # Each factoid is its own set of assertions pertaining to the single death of a person.
+        # When there are multiple sources, we will have to review them for consistency and make
+        # proxies for the death event as necessary.
+        # Get the factoid source
+        sourcenode = get_source_node(session, factoid)
+        # See if we can find the death event
+        deathclass = 'crm_E69_Death'
+        deathpred = 'crm_P100_was_death_of'
+        deathevent = _find_or_create_event(graphdriver, graphperson, deathclass, deathpred)
+        # Create the new assertion that says the death happened. Start by gathering all our existing
+        # nodes and reified predicates:
+        # - the person
+        # - the agent
+        # - the source
+        # - the event node
+        # - the main event predicate
+        # - the event description predicate
+        # - the event dating predicate
+        deathassertion = "MATCH (p), (agent), (source), (devent), (dpred), (descpred), (datepred) " \
+                         "WHERE id(p) = %d AND id(agent) = %d AND id(source) = %d AND id(devent) = %d " \
+                         "AND id(dpred) = %d AND id(descpred) = %d AND id(datepred) = %d " \
+                         % (graphperson.id, agent.id, sourcenode.id, deathevent.id, constants[deathpred].id,
+                            constants['crm_P3_has_note'].id, constants['crm_P4_has_time_span'].id)
+        deathassertion += "CREATE (a:crm_E13_Attribute_Assignment)-[:crm_P140_assigned_attribute_to]->(de), "
+        deathassertion += "(a)-[:crm_P177_assigned_property_type]->(dpred), "
+        deathassertion += "(a)-[:crm_P141_assigned]->(p), "
+        deathassertion += "(a)-[:crm_P14_carried_out_by]->(agent), "
+        deathassertion += "(a)-[:crm_P70r_is_documented_in]->(source) "
+        # Create an assertion about how the death is described
+        deathassertion += "CREATE (a1:crm_E13_Attribute_Assignment)-[:crm_P140_assigned_attribute_to]->(de), "
+        deathassertion += "(a1)-[:crm_P177_assigned_property_type]->(descpred), "
+        deathassertion += "(a1)-[:crm_P141_assigned]->(desc:crm_E62_String {content:%s}) " % factoid.replace_referents()
+        deathassertion += "(a1)-[:crm_P14_carried_out_by]->(agent), "
+        deathassertion += "(a1)-[:crm_P70r_is_documented_in]->(source) "
+        # Create an assertion about when the death happened.
+        returnstring = "RETURN a, a1"
+        # TODO parse this later into a real date range
+        deathdate = factoid.deathFactoid.sourceDate
+        if deathdate is not None and deathdate != '':
+            deathassertion += "CREATE (a2:crm_E13_Attribute_Assignment)-[:crm_P140_assigned_attribute_to]->(de), "
+            deathassertion += "(a2)-[:crm_P177_assigned_property_type]->(datepred), "
+            deathassertion += "(a2)-[:crm_P141_assigned]->(desc:crm_E52_Time-Span {content:%s}) " % deathdate
+            deathassertion += "(a2)-[:crm_P14_carried_out_by]->(agent), "
+            deathassertion += "(a2)-[:crm_P70r_is_documented_in]->(source) "
+            returnstring += ", a2"
+        # Now actually run the query!
+        deathassertion += returnstring
+        result = session.run(deathassertion).single()
+    # This contains the node for all assertions created. Will we use the return value? Who knows?
+    return result
+
+
+def _find_or_create_event(graphdriver, person, crm_class, crm_predicate):
+    with graphdriver.session() as session:
+        query = "MATCH (pers) WHERE id(pers) %d " % person.id
+        query += "MATCH (a:crm_E13_Attribute_Assignment)-[:crm_P140_assigned]->(pers) "
+        query += "MATCH (a)-[:crm_P141_assigned_attribute_to]->(event:%s)" % crm_class
+        if crm_predicate is not None:
+            query += "MATCH (a)-[:crm_P177_assigned_property_type]->(pred:%s) " % crm_predicate
+        query += "RETURN event"
+        result = session.run(query).single()
+        if result is None:
+            # If we don't have this event tied to this person yet, create the event and
+            # make sure the predicate exists
+            result = session.run("CREATE (event:%s) RETURN event" % crm_class).single()
+    return result['event']
 
 
 def get_source_node(session, factoid):
     return session.run("MERGE (src:crm_E31_Document {identifier:'%s', reference:'%s'}) RETURN src"
                        % (escape_text(factoid.source), escape_text(factoid.sourceRef))).single()['src']
+
+
+def get_authority_node(session, authoritylist):
+    if len(authoritylist) == 0:
+        return None
+    if len(authoritylist) == 1:
+        return session.run("MERGE (p:crm_E21_Person {identifier:'%s'}) RETURN p" % authoritylist[0]).single()['p']
+    if len(authoritylist) > 1:
+        # Make/find a group including the people and return the group node
+        nodes = {}
+        for idx, p in enumerate(authoritylist):
+            v = chr(idx+97)
+            nodes[v] = "(%s:crm_E21_Person {identifier:'%s'})" % (v, p)
+        # First we try to match a group containing all these people; if we match nothing,
+        # then we create the group and return it.
+        find_individuals = ' '.join(["MERGE %s" % x for x in nodes.values()])
+        with_individuals = ','.join(nodes.keys())
+        find_group = ', '.join(["(group)-[:crm_P107_has_current_or_former_member]->(%s)" % x for x in nodes.keys()])
+        g = session.run("%s WITH %s MATCH (group:crm_E74_Group), %s RETURN group" % (
+            find_individuals, with_individuals, find_group)).single()
+        if g is None:
+            g = session.run("%s WITH %s CREATE (group:crm_E74_Group), %s RETURN group" % (
+                find_individuals, with_individuals, find_group)).single()
+        return g['group']
 
 
 def get_location_node(session, pbwloc):
@@ -240,7 +394,8 @@ def get_location_node(session, pbwloc):
                 ag = session.run("MERGE (ag:crm_E39_Actor {identifier:'Charlotte Roueché'}) RETURN ag").single()['ag']
                 dbloc = session.run("MERGE (l:crm_E94_Space_Primitive {db: '%s', id: %d}) "
                                     "RETURN l" % (db, dbid)).single()['l']
-                pred = session.run("MERGE (p:crm_E55_Type {property:'crm_P168_place_is_defined_by'}) RETURN p").single()['p']
+                pred = session.run(
+                    "MERGE (p:crm_E55_Type {property:'crm_P168_place_is_defined_by'}) RETURN p").single()['p']
                 session.run(
                     "MATCH (l), (ag), (dbl), (p) WHERE id(l) = %d AND id(ag) = %d AND id(dbl) = %d AND id(p) = %d "
                     "MERGE (a:crm_E13_Attribute_Assignment)-[:crm_P140_assigned_attribute_to]->(l) "
@@ -249,7 +404,6 @@ def get_location_node(session, pbwloc):
     else:
         loc_node = loc_query['l']
     return loc_node
-
 
 
 def get_object_node(session, factoid_type, factoid, person):
@@ -328,12 +482,12 @@ def get_qualifier_properties(factoid):
     return " {%s}" % ', '.join(props) if len(props) else ""
 
 
-def process_persons(personlist, graphdriver, agent, sexes, predicates):
+def process_persons(personlist, graphdriver, pbwagent, pbwfactoids, pbwrecordinfo, pbwvocabs):
     """Go through the relevant person records and process them for factoids"""
     processed = 0
     for person in personlist:
-        # Skip the Anonymi for now
-        if person.name is 'Anonymi':
+        # Skip the anonymous groups for now
+        if person.name == 'Anonymi':
             continue
         processed += 1
         # Create or find the person node
@@ -341,91 +495,33 @@ def process_persons(personlist, graphdriver, agent, sexes, predicates):
         nodelookup = "MERGE (p:E21_Person {name:'%s', code:%d}) RETURN p" % (person.name, person.mdbCode)
         with graphdriver.session() as session:
             graph_person = session.run(nodelookup).single()['p']
-            # Add the assertions that are in the direct person record:
-            # - sex
-            for ftype in predicates:
-                predicate = predicates[ftype]
-                if ftype == 'sex':
-                    uncertain = False
-                    our_sex = person.sex
-                    if our_sex == 'Mixed':  # we have already excluded Anonymi
-                        our_sex = 'Unknown'
-                    elif our_sex == 'Eunach':  # correct misspelling in source DB
-                        our_sex = 'Eunuch'
-                    elif our_sex == '(Unspecified)':
-                        our_sex = 'Unknown'
-                    elif our_sex == 'Eunuch (Probable)':
-                        our_sex = 'Eunuch'
-                        uncertain = True
-                    if uncertain:
-                        assertion_props = ' {uncertain:true}'
-                    else:
-                        assertion_props = ''
-                    if our_sex != "Unknown":
-                        # subject
-                        print("...setting gender assignment to %s%s" % (our_sex, " (maybe)" if uncertain else ""))
-                        sexassertion = "MATCH (p), (s), (pbw) WHERE id(p) = %d AND id(sp) = %d AND id(s) = %d " \
-                                       "AND id(pbw) = %d MERGE (a:E17_Type_Assignment%s)-[:P3_has_note]->(g) " \
-                                       "MERGE (s)<-[]-(a)-[:P41_classified]->(p)" \
-                                       % (graph_person.id, 100, sexes[our_sex].id, agent.id, assertion_props)
-                        session.run(sexassertion)
-                elif ftype == 'disambiguation':
-                    # - description / disambiguator
-                    print("...setting disambiguating description to %s" % person.descName)
-                    disamb_node = session.run("MERGE (d:E62_String {class:'disambiguation', text:'%s'}) RETURN d"
-                                              % escape_text(person.descName)).single()['d']
-                    disassertion = "MATCH (p), (dp), (pbw), (d) WHERE id(p) = %d AND id(dp) = %d AND id(pbw) = %d AND "\
-                                   "id(d) = %d MERGE (dp)<-[:P177_assigned_property_type]-" \
-                                   "(a:E13_Attribute_Assignment)-[:P140_assigned_attribute_to]->(p) MERGE (pbw)<-[" \
-                                   ":P14_carried_out_by]-(a)-[:P141_assigned]->(d) RETURN a" % \
-                                   (graph_person.id, predicate.id, agent.id, disamb_node.id)
-                    session.run(disassertion)
-                elif ftype == 'identified':
-                    # - name/identifier
-                    print("...setting identifier to %s" % person.nameOL)
-                    ident_node = session.run("MERGE (i:E41_Appellation {text:'%s'}) RETURN i").single()['i']
-                    identassertion = "MATCH (p), (ip), (pbw), (i) WHERE id(p) = %d AND id(ip) = %d AND id(pbw) = %d " \
-                                     "AND id(i) = %d MERGE (ip)<-[:P177_assigned_property_type]-" \
-                                     "(a:E13_Attribute_Assignment)-[:P140_assigned_attribute_to]->(p) MERGE (" \
-                                     "pbw)<-[:P14_carried_out_by]-(a)-[:P141_assigned]->(i) RETURN a" \
-                                     % (graph_person.id, predicate.id, agent.id, ident_node.id)
-                    session.run(identassertion)
-                else:
-                    # Now add the different sorts of explicit factoids
-                    for f in person.main_factoids(ftype):
-                        # The factoid has the same subject, the predicate we created, some object (which will depend
-                        # on the factoid type), a source from which the information comes, and an authority who
-                        # interpreted the source. The predicate might also have qualifier properties.
-                        # First thing: collect the object in question.
-                        obj = get_object_node(session, ftype, f, person)
-                        if obj is None:
-                            print("Skipping un-factoided %s on person %d (%s %d)"
-                                  % (ftype, person.personKey, person.name, person.mdbCode))
-                            continue
-                        # Get the qualifier, if there is one
-                        qualifier = get_qualifier_properties(f)
-                        # Get the source and the authority
-                        source_node = get_source_node(session, f)
-                        factoid_auth = auth_map.get(f.source, [])
-                        # Make sure the assertion itself exists, and then add the source and authorities.
-                        # This lets us have multiple sources making the same assertion, or multiple notes on
-                        # the assertion predicate.
-                        doassertion = "MATCH (p), (dop), (do) WHERE id(p) = %d AND id(dop) = %d AND id(do) = %d MERGE "\
-                                      "(do)<-[:P141_assigned]-(a:E13_Attribute_Assignment)-" \
-                                      "[:P140_assigned_attribute_to]->(p) " \
-                                      "MERGE (a)-[:P177_assigned_property_type%s]->(dop) " \
-                                      "RETURN DISTINCT a" % (graph_person.id, predicate.id, obj.id, qualifier)
-                        a = session.run(doassertion).single()['a']
-                        # Now add the source
-                        session.run("MATCH (a), (src) WHERE id(a) = %d AND id(src) = %d "
-                                    "MERGE (a)-[:P17_was_motivated_by]->(src)"
-                                    % (a.id, source_node.id))
-                        for auth in factoid_auth:
-                            auth_node = session.run("MERGE (ag:E39_Actor {identifier:'%s'}) RETURN ag"
-                                                    % auth).single()['ag']
-                            session.run("MATCH (a), (ag) WHERE id(a) = %d AND id(ag) = %d "
-                                        "MERGE (a)-[:P14_carried_out_by]->(ag)"
-                                        % (a.id, auth_node.id))
+
+        # Get the 'factoids' that are directly in the person record
+        for ftype in pbwrecordinfo:
+            ourftype = _smooth_labels(ftype)
+            ourvocab = pbwvocabs.get(ourftype, dict())
+            ourvocab.update(pbwvocabs.get('Predicates'))
+            try:
+                method = eval("%s_handler" % ourftype)
+                method(graphdriver, pbwagent, person, graph_person, ourvocab)
+            except NameError:
+                pass
+
+        # Now get the factoids that are really factoids
+        for ftype in pbwfactoids:
+            ourftype = _smooth_labels(ftype)
+            ourvocab = pbwvocabs.get(ourftype, dict())
+            ourvocab.update(pbwvocabs.get('Predicates'))
+            try:
+                method = eval("%s_handler" % ourftype)
+                for f in person.main_factoids(ftype):
+                    # Get the right agent for this source
+                    authority_node = get_authority_node(session, auth_map.get(f.source, [])) or pbwagent
+                    # Call the handler for this factoid type
+                    method(graphdriver, authority_node, f, graph_person, ourvocab)
+
+            except NameError:
+                print("No handler for %s factoids; skipping." % ftype)
 
     print("Processed %d person records." % processed)
 
@@ -438,10 +534,10 @@ if __name__ == '__main__':
     mysqlsession = smaker()
     # Connect to the graph DB
     driver = GraphDatabase.driver(config.graphuri, auth=(config.graphuser, config.graphpw))
-    # Get our authority map
+    # Get our hardcoded authority map
     auth_map = get_authmap()
-    # Make / retrieve the global nodes
-    (pbwagent, pbwsexes, pbwpredicates) = setup_constants(mysqlsession, driver)
+    # Make / retrieve the global nodes and constants
+    (pbwagent, pbwfactoids, pbwrecordinfo, pbwvocabs) = setup_constants(mysqlsession, driver)
     # Process the person records
-    process_persons(collect_person_records(mysqlsession), driver, pbwagent, pbwsexes, pbwpredicates)
+    process_persons(collect_person_records(mysqlsession), driver, pbwagent, pbwfactoids, pbwrecordinfo, pbwvocabs)
     print("Done!")
