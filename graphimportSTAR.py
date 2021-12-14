@@ -156,8 +156,8 @@ def get_authmap():
 
 
 def escape_text(t):
-    """Escape any single quotes in strings that need to go into Neo4J properties"""
-    return t.replace("'", "\\'")
+    """Escape any single quotes or double quotes in strings that need to go into Neo4J properties"""
+    return t.replace("'", "\\'").replace('"', '\\"')
 
 
 def collect_person_records(sqlsession):
@@ -165,16 +165,16 @@ def collect_person_records(sqlsession):
     floruit = r'XI(?!I)|10[3-8]\d'
     relevant = [x for x in sqlsession.query(pbw.Person).all() if re.search(floruit, x.floruit) and len(x.factoids) > 0]
     print("Found %d relevant people" % len(relevant))
+    return relevant
     # Debugging / testing: restrict the list of relevant people
-    debugnames = ['Herve', 'Ioannes', 'Konstantinos', 'Anna']
-    debugcodes = [62, 68, 101, 102]
-    return [x for x in relevant if x.name in debugnames and x.mdbCode in debugcodes]
-    # return relevant
+    # debugnames = ['Herve', 'Ioannes', 'Konstantinos', 'Anna']
+    # debugcodes = [62, 68, 101, 102]
+    # return [x for x in relevant if x.name in debugnames and x.mdbCode in debugcodes]
 
 
 def _init_typology(graphdriver, superclass, instances):
     """Initialize the typologies that are in the PBW database, knowing that the type names were not chosen
-    for ease of variable expression. Returns a map of type name -> Neo4J node."""
+    for ease of variable expression. Returns a map of type name -> Neo4J node ID."""
     with graphdriver.session() as session:
         cypherq = "MERGE (super:crm_E55_Type {value:\"%s\"}) " % superclass
         i = 0
@@ -187,7 +187,7 @@ def _init_typology(graphdriver, superclass, instances):
             i += 1
             varmap[var] = inst
             cypherq += "MERGE (%s:crm_E55_Type {value:\"%s\"}) " \
-                       "MERGE (%s)-[:P127_has_broader_term]->(super) " % (var, inst, var)
+                       "MERGE (%s)-[:crm_P127_has_broader_term]->(super) " % (var, inst, var)
         cypherq += "RETURN %s" % ', '.join(["%s" % x for x in varmap.keys()])
         print(cypherq)
         types = session.run(cypherq).single()
@@ -215,7 +215,7 @@ def setup_constants(sqlsession, graphdriver):
     """Set up the necessary object and predicate nodes that will be shared by the individual records"""
     with graphdriver.session() as session:
         # Make our anonymous agent PBW for the un-sourced information
-        generic_agent = session.run("MERGE (a:E39_Actor {identifier:'PBW'}) return a").single()['a']
+        generic_agent = session.run("MERGE (a:crm_E39_Actor {identifier:'PBW'}) return a").single()['a']
         # Get the list of factoid types
         pbw_factoid_types = [x.typeName for x in sqlsession.query(pbw.FactoidType).all()
                              if x.typeName != '(Unspecified)']
@@ -251,7 +251,7 @@ def setup_constants(sqlsession, graphdriver):
         ]
         prednodes = dict()
         for pred in our_predicates:
-            npred = session.run("MERGE (n:`%s`) RETURN n").single()['n']
+            npred = session.run("MERGE (n:%s) RETURN n" % pred).single()['n']
             prednodes[pred] = npred.id
         controlled_vocabs['Predicates'] = prednodes
 
@@ -288,7 +288,7 @@ def gender_handler(graphdriver, agent, sqlperson, graphperson, constants):
                                "->(ga), "
             genderassertion += "(a2)-[:crm_P177_assigned_property_type]->(sp42), (a2)-[:crm_P141_assigned]->(s), "
             genderassertion += "(a2)-[:crm_P14_carried_out_by]->(pbw)"
-            print(genderassertion % (graphperson.id, constants[pbw_sex], agent.id, assertion_props))
+            # print(genderassertion % (graphperson.id, constants[pbw_sex], agent.id, assertion_props))
             session.run(genderassertion % (graphperson.id, constants[pbw_sex], agent.id, assertion_props))
 
 
@@ -321,13 +321,13 @@ def death_handler(graphdriver, agent, factoid, graphperson, constants):
                          "AND id(dpred) = %d AND id(descpred) = %d AND id(datepred) = %d " \
                          % (graphperson.id, agent.id, sourcenode.id, deathevent.id, constants[deathpred],
                             constants['crm_P3_has_note'], constants['crm_P4_has_time_span'])
-        deathassertion += "CREATE (a:crm_E13_Attribute_Assignment)-[:crm_P140_assigned_attribute_to]->(de), "
+        deathassertion += "CREATE (a:crm_E13_Attribute_Assignment)-[:crm_P140_assigned_attribute_to]->(devent), "
         deathassertion += "(a)-[:crm_P177_assigned_property_type]->(dpred), "
         deathassertion += "(a)-[:crm_P141_assigned]->(p), "
         deathassertion += "(a)-[:crm_P14_carried_out_by]->(agent), "
         deathassertion += "(a)-[:crm_P70r_is_documented_in]->(source) "
         # Create an assertion about how the death is described
-        deathassertion += "CREATE (a1:crm_E13_Attribute_Assignment)-[:crm_P140_assigned_attribute_to]->(de), "
+        deathassertion += "CREATE (a1:crm_E13_Attribute_Assignment)-[:crm_P140_assigned_attribute_to]->(devent), "
         deathassertion += "(a1)-[:crm_P177_assigned_property_type]->(descpred), "
         deathassertion += "(a1)-[:crm_P141_assigned]->(desc:crm_E62_String {content:\"%s\"}), " % escape_text(
             factoid.replace_referents())
@@ -335,18 +335,22 @@ def death_handler(graphdriver, agent, factoid, graphperson, constants):
         deathassertion += "(a1)-[:crm_P70r_is_documented_in]->(source) "
         # Create an assertion about when the death happened.
         returnstring = "RETURN a, a1"
-        # TODO parse this later into a real date range
-        deathdate = factoid.deathRecord.sourceDate
-        if deathdate is not None and deathdate != '':
-            deathassertion += "CREATE (a2:crm_E13_Attribute_Assignment)-[:crm_P140_assigned_attribute_to]->(de), "
-            deathassertion += "(a2)-[:crm_P177_assigned_property_type]->(datepred), "
-            deathassertion += "(a2)-[:crm_P141_assigned]->(datedesc:crm_E52_Time_Span {content:\"%s\"}), " % deathdate
-            deathassertion += "(a2)-[:crm_P14_carried_out_by]->(agent), "
-            deathassertion += "(a2)-[:crm_P70r_is_documented_in]->(source) "
-            returnstring += ", a2"
+        if factoid.deathRecord is None:
+            print("Person <%s %d> has a death factoid (\"%s\") without a death record! Go check it out."
+                  % (graphperson.get("name"), graphperson.get("code"), factoid.engDesc))
+        else:
+            # TODO parse this later into a real date range
+            deathdate = factoid.deathRecord.sourceDate
+            if deathdate is not None and deathdate != '':
+                deathassertion += "CREATE (a2:crm_E13_Attribute_Assignment)-[:crm_P140_assigned_attribute_to]->(devent), "
+                deathassertion += "(a2)-[:crm_P177_assigned_property_type]->(datepred), "
+                deathassertion += "(a2)-[:crm_P141_assigned]->(datedesc:crm_E52_Time_Span {content:\"%s\"}), " % deathdate
+                deathassertion += "(a2)-[:crm_P14_carried_out_by]->(agent), "
+                deathassertion += "(a2)-[:crm_P70r_is_documented_in]->(source) "
+                returnstring += ", a2"
         # Now actually run the query! Heaven help us.
         deathassertion += returnstring
-        print(deathassertion)
+        # print(deathassertion)
         result = session.run(deathassertion).single()
     # This contains the node for all assertions created. Will we use the return value? Who knows?
     return result
