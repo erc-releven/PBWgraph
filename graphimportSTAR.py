@@ -175,7 +175,7 @@ def collect_person_records(sqlsession):
 def _init_typology(session, superclass, instances):
     """Initialize the typologies that are in the PBW database, knowing that the type names were not chosen
     for ease of variable expression. Returns a map of type name -> Neo4J node ID."""
-    cypherq = "MERGE (super:crm_E55_Type {value:\"%s\"}) " % superclass
+    cypherq = "MERGE (super:crm_E55_Type {value:\"%s\", constant:TRUE}) " % superclass
     i = 0
     varmap = dict()
     for inst in instances:
@@ -185,7 +185,7 @@ def _init_typology(session, superclass, instances):
         var = "inst%d" % i
         i += 1
         varmap[var] = inst
-        cypherq += "MERGE (%s:crm_E55_Type {value:\"%s\"}) " \
+        cypherq += "MERGE (%s:crm_E55_Type {value:\"%s\", constant:TRUE}) " \
                    "MERGE (%s)-[:crm_P127_has_broader_term]->(super) " % (var, inst, var)
     cypherq += "RETURN %s" % ', '.join(["%s" % x for x in varmap.keys()])
     print(cypherq)
@@ -214,7 +214,7 @@ def setup_constants(sqlsession, graphdriver):
     """Set up the necessary object and predicate nodes that will be shared by the individual records"""
     with graphdriver.session() as session:
         # Make our anonymous agent PBW for the un-sourced information
-        generic_agent = session.run("MERGE (a:crm_E39_Actor {identifier:'PBW'}) return a").single()['a']
+        generic_agent = session.run("MERGE (a:crm_E39_Actor {identifier:'PBW', constant:TRUE}) return a").single()['a']
         # Get the list of factoid types
         pbw_factoid_types = [x.typeName for x in sqlsession.query(pbw.FactoidType).all()
                              if x.typeName != '(Unspecified)']
@@ -240,7 +240,7 @@ def setup_constants(sqlsession, graphdriver):
         langnodes = {}
         for x in sqlsession.query(pbw.LanguageSkill).all():
             lang = x.languageName
-            cypherq = "MERGE (lang:crm_E56_Language {value:\"%s\"}) RETURN lang"
+            cypherq = "MERGE (lang:crm_E56_Language {value:\"%s\", constant:TRUE}) RETURN lang"
             result = session.run(cypherq).single()
             langnodes[lang] = result['lang']
         controlled_vocabs['Language'] = langnodes
@@ -251,11 +251,12 @@ def setup_constants(sqlsession, graphdriver):
             'crm_P41_classified',
             'crm_P100_was_death_of',
             'crm_P3_has_note',
-            'crm_P4_has_time_span'
+            'crm_P4_has_time_span',
+            'crm_P107_has_current_or_former_member'
         ]
         prednodes = dict()
         for pred in our_predicates:
-            npred = session.run("MERGE (n:%s) RETURN n" % pred).single()['n']
+            npred = session.run("MERGE (n:%s {constant:TRUE}) RETURN n" % pred).single()['n']
             prednodes[pred] = npred.id
         controlled_vocabs['Predicates'] = prednodes
 
@@ -267,9 +268,9 @@ def _create_assertion_query(subj, pred, obj, auth, src, var="a"):
     st += "(%s)-[:crm_P177_assigned_property_type]->(%s), " % (var, pred)
     st += "(%s)-[:crm_P141_assigned]->(%s), " % (var, obj)
     if auth is not None:
-        st += "(%s)-[:crm_P14_carried_out_by]->(%s), " % (var, auth)
+        st += "(%s)-[:crm_P14_carried_out_by]->(%s) " % (var, auth)
     if src is not None:
-        st += "(%s)-[:crm_P70r_is_documented_in]->(%s) " % (var, src)
+        st += ", (%s)-[:crm_P70r_is_documented_in]->(%s) " % (var, src)
     return st
 
 
@@ -305,9 +306,10 @@ def identifier_handler(graphdriver, agent, sqlperson, graphperson, constants):
     # The identifier in this context is the 'origName' field, thus an identifier assigned by PBW
     # not on the basis of any particular source
     with graphdriver.session() as session:
-        idassertion = "MATCH (p), (pbw) WHERE id(p) = %d AND id(pbw) = %d " % (graphperson.id, agent.id)
-        idassertion += "MERGE (app:crm_E41_Appellation {value: %s}) " % sqlperson.origName
-        idassertion += _create_assertion_query('p', constants['crm_P1_is_identified_by'], 'app', 'pbw', None)
+        idassertion = "MATCH (p), (pbw), (pred) WHERE id(p) = %d AND id(pbw) = %d AND id(pred) = %d " \
+                      % (graphperson.id, agent.id, constants['crm_P1_is_identified_by'])
+        idassertion += "MERGE (app:crm_E41_Appellation {value: \"%s\"}) " % sqlperson.nameOL
+        idassertion += _create_assertion_query('p', 'pred', 'app', 'pbw', None)
         idassertion += "RETURN a"
         return session.run(idassertion)
 
@@ -315,9 +317,10 @@ def identifier_handler(graphdriver, agent, sqlperson, graphperson, constants):
 def disambiguation_handler(graphdriver, agent, sqlperson, graphperson, constants):
     # The short description of the person provided by PBW
     with graphdriver.session() as session:
-        disassertion = "MATCH (p), (pbw) WHERE id(p) = %d AND id(pbw) = %d " % (graphperson.id, agent.id)
-        disassertion += "CREATE (desc:crm_E62_String {value:%s}) " % escape_text(sqlperson.descName)
-        disassertion += _create_assertion_query('p', constants['crm_P3_has_note'], 'desc', 'pbw', None)
+        disassertion = "MATCH (p), (pbw), (pred) WHERE id(p) = %d AND id(pbw) = %d AND id(pred) = %d " % \
+                       (graphperson.id, agent.id, constants['crm_P3_has_note'])
+        disassertion += "CREATE (desc:crm_E62_String {value:\"%s\"}) " % escape_text(sqlperson.descName)
+        disassertion += _create_assertion_query('p', 'pred', 'desc', 'pbw', None)
         disassertion += "RETURN a"
         return session.run(disassertion)
 
@@ -399,8 +402,8 @@ def death_handler(graphdriver, agent, factoid, graphperson, constants):
         # Create an assertion about when the death happened.
         returnstring = "RETURN a, a1"
         if factoid.deathRecord is None:
-            print("Person <%s %d> has a death factoid (\"%s\") without a death record! Go check it out."
-                  % (graphperson.get("name"), graphperson.get("code"), factoid.engDesc))
+            print("Someone has a death factoid (%d, \"%s\") without a death record! Go check it out."
+                  % (factoid.factoidKey, factoid.engDesc))
         else:
             # TODO parse this later into a real date range
             deathdate = factoid.deathRecord.sourceDate
@@ -430,22 +433,22 @@ def _assign_group_membership(graphdriver, agent, factoid, graphperson, constants
         sourcenode = get_source_node(session, factoid)
         # Get the ethnic group in question
         groupnode = _find_or_create_group(graphdriver, grouplabel, grouptype)
-        predicate = constants['crm_P107_has_current_or_former_member']
         # Need the person, the group
         gassertion = "MATCH (p), (agent), (source), (group), (mpred)  " \
                      "WHERE id(p) = %d AND id(agent) = %d AND id(source) = %d AND id(group) = %d " \
-                     "AND id(mpred) = %d " % (graphperson.id, agent.id, sourcenode.id, groupnode.id, predicate)
+                     "AND id(mpred) = %d " % (graphperson.id, agent.id, sourcenode.id, groupnode.id,
+                                              constants['crm_P107_has_current_or_former_member'])
         gassertion += _create_assertion_query('group', 'mpred', 'p', 'agent', 'source')
         gassertion += "RETURN a"
         return session.run(gassertion).single()
 
 
 def ethnicity_handler(graphdriver, agent, factoid, graphperson, constants):
-    if factoid.ethnicityInfo is None:
+    if factoid.ethnicityInfo is None or factoid.ethnicityInfo.ethnicity is None:
         # We can't assign any ethnicity without the ethnicity info
         print("Empty ethnicity factoid found: id %s" % factoid.factoidKey)
         return
-    elabel = factoid.ethnicityInfo.ethnicity
+    elabel = factoid.ethnicityInfo.ethnicity.ethName
     return _assign_group_membership(graphdriver, agent, factoid, graphperson, constants, 'Ethnicity', elabel)
 
 
@@ -453,7 +456,10 @@ def religion_handler(graphdriver, agent, factoid, graphperson, constants):
     if factoid.religion is None:
         print("Empty religion factoid found: id %d" % factoid.factoidKey)
         return
-    rlabel = factoid.religion.religionName
+    rlabel = factoid.religion
+    # Special case
+    if factoid.religion == '':
+        rlabel = 'Heretic'
     return _assign_group_membership(graphdriver, agent, factoid, graphperson, constants, 'Religion', rlabel)
 
 
@@ -521,7 +527,7 @@ def process_persons(personlist, graphdriver, pbwagent, pbwfactoids, pbwrecordinf
                      "MERGE (idlabel:crm_E42_Identifier {value:'%s %d'}) " \
                      "MERGE (idass:crm_E15_Identifier_Assignment)-[:crm_P37_assigned]->(idlabel) " \
                      "MERGE (idass)-[:crm_p140_assigned_attribute_to]->(p:crm_E21_Person) " \
-                     "MERGE (idass)-[:crm_P14_carried_out_by]->(agent) RETURN p" % \
+                     "MERGE (idass)-[:crm_P14_carried_out_by]->(pbw) RETURN p" % \
                      (pbwagent.id, person.name, person.mdbCode)
         with graphdriver.session() as session:
             graph_person = session.run(nodelookup).single()['p']
