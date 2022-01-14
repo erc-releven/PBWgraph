@@ -484,6 +484,52 @@ def description_handler(graphdriver, agent, factoid, graphperson, constants):
         return session.run(descassertion).single()
 
 
+def _find_or_create_kinship(session, graphperson, graphkin, source):
+    # See if there is an existing kinship group between the person and their kin according to the
+    # source in question. (Technically according to source and authority in question, but as they
+    # are keyed together in a static hash...)
+    kinquery = "MATCH (p), (kin), (source) WHERE id(p) = %d AND id(kin) = %d AND id(source) = %d " \
+               % (graphperson.id, graphkin.id, source.id)
+    kinquery += "MATCH (a1:crm_E13_attribute_assignment)-[:crm_p140_assigned_attribute_to]->(kg:crm_E74_Kinship_Group), "
+    kinquery += "(a1)-[:crm_p141_assigned]->(p), (a1)-[:crm_P70r_is_documented_in]->(source) "
+    kinquery += "MATCH (a2:crm_E13_attribute_assignment)-[:crm_p140_assigned_attribute_to]->(kg), "
+    kinquery += "(a2)-[:crm_p141_assigned]->(kin), (a2)-[:crm_P70r_is_documented_in]->(source) RETURN kin"
+    return session.run(kinquery).single()
+
+
+def kinship_handler(graphdriver, agent, factoid, graphperson, constants):
+    # Kinships are modeled as two-person groups with their own separate label (because, honestly)
+    # and with .1 types as property attributes as per the CRM spec.
+    if factoid.kinshipType is None:
+        print("Empty kinship factoid found: id %d" % factoid.factoidKey)
+        return
+    with graphdriver.session() as session:
+        sourcenode = get_source_node(session, factoid)
+        for kin in factoid.referents():
+            graphkin = _find_or_create_graphperson(session, agent, kin.name, kin.mdbCode)
+            kinassertion = "MATCH (p), (kin), (agent), (source) " \
+                           "WHERE id(p) = %d AND id(kin) = %d AND id(agent) = %d AND id(source) = %d " \
+                           % (graphperson.id, graphkin.id, agent.id, sourcenode.id)
+            kinassertion += "MERGE (kp1:crm_P107 {type:\"%s\"}) MERGE (kp2:crm_P107 {type:\"%s_inverse\"}) " \
+                            % (factoid.kinshipType.gunspecRelat, factoid.kinshipType.gunspecRelat)
+            kinassertion += "CREATE (kg:crm_E74_Kinship_Group) "
+            kinassertion += _create_assertion_query('kg', 'kp1', 'p', 'agent', 'source', 'a1')
+            kinassertion += _create_assertion_query('kg', 'kp2', 'kin', 'agent', 'source', 'a2')
+            kinassertion += "RETURN a1, a2"
+            return session.run(kinassertion)
+
+
+def _find_or_create_graphperson(session, agent, name, mdbCode):
+    nodelookup = "MATCH (pbw) WHERE id(pbw) = %d " \
+                 "MERGE (idlabel:crm_E42_Identifier {value:'%s %d'}) " \
+                 "MERGE (idass:crm_E15_Identifier_Assignment)-[:crm_P37_assigned]->(idlabel) " \
+                 "MERGE (idass)-[:crm_p140_assigned_attribute_to]->(p:crm_E21_Person) " \
+                 "MERGE (idass)-[:crm_P14_carried_out_by]->(pbw) RETURN p" % \
+                 (agent.id, name, mdbCode)
+    graph_person = session.run(nodelookup).single()['p']
+    return graph_person
+
+
 def get_location_node(session, pbwloc):
     # The location record has an identifer, plus a couple of assertions by Charlotte about its
     # correspondence in the GeoNames and/or Pleiades database.
@@ -523,14 +569,8 @@ def process_persons(personlist, graphdriver, pbwagent, pbwfactoids, pbwrecordinf
         print("Making/finding node for person %s %d" % (person.name, person.mdbCode))
         # In theory this should be an E14 Identifier Assignment. Start the merge from the
         # specific information we have, which is the identifier itself.
-        nodelookup = "MATCH (pbw) WHERE id(pbw) = %d " \
-                     "MERGE (idlabel:crm_E42_Identifier {value:'%s %d'}) " \
-                     "MERGE (idass:crm_E15_Identifier_Assignment)-[:crm_P37_assigned]->(idlabel) " \
-                     "MERGE (idass)-[:crm_p140_assigned_attribute_to]->(p:crm_E21_Person) " \
-                     "MERGE (idass)-[:crm_P14_carried_out_by]->(pbw) RETURN p" % \
-                     (pbwagent.id, person.name, person.mdbCode)
         with graphdriver.session() as session:
-            graph_person = session.run(nodelookup).single()['p']
+            graph_person = _find_or_create_graphperson(session, pbwagent, person.name, person.mdbCode)
 
         # Get the 'factoids' that are directly in the person record
         for ftype in pbwrecordinfo:
