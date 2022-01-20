@@ -230,12 +230,21 @@ def setup_constants(sqlsession, graphdriver):
                                                           in sqlsession.query(pbw.Occupation).all()])
         controlled_vocabs['Kinship'] = _init_typology(session, 'Kinship',
                                                       [x.gspecRelat for x in sqlsession.query(pbw.KinshipType).all()])
-        # controlled_vocabs['Dignity'] = _init_typology(session, 'Dignity',
-        #                                               [x.stdName for x in sqlsession.query(pbw.DignityOffice).all()])
         controlled_vocabs['Ethnicity'] = _init_typology(session, 'Ethnicity',
                                                         [x.ethName for x in sqlsession.query(pbw.Ethnicity).all()])
         controlled_vocabs['Religion'] = _init_typology(session, 'Religion',
                                                        [x.religionName for x in sqlsession.query(pbw.Religion).all()])
+        # Dignities in PBW tend to be specific to institutions / areas;
+        # make an initial selection by breaking on the 'of'
+        all_dignities = set()
+        for x in sqlsession.query(pbw.DignityOffice).all():
+            if ' of the ' in x: # Don't split (yet) titles that probably don't refer to places
+                dignity = [x]
+            else:
+                dignity = x.stdName.split(' of ')
+            all_dignities.add(dignity[0])
+        controlled_vocabs['Dignity'] = _init_typology(session, 'Dignity', all_dignities)
+
         # Language has its own subtype so handle this separately
         langnodes = {}
         for x in sqlsession.query(pbw.LanguageSkill).all():
@@ -342,7 +351,23 @@ def _find_or_create_event(graphdriver, person, crm_class, crm_predicate):
 
 
 def get_source_node(session, factoid):
-    return session.run("MERGE (src:crm_E31_Document {identifier:'%s', reference:'%s'}) RETURN src"
+    # This has different logic if the source is a seal, vs. a document
+    if (factoid.boulloterion is not None):
+        # This factoid is taken from a seal inscription. Let's pull that out into CRM objects
+        # boulloterion is an E22 Human-Made Object
+        # which is asserted by MJ to P128 carry an E34 Inscription (we can even record the inscription)
+        # and/or is asserted by MJ to P65 show visual item an E34 Inscription
+        # which is asserted by MJ to P108 have produced various E22 Human-Made Objects (the seals)
+        # which seals are asserted by the collection authors (with pub source) to also carry the inscriptions
+        return session.run("MERGE (src:crm_E22_Boulloterion {reference:%s}) RETURN src"
+                           % factoid.boulloterion.boulloterionKey)
+    else:
+        # This factoid is taken from a document.
+        # an E31 Document (the whole work) incorporates another E31 Document (the reference)
+        # an E12 Production event is generically asserted to P108 have produced the work
+        # the E12 Production was generically asserted to have been P14 carried out by some E21 Person
+        # maybe the E21 Person in question is also the authority for this factoid... 
+        return session.run("MERGE (src:crm_E31_Document {identifier:'%s', reference:'%s'}) RETURN src"
                        % (escape_text(factoid.source), escape_text(factoid.sourceRef))).single()['src']
 
 
@@ -487,7 +512,7 @@ def description_handler(graphdriver, agent, factoid, graphperson, constants):
 def _find_or_create_kinship(session, graphperson, graphkin, source):
     # See if there is an existing kinship group between the person and their kin according to the
     # source in question. (Technically according to source and authority in question, but as they
-    # are keyed together in a static hash...)
+    # are keyed together in a static hash for PBW data...)
     kinquery = "MATCH (p), (kin), (source) WHERE id(p) = %d AND id(kin) = %d AND id(source) = %d " \
                % (graphperson.id, graphkin.id, source.id)
     kinquery += "MATCH (a1:crm_E13_attribute_assignment)-[:crm_p140_assigned_attribute_to]->(kg:crm_E74_Kinship_Group), "
@@ -522,9 +547,8 @@ def kinship_handler(graphdriver, agent, factoid, graphperson, constants):
 def _find_or_create_graphperson(session, agent, name, mdbCode):
     nodelookup = "MATCH (pbw) WHERE id(pbw) = %d " \
                  "MERGE (idlabel:crm_E42_Identifier {value:'%s %d'}) " \
-                 "MERGE (idass:crm_E15_Identifier_Assignment)-[:crm_P37_assigned]->(idlabel) " \
-                 "MERGE (idass)-[:crm_p140_assigned_attribute_to]->(p:crm_E21_Person) " \
-                 "MERGE (idass)-[:crm_P14_carried_out_by]->(pbw) RETURN p" % \
+                 "MERGE (pbw)<-[:crm_P14_carried_out_by]-(idass:crm_E15_Identifier_Assignment)-[:crm_P37_assigned]->(idlabel) " \
+                 "MERGE (idass)-[:crm_P140_assigned_attribute_to]->(p:crm_E21_Person) RETURN p" % \
                  (agent.id, name, mdbCode)
     graph_person = session.run(nodelookup).single()['p']
     return graph_person
