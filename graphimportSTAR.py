@@ -19,6 +19,7 @@ def get_authmap():
     hm = 'Harry Munt'
     lo = 'Letizia Osti'
     cr = 'Charlotte Roueché'
+    ok = 'Olga Karagiorgiou'
 
     authorities = {
         'Albert of Aachen': [mj],
@@ -33,10 +34,12 @@ def get_authmap():
         'Basileios of Calabria to Nikolaos III': [mj],
         'Boilas': [tp],
         'Bryennios': [tp],
+        'Cheynet, Antioche et Tarse': [ok],
         'Christophoros of Mitylene': [mj],
         'Christos Philanthropos, note': [mj],
         'Chrysobull of 1079': [tp],
         'Clement III to Basileios of Calabria': [jr],
+        'Codice Diplomatico Barese IV': [mw],
         'Council of 1147': [mj],
         'Council of 1157': [mj],
         'Dionysiou': [tp],
@@ -75,7 +78,10 @@ def get_authmap():
         'Keroularios  ': [jr],
         'Kinnamos': [mj],
         'Kleinchroniken': [tp],
+        'Koltsida-Makri': [ok],
         'Kyrillos Phileotes': [tp],
+        'Laurent, Corpus V.2': [ok],
+        'Laurent, Corpus V.3': [ok],
         'Lavra': [tp],
         'Lazaros of Galesion': [tp],
         'Leo IX  ': [jr],
@@ -123,9 +129,13 @@ def get_authmap():
         'Ralph of Caen': [mj],
         'Sakkos (1166)': [mj],
         'Sakkos (1170)': [mj],
+        'Seibt – Zarnitz': [ok],
         'Semeioma on Leon of Chalcedon': [jr],
+        'Sode, Berlin': [ok],
         'Skylitzes': [tp],
         'Skylitzes Continuatus': [tp],
+        'Speck, Berlin': [ok],
+        'Stavrakos': [ok],
         'Synod of 1072': [mj],
         'Synod of 1094': [tp],
         'Synodal edict (1054)': [jr],
@@ -145,10 +155,12 @@ def get_authmap():
         'Vatopedi': [tp],
         'Victor (pope)': [jr],
         'Walter the Chancellor': [mj],
+        'Wassiliou, Hexamilites': [ok],
         'William of Tyre': [mj],
         'Xenophontos': [tp],
         'Xeropotamou': [tp],
         'Yahya al-Antaki': [tp, lo, hm],
+        'Zacos II': [ok],
         'Zetounion': [jr],
         'Zonaras': [mw]
     }
@@ -175,22 +187,32 @@ def collect_person_records(sqlsession):
 def _init_typology(session, superclass, instances):
     """Initialize the typologies that are in the PBW database, knowing that the type names were not chosen
     for ease of variable expression. Returns a map of type name -> Neo4J node ID."""
-    cypherq = "MERGE (super:crm_E55_Type {value:\"%s\", constant:TRUE}) " % superclass
-    i = 0
-    varmap = dict()
-    for inst in instances:
-        # Leave out blank instances
-        if inst == '':
-            continue
-        var = "inst%d" % i
-        i += 1
-        varmap[var] = inst
-        cypherq += "MERGE (%s:crm_E55_Type {value:\"%s\", constant:TRUE}) " \
-                   "MERGE (%s)-[:crm_P127_has_broader_term]->(super) " % (var, inst, var)
-    cypherq += "RETURN %s" % ', '.join(["%s" % x for x in varmap.keys()])
-    print(cypherq)
-    types = session.run(cypherq).single()
-    retmap = {varmap[k]: v.id for (k, v) in types.items()}
+    retmap = dict()
+    # Batch these into groups of 100
+    doloop = True
+    while doloop:
+        if len(instances) > 100:
+            batch = instances[0:100]
+            del instances[0:100]
+        else:
+            batch = instances
+            doloop = False
+        i = 0
+        varmap = dict()
+        cypherq = "MERGE (super:crm_E55_Type {value:\"%s\", constant:TRUE}) " % superclass
+        for inst in batch:
+            # Leave out blank instances
+            if inst == '':
+                continue
+            var = "inst%d" % i
+            i += 1
+            varmap[var] = inst
+            cypherq += "MERGE (%s:crm_E55_Type {value:\"%s\", constant:TRUE})-[:crm_P127_has_broader_term]->(super) " % (var, inst)
+        cypherq += "RETURN %s" % ', '.join(["%s" % x for x in varmap.keys()])
+        print(cypherq)
+        types = session.run(cypherq).single()
+        for k, v in types.items():
+            retmap[varmap[k]]  = v.id
     return retmap
 
 
@@ -238,12 +260,12 @@ def setup_constants(sqlsession, graphdriver):
         # make an initial selection by breaking on the 'of'
         all_dignities = set()
         for x in sqlsession.query(pbw.DignityOffice).all():
-            if ' of the ' in x: # Don't split (yet) titles that probably don't refer to places
-                dignity = [x]
+            if ' of the ' in x.stdName: # Don't split (yet) titles that probably don't refer to places
+                dignity = [x.stdName]
             else:
                 dignity = x.stdName.split(' of ')
             all_dignities.add(dignity[0])
-        controlled_vocabs['Dignity'] = _init_typology(session, 'Dignity', all_dignities)
+        controlled_vocabs['Dignity'] = _init_typology(session, 'Dignity', list(all_dignities))
 
         # Language has its own subtype so handle this separately
         langnodes = {}
@@ -257,11 +279,13 @@ def setup_constants(sqlsession, graphdriver):
         # Set up the predicates that we will be using
         our_predicates = [
             'crm_P1_is_identified_by',
-            'crm_P41_classified',
-            'crm_P100_was_death_of',
             'crm_P3_has_note',
             'crm_P4_has_time_span',
-            'crm_P107_has_current_or_former_member'
+            'crm_P41_classified',
+            'crm_P100_was_death_of',
+            'crm_P107_has_current_or_former_member',
+            'crm_P128_carries',
+            'crm_P165_incorporates'
         ]
         prednodes = dict()
         for pred in our_predicates:
@@ -351,28 +375,115 @@ def _find_or_create_event(graphdriver, person, crm_class, crm_predicate):
 
 
 def get_source_node(session, factoid):
-    # This has different logic if the source is a seal, vs. a document
-    if (factoid.boulloterion is not None):
-        # This factoid is taken from a seal inscription. Let's pull that out into CRM objects
+    """Returns a node that represents the source for this factoid. Creates the network of nodes and
+    relationships to describe that source, if necessary. The source will either be a physical E22 Human-Made Object
+    (the boulloterion) or an E31 Document (the written primary source)."""
+    # Is this a 'seals' source without a boulloterion? If so warn and return None
+    authoritylist = get_authmap()
+    if authoritylist.get(factoid.source) is None:
+        if factoid.source == 'Seals' and factoid.boulloterion is None:
+            print("No boulloterion found for seal-sourced factoid %d" % factoid.factoidKey)
+        else:
+            print("Source %s of factoid %d not known" % (factoid.source, factoid.factoidKey))
+        return None
+    if factoid.boulloterion is not None:
+        # This factoid is taken from a seal inscription. Let's pull that out into CRM objects.
+        # First find who did the analysis
+        # If the boulloterion has no associated publications, we shouldn't use it.
+        if len(factoid.boulloterion.publication) == 0:
+            print("No published source found for boulloterion %d" % factoid.boulloterion.boulloterionKey)
+            return None
+        alist = set()
+        for pub in factoid.boulloterion.publication:
+            # If the publication isn't in the authority list, Michael analysed it
+            if pub.bibSource is not None:
+                thispubauth = authoritylist.get(pub.bibSource.shortName, ["Michael Jeffreys"])
+                alist.update(thispubauth)
+        agent = get_authority_node(session, list(alist))
+        # Then get the node that points to the boulloterion's sources
+        srclist = get_boulloterion_sourcelist(session, factoid.boulloterion)
         # boulloterion is an E22 Human-Made Object
+        if srclist is not None:
+            q = "MATCH (pred:crm_P128_carries), (agent), (srclist) WHERE id(agent) = %d AND id(srclist) = %d " % \
+            (agent.id, srclist.id)
+        else:
+            q = "MATCH (pred:crm_P128_carries), (agent) WHERE id(agent) = %d " % agent.id
+        q += "MERGE (src:crm_E22_Boulloterion {reference:%s}) " % factoid.boulloterion.boulloterionKey
         # which is asserted by MJ to P128 carry an E34 Inscription (we can even record the inscription)
-        # and/or is asserted by MJ to P65 show visual item an E34 Inscription
-        # which is asserted by MJ to P108 have produced various E22 Human-Made Objects (the seals)
-        # which seals are asserted by the collection authors (with pub source) to also carry the inscriptions
-        return session.run("MERGE (src:crm_E22_Boulloterion {reference:%s}) RETURN src"
-                           % factoid.boulloterion.boulloterionKey)
+        q += "MERGE (insc:crm_E34_Inscription {text:\"%s\"}) " % factoid.boulloterion.origLText
+        q += _create_assertion_query("src", "pred", "insc", "agent", "srclist" if srclist else None)
+        # MAYBE LATER: which is asserted by MJ to P108 have produced various E22 Human-Made Objects (the seals)
+        # - which seals are asserted by the collection authors (with pub source) to also carry the inscriptions?
     else:
         # This factoid is taken from a document.
-        # an E31 Document (the whole work) incorporates another E31 Document (the reference)
-        # an E12 Production event is generically asserted to P108 have produced the work
-        # the E12 Production was generically asserted to have been P14 carried out by some E21 Person
-        # maybe the E21 Person in question is also the authority for this factoid... 
-        return session.run("MERGE (src:crm_E31_Document {identifier:'%s', reference:'%s'}) RETURN src"
-                       % (escape_text(factoid.source), escape_text(factoid.sourceRef))).single()['src']
+        # an E31 Document (the whole work) is asserted by the analyst to have incorporated
+        # another E31 Document (the reference / text snippet)
+        agent = get_authority_node(session, authoritylist.get(factoid.source))
+        if agent is None:
+            agent = pbwagent
+        q = "MATCH (agent), (pred:crm_P165_incorporates) WHERE id(agent) = %d " % agent.id
+        q += "MERGE (work:crm_E31_Work {identifier:'%s'}) " % escape_text(factoid.source)
+        q += "MERGE (src:crm_E31_Passage {reference:'%s', text:'%s'}) " % \
+             (escape_text(factoid.sourceRef), escape_text(factoid.origLDesc))
+        q += _create_assertion_query("work", "pred", "src", "agent", None)
+        # MAYBE LATER: an E12 Production event is generically asserted to P108 have produced the work
+        # - the E12 Production was generically asserted to have been P14 carried out by some E21 Person
+        # - maybe the E21 Person in question is also the authority for this factoid...?
+    q += "RETURN src"
+    return session.run(q).single()['src']
+
+
+def get_boulloterion_sourcelist(session, boulloterion):
+    """A helper function to create the list of publications where the seals allegedly produced by a
+    given boulloterion were published. Returns either a single E31 Document (if there was a single
+    publication) or an E73 Information Object that represents a group of Documents."""
+    if len(boulloterion.publication) == 0:
+        return None
+    i = 0
+    q = ""
+    for pub in boulloterion.publication:
+        # Make sure with 'merge' that each publication node exists
+        q += "MERGE (src%d:crm_E31_Document {identifier:'%s', reference:'%s'}) " % \
+            (i, pub.bibSource.shortName, pub.publicationRef)
+        i += 1
+    if (i > 1):
+        # Check to see whether we have a matching group with only these publication nodes.
+        # Teeeeechnically speaking, an Information Object cannot P70 document anything, but
+        # we will find a solution later for expressing a group of source documents that,
+        # taken together, document something.
+        parts = []
+        retvar = "srcgrp"
+        q += "WITH %s " % ", ".join(["src%d" % x for x in range(i)])
+        q += "MATCH (srcgrp:crm_E73_Information_Object) " \
+             "WHERE size((srcgrp)-[:crm_P165_incorporates]->(:crm_E31_Document)) = %d " % i
+        for n in range(i):
+            parts.append("(srcgrp)-[:crm_P165_incorporates]->(src%d)" % n)
+        q += "MATCH " + ", ".join(parts) + " "
+    else:
+        # We simply return the one node we created
+        retvar = "src0"
+    q += "RETURN %s" % retvar
+    ret = session.run(q).single()
+    if ret is None:
+        # The plural sources exist, but the source group doesn't. Create it
+        i = 0
+        matchparts = []
+        createparts = ["(srcgrp:crm_E73_Information_Object)"]
+        for pub in boulloterion.publication:
+            matchparts.append("(src%d:crm_E31_Document {identifier:'%s', reference:'%s'}) " % \
+                (i, pub.bibSource.shortName, pub.publicationRef))
+            createparts.append("(srcgrp)-[:crm_P165_incorporates]->(src%d)" % i)
+            i += 1
+        q = "MATCH " + ", ".join(matchparts) + " "
+        q += "CREATE " + ", ".join(createparts) + " "
+        q += "RETURN srcgrp"
+        ret = session.run(q).single()
+    return ret[retvar]
+
 
 
 def get_authority_node(session, authoritylist):
-    if len(authoritylist) == 0:
+    if authoritylist is None or len(authoritylist) == 0:
         return None
     if len(authoritylist) == 1:
         return session.run("MERGE (p:crm_E21_Person {identifier:'%s'}) RETURN p" % authoritylist[0]).single()['p']
