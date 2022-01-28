@@ -8,7 +8,90 @@ from neo4j import GraphDatabase
 
 # Make our list of sources / authorities
 def get_authmap():
-    """Return a map of source -> authority (i.e. interpreter of that source) for the PBW data"""
+    """Return, for the sources in PBW, a list of contemporary authors of those sources and a list of the
+    scholars responsible for ingesting the source info into the database. Information on the latter is taken
+    from https://pbw2016.kdl.kcl.ac.uk/ref/sources/ and https://pbw2016.kdl.kcl.ac.uk/ref/seal-editions/"""
+
+    # These are the people in the PBW database credited with authorship of the source
+    authors = {
+        'Albert of Aachen': ['Albert', 26101],
+        'Alexios Stoudites': ['Alexios', 11],
+        'Anna Komnene': ['Anna', 62],
+        'Aristakes': ['Aristakes', 101],
+        'Attaleiates: Diataxis': ['Michael', 202],
+        'Attaleiates: History': ['Michael', 202],
+        'Basilakios, Orationes et epistulae': ['Nikephoros', 17003],
+        'Basileios of Calabria to Nikolaos III': ['Basileios', 254],
+        'Boilas': ['Eustathios', 105],
+        'Bryennios': ['Nikephoros', 117],
+        'Christophoros of Mitylene': ['Christophoros', 13102],
+        'Chrysobull of 1079': ['Nikephoros', 3],
+        'Clement III to Basileios of Calabria': ['Klemes', 23],
+        'Domenico of Grado': ['Dominikos', 101],
+        'Edict on Clergy Reform': ['Alexios', 1],
+        'Edict on clergy reform': ['Alexios', 1],
+        'Eustathios Romaios': ['Eustathios', 61],
+        'Eustathios: Capture of Thessalonike': ['Eustathios', 20147],
+        'Fulcher of Chartres': ['Fulcher', 101],
+        'Glykas': ['Michael', 305],
+        'Gregory VII, Epistolae vagantes': ['Gregorios', 27],
+        'Gregory VII, in Caspar': ['Gregorios', 27],
+        'Humbert, Commemoratio': ['Humbert', 101],
+        'Humbert, Dialogus': ['Humbert', 101],
+        'Humbert, Excommunication': ['Humbert', 101],
+        'Ioannes Italos': ['Ioannes', 66],
+        'Italikos': ['Michael', 20130],
+        'Kekaumenos': ['Anonymus', 274],
+        'Keroularios  ': ['Michael', 11],
+        'Kinnamos': ['Ioannes', 17001],
+        'Leo IX  ': ['Leon', 29],
+        'Leon of Chalcedon': ['Leon', 114],
+        'Leon of Ohrid (Greek)': ['Leon', 108],
+        'Leon of Ohrid (Latin)': ['Leon', 108, 'Humbert', 101],
+        'Manasses, Chronicle': ['Konstantinos', 302],
+        'Manasses, Chronicle: Dedication': ['Konstantinos', 302],
+        'Manasses, Hodoiporikon': ['Konstantinos', 302],
+        'Manganeios Prodromos': ['Manganeios', 101],
+        'Mauropous: Letters': ['Ioannes', 289],
+        'Mauropous: Orations': ['Ioannes', 289],
+        'Michael the Rhetor, Regel': ['Michael', 17004],
+        'Michel, Amalfi': ['Laycus', 101],
+        'Nicolas d\'Andida': ['Nikolaos', 257],
+        'Nicole, Chartophylax': ['Alexios', 1],
+        'Niketas Choniates, Historia': ['Niketas', 25001],
+        'Niketas Stethatos (Darrouzes)': ['Niketas', 105],
+        'Niketas Stethatos, On the Holy Spirit': ['Niketas', 105],
+        'Nikolaos III to Urban II': ['Nikolaos', 13],
+        'Oath of Eudokia': ['Eudokia', 1],
+        'Odo of Deuil': ['Odo', 102],
+        'Pakourianos': ['Gregorios', 61],
+        'Paschal II, Letter to Alexios I': ['Paschales', 22],
+        'Petros of Antioch  ': ['Petros', 103],
+        'Petros of Antioch, ep. 2': ['Petros', 103],
+        'Prodromos, Historische Gedichte': ['Theodoros', 25001],
+        'Psellos': ['Michael', 61],
+        'Psellos: Chronographia': ['Michael', 61],
+        'Ralph of Caen': ['Radulf', 112],
+        'Semeioma on Leon of Chalcedon': ['Alexios', 1],
+        'Skylitzes': ['Ioannes', 110],
+        'Skylitzes Continuatus': ['Anonymus', 102],
+        'Theophylact of Ohrid, Speech to Alexios I': ['Theophylaktos', 105],
+        'Theophylaktos of Ohrid, Letters': ['Theophylaktos', 105],
+        'Tornikes, Georgios': ['Georgios', 25002],
+        'Tzetzes, Exegesis of Homer': ['Ioannes', 459],
+        'Tzetzes, Historiai': ['Ioannes', 459],
+        'Tzetzes, Homerica': ['Ioannes', 459],
+        'Tzetzes, Letters': ['Ioannes', 459],
+        'Tzetzes, Posthomerica': ['Ioannes', 459],
+        'Usama': ['Usama', 101],
+        'Victor (pope)': ['Victor', 23],
+        'Walter the Chancellor': ['Walter', 101],
+        'William of Tyre': ['William', 4001],
+        'Zetounion': ['Nikolaos', 13],
+        'Zonaras': ['Ioannes', 6007]
+    }
+
+    # These are the modern scholars who put the source information into PBW records
     mj = 'Michael Jeffreys'
     tp = 'Tassos Papacostas'
     ta = 'Tara Andrews'
@@ -164,7 +247,7 @@ def get_authmap():
         'Zetounion': [jr],
         'Zonaras': [mw]
     }
-    return authorities
+    return {'authors': authors, 'authorities': authorities}
 
 
 def escape_text(t):
@@ -289,8 +372,12 @@ def setup_constants(sqlsession, graphdriver):
         ]
         prednodes = dict()
         for pred in our_predicates:
+            # Make the predicate node
             npred = session.run("MERGE (n:%s {constant:TRUE}) RETURN n" % pred).single()['n']
-            prednodes[pred] = npred.id
+            # Store the predicates by their short code
+            predcode = pred.replace('crm_', '')
+            predcode = predcode.split('_')[0]
+            prednodes[predcode] = npred.id
         controlled_vocabs['Predicates'] = prednodes
 
     return generic_agent, pbw_factoid_types, pbw_pr_info, controlled_vocabs
@@ -327,12 +414,12 @@ def gender_handler(graphdriver, agent, sqlperson, graphperson, constants):
         if pbw_sex != "Unknown":
             print("...setting gender assignment to %s%s" % (pbw_sex, " (maybe)" if uncertain else ""))
             # Make the event tied to this person
-            genderassertion = "MATCH (p), (s), (pbw) WHERE id(p) = %d AND id(s) = %d AND id(pbw) = %d "
-            genderassertion += "MERGE (sp42:crm_P42_assigned%s) MERGE (sp41:crm_P41_classified) "
+            genderassertion = "MATCH (p), (s), (pbw), (sp41) WHERE id(p) = %d AND id(s) = %d AND id(pbw) = %d AND id(sp41) = %d "
+            genderassertion += "MERGE (sp42:crm_P42_assigned%s) "
             genderassertion += _create_assertion_query('ga:crm_E17_Type_Assignment', 'sp41', 'p', 'pbw', None, 'a1')
             genderassertion += _create_assertion_query('ga', 'sp42', 's', 'pbw', None, 'a2')
             # print(genderassertion % (graphperson.id, constants[pbw_sex], agent.id, assertion_props))
-            session.run(genderassertion % (graphperson.id, constants[pbw_sex], agent.id, assertion_props))
+            session.run(genderassertion % (graphperson.id, constants[pbw_sex], agent.id, constants['P41'], assertion_props))
 
 
 def identifier_handler(graphdriver, agent, sqlperson, graphperson, constants):
@@ -340,7 +427,7 @@ def identifier_handler(graphdriver, agent, sqlperson, graphperson, constants):
     # not on the basis of any particular source
     with graphdriver.session() as session:
         idassertion = "MATCH (p), (pbw), (pred) WHERE id(p) = %d AND id(pbw) = %d AND id(pred) = %d " \
-                      % (graphperson.id, agent.id, constants['crm_P1_is_identified_by'])
+                      % (graphperson.id, agent.id, constants['P1'])
         idassertion += "MERGE (app:crm_E41_Appellation {value: \"%s\"}) " % sqlperson.nameOL
         idassertion += _create_assertion_query('p', 'pred', 'app', 'pbw', None)
         idassertion += "RETURN a"
@@ -351,30 +438,29 @@ def disambiguation_handler(graphdriver, agent, sqlperson, graphperson, constants
     # The short description of the person provided by PBW
     with graphdriver.session() as session:
         disassertion = "MATCH (p), (pbw), (pred) WHERE id(p) = %d AND id(pbw) = %d AND id(pred) = %d " % \
-                       (graphperson.id, agent.id, constants['crm_P3_has_note'])
+                       (graphperson.id, agent.id, constants['P3'])
         disassertion += "CREATE (desc:crm_E62_String {value:\"%s\"}) " % escape_text(sqlperson.descName)
         disassertion += _create_assertion_query('p', 'pred', 'desc', 'pbw', None)
         disassertion += "RETURN a"
         return session.run(disassertion)
 
 
-def _find_or_create_event(graphdriver, person, crm_class, crm_predicate):
+def _find_or_create_event(graphdriver, person, crm_eventclass, crm_predicate):
     with graphdriver.session() as session:
-        query = "MATCH (pers) WHERE id(pers) = %d " % person.id
-        query += "MATCH (a:crm_E13_Attribute_Assignment)-[:crm_P140_assigned]->(pers) "
-        query += "MATCH (a)-[:crm_P141_assigned_attribute_to]->(event:%s)" % crm_class
-        if crm_predicate is not None:
-            query += "MATCH (a)-[:crm_P177_assigned_property_type]->(pred:%s) " % crm_predicate
+        query = "MATCH (pers), (pred) WHERE id(pers) = %d AND id(pred) = %d " % (person.id, crm_predicate)
+        query += "MATCH (a:crm_E13_Attribute_Assignment)-[:crm_P140_assigned]->(pers), "
+        query += "(a)-[:crm_P177_assigned_property_type]->(pred), "
+        query += "(a)-[:crm_P141_assigned_attribute_to]->(event:%s) " % crm_eventclass
         query += "RETURN event"
         result = session.run(query).single()
         if result is None:
-            # If we don't have this event tied to this person yet, create the event and
-            # make sure the predicate exists
-            result = session.run("CREATE (event:%s) RETURN event" % crm_class).single()
+            # If we don't have this event tied to this person yet, create a new event of the
+            # given class and return it for use in further assertions.
+            result = session.run("CREATE (event:%s) RETURN event" % crm_eventclass).single()
     return result['event']
 
 
-def get_source_node(session, factoid):
+def get_source_and_agent(session, factoid, predicates):
     """Returns a node that represents the source for this factoid. Creates the network of nodes and
     relationships to describe that source, if necessary. The source will either be a physical E22 Human-Made Object
     (the boulloterion) or an E31 Document (the written primary source)."""
@@ -404,24 +490,40 @@ def get_source_node(session, factoid):
         srclist = get_boulloterion_sourcelist(session, factoid.boulloterion)
         # boulloterion is an E22 Human-Made Object
         if srclist is not None:
-            q = "MATCH (pred:crm_P128_carries), (agent), (srclist) WHERE id(agent) = %d AND id(srclist) = %d " % \
-            (agent.id, srclist.id)
+            q = "MATCH (pred), (agent), (srclist) WHERE id(pred) = %d AND id(agent) = %d AND id(srclist) = %d " % \
+            (predicates['P128'], agent.id, srclist.id)
         else:
-            q = "MATCH (pred:crm_P128_carries), (agent) WHERE id(agent) = %d " % agent.id
-        q += "MERGE (src:crm_E22_Boulloterion {reference:%s}) " % factoid.boulloterion.boulloterionKey
+            q = "MATCH (pred), (agent) WHERE id(pred) = %d AND id(agent) = %d " % (predicates['P128'], agent.id)
+        q += "MERGE (boul:crm_E22_Boulloterion {reference:%s}) " % factoid.boulloterion.boulloterionKey
         # which is asserted by MJ to P128 carry an E34 Inscription (we can even record the inscription)
-        q += "MERGE (insc:crm_E34_Inscription {text:\"%s\"}) " % factoid.boulloterion.origLText
-        q += _create_assertion_query("src", "pred", "insc", "agent", "srclist" if srclist else None)
+        q += "MERGE (src:crm_E34_Inscription {text:\"%s\"}) " % factoid.boulloterion.origLText
+        q += _create_assertion_query("boul", "pred", "src", "agent", "srclist" if srclist else None)
         # MAYBE LATER: which is asserted by MJ to P108 have produced various E22 Human-Made Objects (the seals)
         # - which seals are asserted by the collection authors (with pub source) to also carry the inscriptions?
     else:
         # This factoid is taken from a document.
-        # an E31 Document (the whole work) is asserted by the analyst to have incorporated
+        #
         # another E31 Document (the reference / text snippet)
-        agent = get_authority_node(session, authoritylist.get(factoid.source))
+        # Do we have a known author for this text?
+        author = get_author_node(session, authoritylist['authors'].get(factoid.source))
+        # If not, we use the PBW scholar as the authority.
+        agent = get_authority_node(session, authoritylist['authorities'].get(factoid.source))
+        # If there is no PBW scholar known for this source, we use the generic PBW agent.
         if agent is None:
             agent = pbwagent
-        q = "MATCH (agent), (pred:crm_P165_incorporates) WHERE id(agent) = %d " % agent.id
+        # Now we find an E31 Document (the whole work), its author (if any), and the PBW scholar who analyzed it
+        if author is None:
+            q = "MATCH (agent), (pred) WHERE id(pred) = %d AND id(agent) = %d " % (predicates['P165'], agent.id)
+        else:
+            q = "MATCH (author), (agent), (pred) WHERE id(author) = %d AND id(pred) = %d AND id(agent) = %d " % \
+                (author.id, predicates['P165'], agent.id)
+        q += "MERGE (work:crm_E31_Work {identifier:'%s'}) "
+        if author is not None:
+            # TLA asserts that the author created this work
+            q += _create_assertion_query('(aship:crm_E65_Creation)', 'pred', 'work', None, 'TLA', 'a1')
+            q += _create_assertion_query('aship', 'pred', 'author', None, 'TLA', 'a2')
+        # is asserted by the analyst to have incorporated
+        q = "MATCH (agent), (pred) WHERE id(pred) = %d AND id(agent) = %d " % (predicates['P165'], agent.id)
         q += "MERGE (work:crm_E31_Work {identifier:'%s'}) " % escape_text(factoid.source)
         q += "MERGE (src:crm_E31_Passage {reference:'%s', text:'%s'}) " % \
              (escape_text(factoid.sourceRef), escape_text(factoid.origLDesc))
@@ -430,7 +532,8 @@ def get_source_node(session, factoid):
         # - the E12 Production was generically asserted to have been P14 carried out by some E21 Person
         # - maybe the E21 Person in question is also the authority for this factoid...?
     q += "RETURN src"
-    return session.run(q).single()['src']
+    source_node = session.run(q).single()['src']
+    return source_node, agent
 
 
 def get_boulloterion_sourcelist(session, boulloterion):
@@ -481,42 +584,58 @@ def get_boulloterion_sourcelist(session, boulloterion):
     return ret[retvar]
 
 
+def get_author_node(session, authorlist):
+    """Return the E21 Person node for the author of a text, or a group of authors if authorship was composite"""
+    if authorlist is None or len(authorlist) == 0:
+        return None
+    if len(authorlist) == 2:  # It is a single name and mdbCode
+        return _find_or_create_graphperson(session, pbwagent, authorlist[0], authorlist[1])
+    # It is our multi-authored text. Make a group because both authors share authority.
+    authors = []
+    while len(authorlist) > 0:
+        pname = authorlist.pop(0)
+        pcode = authorlist.pop(1)
+        authors.append(_find_or_create_graphperson(session, pbwagent, pname, pcode))
+    return _find_or_create_authority_group(session, authors)
+
 
 def get_authority_node(session, authoritylist):
     if authoritylist is None or len(authoritylist) == 0:
         return None
     if len(authoritylist) == 1:
         return session.run("MERGE (p:crm_E21_Person {identifier:'%s'}) RETURN p" % authoritylist[0]).single()['p']
-    if len(authoritylist) > 1:
-        # Make/find a group including the people and return the group node
-        nodes = {}
-        for idx, p in enumerate(authoritylist):
-            v = chr(idx+97)
-            nodes[v] = "(%s:crm_E21_Person {identifier:'%s'})" % (v, p)
-        # First we try to match a group containing all these people; if we match nothing,
-        # then we create the group and return it.
-        find_individuals = ' '.join(["MERGE %s" % x for x in nodes.values()])
-        with_individuals = ','.join(nodes.keys())
-        find_group = ', '.join(["(group)-[:crm_P107_has_current_or_former_member]->(%s)" % x for x in nodes.keys()])
-        g = session.run("%s WITH %s MATCH (group:crm_E74_Group), %s RETURN group" % (
-            find_individuals, with_individuals, find_group)).single()
-        if g is None:
-            g = session.run("%s WITH %s CREATE (group:crm_E74_Group), %s RETURN group" % (
-                find_individuals, with_individuals, find_group)).single()
-        return g['group']
+    # If we get here, we have more than one authority for this source.
+    # Ensure the existence of the people, and then ensure the existence of their group
+    scholars = []
+    for p in authoritylist:
+        scholars.append(session.run("MERGE (p:crm_E21_Person {identifier:'%s'}) RETURN p" % p).single()['p'])
+    return _find_or_create_authority_group(session, scholars)
 
 
-def death_handler(graphdriver, agent, factoid, graphperson, constants):
+def _find_or_create_authority_group(session, members):
+    mc = []
+    wc = []
+    gc = []
+    i = 1
+    for a in members:
+        mc.append("(a%d)" % i)
+        wc.append("id(a%d) = %d" % (i, a.id))
+        gc.append("(group)-[:crm_P107_has_current_or_former_member]->(a%d)" % i)
+    q = "MATCH " + ', '.join(mc) + " WHERE " + " AND ".join(wc) + " "
+    q += "%s (group:crm_E74_Group), " + ", ".join(gc) + " RETURN group"
+    g = session.run(q % "MATCH").single()
+    if g is None:
+        g = session.run(q % "CREATE").single
+    return g['group']
+
+
+def death_handler(graphdriver, sourcenode, agent, factoid, graphperson, constants):
     with graphdriver.session() as session:
         # Each factoid is its own set of assertions pertaining to the single death of a person.
         # When there are multiple sources, we will have to review them for consistency and make
         # proxies for the death event as necessary.
-        # Get the factoid source
-        sourcenode = get_source_node(session, factoid)
         # See if we can find the death event
-        deathclass = 'crm_E69_Death'
-        deathpred = 'crm_P100_was_death_of'
-        deathevent = _find_or_create_event(graphdriver, graphperson, deathclass, deathpred)
+        deathevent = _find_or_create_event(graphdriver, graphperson, 'crm_E69_Death', constants['P100'])
         # Create the new assertion that says the death happened. Start by gathering all our existing
         # nodes and reified predicates:
         # - the person
@@ -529,8 +648,8 @@ def death_handler(graphdriver, agent, factoid, graphperson, constants):
         deathassertion = "MATCH (p), (agent), (source), (devent), (dpred), (descpred), (datepred) " \
                          "WHERE id(p) = %d AND id(agent) = %d AND id(source) = %d AND id(devent) = %d " \
                          "AND id(dpred) = %d AND id(descpred) = %d AND id(datepred) = %d " \
-                         % (graphperson.id, agent.id, sourcenode.id, deathevent.id, constants[deathpred],
-                            constants['crm_P3_has_note'], constants['crm_P4_has_time_span'])
+                         % (graphperson.id, agent.id, sourcenode.id, deathevent.id, constants['P100'],
+                            constants['P3'], constants['P4'])
         deathassertion += _create_assertion_query('devent', 'dpred', 'p', 'agent', 'source')
         # Create an assertion about how the death is described
         description = 'desc:crm_E62_String {content:\"%s\"}' % escape_text(factoid.replace_referents())
@@ -564,9 +683,8 @@ def _find_or_create_group(graphdriver, idlabel, category):
     return result['g']
 
 
-def _assign_group_membership(graphdriver, agent, factoid, graphperson, constants, grouptype, grouplabel):
+def _assign_group_membership(graphdriver, sourcenode, agent, factoid, graphperson, constants, grouptype, grouplabel):
     with graphdriver.session() as session:
-        sourcenode = get_source_node(session, factoid)
         # Get the ethnic group in question
         groupnode = _find_or_create_group(graphdriver, grouplabel, grouptype)
         # Need the person, the group
@@ -579,16 +697,16 @@ def _assign_group_membership(graphdriver, agent, factoid, graphperson, constants
         return session.run(gassertion).single()
 
 
-def ethnicity_handler(graphdriver, agent, factoid, graphperson, constants):
+def ethnicity_handler(graphdriver, sourcenode, agent, factoid, graphperson, constants):
     if factoid.ethnicityInfo is None or factoid.ethnicityInfo.ethnicity is None:
         # We can't assign any ethnicity without the ethnicity info
         print("Empty ethnicity factoid found: id %s" % factoid.factoidKey)
         return
     elabel = factoid.ethnicityInfo.ethnicity.ethName
-    return _assign_group_membership(graphdriver, agent, factoid, graphperson, constants, 'Ethnicity', elabel)
+    return _assign_group_membership(graphdriver, sourcenode, agent, factoid, graphperson, constants, 'Ethnicity', elabel)
 
 
-def religion_handler(graphdriver, agent, factoid, graphperson, constants):
+def religion_handler(graphdriver, sourcenode, agent, factoid, graphperson, constants):
     if factoid.religion is None:
         print("Empty religion factoid found: id %d" % factoid.factoidKey)
         return
@@ -596,10 +714,10 @@ def religion_handler(graphdriver, agent, factoid, graphperson, constants):
     # Special case
     if factoid.religion == '':
         rlabel = 'Heretic'
-    return _assign_group_membership(graphdriver, agent, factoid, graphperson, constants, 'Religion', rlabel)
+    return _assign_group_membership(graphdriver, sourcenode, agent, factoid, graphperson, constants, 'Religion', rlabel)
 
 
-def description_handler(graphdriver, agent, factoid, graphperson, constants):
+def description_handler(graphdriver, sourcenode, agent, factoid, graphperson, constants):
     # Get the descriptions and the relevant languages
     langdesc = {'en': escape_text(factoid.replace_referents())}
     langkey = {2: 'gr', 3: 'la', 4: 'ar'}
@@ -610,7 +728,6 @@ def description_handler(graphdriver, agent, factoid, graphperson, constants):
         descattributes.append('%s: \"%s\"' % (k, v))
     # Make the query
     with graphdriver.session() as session:
-        sourcenode = get_source_node(session, factoid)
         descassertion = "MATCH (p), (agent), (source), (pred) " \
                         "WHERE id(p) = %d AND id(agent) = %d AND id (source) = %d AND id(pred) = %d " % \
                         (graphperson.id, agent.id, sourcenode.id, constants['crm_P3_has_note'])
@@ -633,14 +750,13 @@ def _find_or_create_kinship(session, graphperson, graphkin, source):
     return session.run(kinquery).single()
 
 
-def kinship_handler(graphdriver, agent, factoid, graphperson, constants):
+def kinship_handler(graphdriver, sourcenode, agent, factoid, graphperson, constants):
     # Kinships are modeled as two-person groups with their own separate label (because, honestly)
     # and with .1 types as property attributes as per the CRM spec.
     if factoid.kinshipType is None:
         print("Empty kinship factoid found: id %d" % factoid.factoidKey)
         return
     with graphdriver.session() as session:
-        sourcenode = get_source_node(session, factoid)
         for kin in factoid.referents():
             graphkin = _find_or_create_graphperson(session, agent, kin.name, kin.mdbCode)
             kinassertion = "MATCH (p), (kin), (agent), (source) " \
@@ -726,10 +842,19 @@ def process_persons(personlist, graphdriver, pbwagent, pbwfactoids, pbwrecordinf
             try:
                 method = eval("%s_handler" % ourftype.lower())
                 for f in person.main_factoids(ftype):
-                    # Get the right agent for this source
-                    authority_node = get_authority_node(session, auth_map.get(f.source, [])) or pbwagent
+                    # Get the source, either a text passage or a seal inscription, and the authority
+                    # for the factoid. Authority will either be the author of the text, or the PBW
+                    # colleague who read the text and ingested the information.
+                    (source_node, authority_node) = get_source_and_agent(session, f)
+                    # If the factoid has no source then we skip it
+                    if source_node is None:
+                        print("Skipping factoid %d without a traceable source" % f.factoidKey)
+                        continue
+                    # If the factoid has no authority then we assign it to the generic PBW agent
+                    if authority_node is None:
+                        authority_node = pbwagent
                     # Call the handler for this factoid type
-                    method(graphdriver, authority_node, f, graph_person, ourvocab)
+                    method(graphdriver, source_node, authority_node, f, graph_person, ourvocab)
 
             except NameError:
                 print("No handler for %s factoids; skipping." % ftype)
@@ -745,8 +870,6 @@ if __name__ == '__main__':
     mysqlsession = smaker()
     # Connect to the graph DB
     driver = GraphDatabase.driver(config.graphuri, auth=(config.graphuser, config.graphpw))
-    # Get our hardcoded authority map
-    auth_map = get_authmap()
     # Make / retrieve the global nodes and constants
     (pbwagent, pbwfactoids, pbwrecordinfo, pbwvocabs) = setup_constants(mysqlsession, driver)
     # Process the person records
