@@ -260,11 +260,11 @@ def collect_person_records(sqlsession):
     floruit = r'XI(?!I)|10[3-8]\d'
     relevant = [x for x in sqlsession.query(pbw.Person).all() if re.search(floruit, x.floruit) and len(x.factoids) > 0]
     print("Found %d relevant people" % len(relevant))
-    # return relevant
+    return relevant
     # Debugging / testing: restrict the list of relevant people
-    debugnames = ['Herve', 'Ioannes', 'Konstantinos', 'Anna']
-    debugcodes = [62, 68, 101, 102]
-    return [x for x in relevant if x.name in debugnames and x.mdbCode in debugcodes]
+    # debugnames = ['Herve', 'Ioannes', 'Konstantinos', 'Anna']
+    # debugcodes = [62, 68, 101, 102]
+    # return [x for x in relevant if x.name in debugnames and x.mdbCode in debugcodes]
 
 
 def _init_typology(session, superclass, instances):
@@ -388,14 +388,36 @@ def setup_constants(sqlsession, graphdriver):
 
 
 def _create_assertion_query(subj, pred, obj, auth, src, var="a"):
-    st = "COMMAND (%s:crm_E13_Attribute_Assignment)-[:crm_P140_assigned_attribute_to]->(%s), " % (var, subj)
-    st += "(%s)-[:crm_P177_assigned_property_type]->(%s), " % (var, pred)
-    st += "(%s)-[:crm_P141_assigned]->(%s), " % (var, obj)
-    if auth is not None:
-        st += "(%s)-[:crm_P14_carried_out_by]->(%s) " % (var, auth)
+    """Create the query pattern for an assertion with the given connections. Use 'var' to control
+    the variable name for the assertion. Attempts to build the query with specific information first,
+    assuming that plain node variable names indicate an already known node."""
+    apreds = {'subj': '[:crm_P140_assigned_attribute_to]',
+              'pred': '[:crm_P177_assigned_property_type]',
+              'obj': '[:crm_P141_assigned]',
+              'auth': '[:crm_P14_carried_out_by]',
+              'src': '[:crm_P70r_is_documented_in]'}
+    # Do the subject and object first, then source, authority and predicate
+    # as search area probably increases for each in that order
+    anodes = [('auth', auth), ('pred', pred)]
     if src is not None:
-        st += ", (%s)-[:crm_P70r_is_documented_in]->(%s) " % (var, src)
-    return st
+        anodes.insert(0, ('src', src))
+    if re.match(r'^\w+$', obj):
+        anodes.insert(0, ('obj', obj))
+    else:
+        anodes.append(('obj', obj))
+    if re.match(r'^\w+$', subj):
+        anodes.insert(0, ('subj', subj))
+    else:
+        anodes.append(('subj', subj))
+
+    # Now build the query using the order in anodes
+    aclass = ':crm_E13_Attribute_Assignment'
+    aclassed = False
+    aqparts = []
+    for nt in anodes:
+        aqparts.append("(%s%s)-%s->(%s)" % (var, aclass if not aclassed else '', apreds[nt[0]], nt[1]))
+        aclassed = True
+    return "COMMAND %s " % ", ".join(aqparts)
 
 
 def gender_handler(graphdriver, agent, sqlperson, graphperson, constants):
@@ -594,7 +616,7 @@ def get_boulloterion_sourcelist(session, boulloterion):
 def get_source_work(session, factoid, author, predicates):
     # Ensure the existence of the work and, if it has a declared author, link the author to it via
     # a CREATION event, asserted by TLA
-    q = "MERGE (work:crm_E31_Work {identifier:'%s'}) " % factoid.source
+    q = "MERGE (work:crm_E31_Work {identifier:'%s'}) " % escape_text(factoid.source)
     if author is not None:
         # Ensure the existence of the assertions that the author authored the work
         tla = get_authority_node(session, ['Tara Andrews'])
@@ -698,7 +720,7 @@ def death_handler(graphdriver, sourcenode, agent, factoid, graphperson, constant
             deathassertion += _create_assertion_query('devent', 'p4', 'datedesc', 'agent', 'source', 'a2')
         deathassertion += "RETURN a, a1%s" % (", a2" if deathdate else '')
 
-        print(deathassertion)
+        # print(deathassertion)
         result = session.run(deathassertion.replace('COMMAND', 'MATCH')).single()
         if result is None:
             session.run(deathassertion.replace('COMMAND', 'CREATE'))
@@ -812,6 +834,9 @@ def kinship_handler(graphdriver, sourcenode, agent, factoid, graphperson, consta
 
 
 def _find_or_create_graphperson(session, agent, name, code):
+    """Return an E21 Person, labeled with the name and code via an E14 Identifier Assignment carried out by PBW."""
+    # We can't merge with comma statements, so we have to do it with successive one-liners.
+    # Start the merge from the specific information we have, which is the identifier itself.
     nodelookup = "MATCH (pbw) WHERE id(pbw) = %d " \
                  "MERGE (idlabel:crm_E42_Identifier {value:'%s %d'}) " \
                  "MERGE (pbw)<-[:crm_P14_carried_out_by]-(idass:crm_E15_Identifier_Assignment)" \
@@ -858,9 +883,7 @@ def process_persons(personlist, graphdriver, pbwagent, pbwfactoids, pbwrecordinf
             continue
         processed += 1
         # Create or find the person node
-        print("Making/finding node for person %s %d" % (person.name, person.mdbCode))
-        # In theory this should be an E14 Identifier Assignment. Start the merge from the
-        # specific information we have, which is the identifier itself.
+        print("*** Making/finding node for person %s %d ***" % (person.name, person.mdbCode))
         with graphdriver.session() as session:
             graph_person = _find_or_create_graphperson(session, pbwagent, person.name, person.mdbCode)
 
@@ -882,6 +905,7 @@ def process_persons(personlist, graphdriver, pbwagent, pbwfactoids, pbwrecordinf
             ourvocab.update(pbwvocabs.get('Predicates'))
             try:
                 method = eval("%s_handler" % ourftype.lower())
+                print("Ingesting %d factoids" % ourftype)
                 for f in person.main_factoids(ftype):
                     # Get the source, either a text passage or a seal inscription, and the authority
                     # for the factoid. Authority will either be the author of the text, or the PBW
@@ -898,7 +922,7 @@ def process_persons(personlist, graphdriver, pbwagent, pbwfactoids, pbwrecordinf
                     method(graphdriver, source_node, authority_node, f, graph_person, ourvocab)
 
             except NameError:
-                print("No handler for %s factoids; skipping." % ftype)
+                pass
 
     print("Processed %d person records." % processed)
 
