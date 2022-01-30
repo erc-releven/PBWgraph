@@ -1,5 +1,6 @@
 import pbw
 import config
+import datetime
 import re
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -356,7 +357,7 @@ def setup_constants(sqlsession, graphdriver):
         langnodes = {}
         for x in sqlsession.query(pbw.LanguageSkill).all():
             lang = x.languageName
-            cypherq = "MERGE (lang:crm_E56_Language {value:\"%s\", constant:TRUE}) RETURN lang"
+            cypherq = "MERGE (lang:crm_E56_Language {value:'%s', constant:TRUE}) RETURN lang" % lang
             result = session.run(cypherq).single()
             langnodes[lang] = result['lang']
         controlled_vocabs['Language'] = langnodes
@@ -368,6 +369,7 @@ def setup_constants(sqlsession, graphdriver):
             'crm_P4_has_time_span',
             'crm_P14_carried_out_by',
             'crm_P41_classified',
+            'crm_P51_has_former_or_current_owner',
             'crm_P94_has_created',
             'crm_P100_was_death_of',
             'crm_P107_has_current_or_former_member',
@@ -487,7 +489,8 @@ def _find_or_create_event(graphdriver, person, crm_eventclass, crm_predicate):
     """Helper function to find the relevant event for event-based factoids"""
     with graphdriver.session() as session:
         query = "MATCH (pers), (pred) WHERE id(pers) = %d AND id(pred) = %d " % (person.id, crm_predicate)
-        query += "MATCH (a:crm_E13_Attribute_Assignment)-[:crm_P140_assigned_attribute_to]->(event:%s), " % crm_eventclass
+        query += "MATCH (a:crm_E13_Attribute_Assignment)-[:crm_P140_assigned_attribute_to]->(event:%s), " \
+                 % crm_eventclass
         query += "(a)-[:crm_P177_assigned_property_type]->(pred), "
         query += "(a)-[:crm_P141_assigned]->(pers) "
         query += "RETURN DISTINCT event"  # There may well be multiple assertions about this death
@@ -798,7 +801,8 @@ def _find_or_create_kinship(session, graphperson, graphkin, source):
     # source in question. UNUSED
     kinquery = "MATCH (p), (kin), (source) WHERE id(p) = %d AND id(kin) = %d AND id(source) = %d " \
                % (graphperson.id, graphkin.id, source.id)
-    kinquery += "COMMAND (a1:crm_E13_attribute_assignment)-[:crm_p140_assigned_attribute_to]->(kg:crm_E74_Kinship_Group), "
+    kinquery += "COMMAND (a1:crm_E13_attribute_assignment)-[:crm_p140_assigned_attribute_to]" \
+                "->(kg:crm_E74_Kinship_Group), "
     kinquery += "(a1)-[:crm_p141_assigned]->(p), (a1)-[:crm_P70r_is_documented_in]->(source) "
     kinquery += "COMMAND (a2:crm_E13_attribute_assignment)-[:crm_p140_assigned_attribute_to]->(kg), "
     kinquery += "(a2)-[:crm_p141_assigned]->(kin), (a2)-[:crm_P70r_is_documented_in]->(source) RETURN kg"
@@ -816,7 +820,7 @@ def kinship_handler(graphdriver, sourcenode, agent, factoid, graphperson, consta
         return
     with graphdriver.session() as session:
         for kin in factoid.referents():
-            graphkin = _find_or_create_graphperson(session, agent, kin.name, kin.mdbCode)
+            graphkin = _find_or_create_graphperson(session, pbwagent, kin.name, kin.mdbCode)
             kinassertion = "MATCH (p), (kin), (agent), (source) " \
                            "WHERE id(p) = %d AND id(kin) = %d AND id(agent) = %d AND id(source) = %d " \
                            % (graphperson.id, graphkin.id, agent.id, sourcenode.id)
@@ -831,6 +835,27 @@ def kinship_handler(graphdriver, sourcenode, agent, factoid, graphperson, consta
             result = session.run(kinassertion.replace('COMMAND', 'MATCH')).single()
             if result is None:
                 session.run(kinassertion.replace('COMMAND', 'CREATE'))
+
+
+def possession_handler(graphdriver, sourcenode, agent, factoid, graphperson, constants):
+    """Ensure the existence of an E18 Physical Thing (we don't have any more category info about
+    the possessions. For now we ssume that a possession with an identical description is, in fact,
+    the same possession."""
+    possession_attributes = {'description': escape_text(factoid.engDesc)}
+    if factoid.possession is not None and factoid.possession != '':
+        possession_attributes['context'] = escape_text(factoid.possession)
+    possession_attrs = ", ".join(["%s: '%s'" % (k, v) for k, v in possession_attributes.items()])
+    with graphdriver.session() as session:
+        posassertion = "MATCH (p), (agent), (source), (pred) " \
+                        "WHERE id(p) = %d AND id(agent) = %d AND id (source) = %d AND id(pred) = %d " % \
+                        (graphperson.id, agent.id, sourcenode.id, constants['P51'])
+        posassertion += "MERGE (poss:crm_E18_Physical_Thing {%s}) " % possession_attrs
+        posassertion += "WITH p, agent, source, pred, poss "
+        posassertion += _create_assertion_query('poss', 'pred', 'p', 'agent', 'source')
+        posassertion += "RETURN a"
+        result = session.run(posassertion.replace('COMMAND', 'MATCH')).single()
+        if result is None:
+            session.run(posassertion.replace('COMMAND', 'CREATE'))
 
 
 def _find_or_create_graphperson(session, agent, name, code):
@@ -905,7 +930,7 @@ def process_persons(personlist, graphdriver, pbwagent, pbwfactoids, pbwrecordinf
             ourvocab.update(pbwvocabs.get('Predicates'))
             try:
                 method = eval("%s_handler" % ourftype.lower())
-                print("Ingesting %d factoids" % ourftype)
+                print("Ingesting %s factoids" % ourftype)
                 for f in person.main_factoids(ftype):
                     # Get the source, either a text passage or a seal inscription, and the authority
                     # for the factoid. Authority will either be the author of the text, or the PBW
@@ -930,6 +955,7 @@ def process_persons(personlist, graphdriver, pbwagent, pbwfactoids, pbwrecordinf
 # If we are running as main, execute the script
 if __name__ == '__main__':
     # Connect to the SQL DB
+    starttime = datetime.datetime.now()
     engine = create_engine('mysql+pymysql://' + config.dbstring)
     smaker = sessionmaker(bind=engine)
     mysqlsession = smaker()
@@ -939,4 +965,5 @@ if __name__ == '__main__':
     (pbwagent, pbwfactoids, pbwrecordinfo, pbwvocabs) = setup_constants(mysqlsession, driver)
     # Process the person records
     process_persons(collect_person_records(mysqlsession), driver, pbwagent, pbwfactoids, pbwrecordinfo, pbwvocabs)
-    print("Done!")
+    duration = datetime.datetime.now() - starttime
+    print("Done! Ran in %s" % str(duration))
