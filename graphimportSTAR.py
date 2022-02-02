@@ -305,7 +305,7 @@ def _smooth_labels(label):
     if label == 'Dignity/Office':
         return 'Dignity'
     if label == 'Occupation/Vocation':
-        return 'Occupation'
+        return 'SocietyRole'
     if label == 'Language Skill':
         return 'Language'
     if label == 'Ethnic label':
@@ -332,7 +332,7 @@ def setup_constants(sqlsession, graphdriver):
         # simplify the broader term.
         controlled_vocabs = dict()
         controlled_vocabs['Gender'] = _init_typology(session, 'Gender', ['Female', 'Male', 'Eunuch'])
-        controlled_vocabs['Occupation'] = _init_typology(session, 'Occupation',
+        controlled_vocabs['SocietyRole'] = _init_typology(session, 'SocietyRole',
                                                          [x.occupationName for x
                                                           in sqlsession.query(pbw.Occupation).all()])
         # Not sure we will use this vocabulary as nodes...
@@ -771,6 +771,12 @@ def religion_handler(graphdriver, sourcenode, agent, factoid, graphperson, const
     if factoid.religion == '':
         rlabel = 'Heretic'
     _assign_group_membership(graphdriver, sourcenode, agent, graphperson, constants, 'Religion', rlabel)
+
+
+def societyrole_handler(graphdriver, sourcenode, agent, factoid, graphperson, constants):
+    if factoid.occupation is None:
+        return
+    _assign_group_membership(graphdriver, sourcenode, agent, graphperson, constants, 'SocietyRole', factoid.occupation)
 
 
 def description_handler(graphdriver, sourcenode, agent, factoid, graphperson, constants):
