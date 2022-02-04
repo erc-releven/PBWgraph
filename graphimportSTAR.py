@@ -5,6 +5,7 @@ import re
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from neo4j import GraphDatabase
+from warnings import warn
 
 
 # Make our list of sources / authorities
@@ -251,6 +252,83 @@ def get_authmap():
     return {'authors': authors, 'authorities': authorities}
 
 
+def inrange(floruit):
+    allowed = {
+        'E / M XI',
+        'L XI',
+        'M XI',
+        'L XI / E XII',
+        'M / L XI',
+        'XI',
+        'E / L XI',
+        'M XI / E XII',
+        'E  / M XI',
+        'L X / E XI',
+        'E XI',
+        'L XI / M XII',
+        'L  XI',
+        'M XI / L XI',
+        'M XI/L XI',
+        'L X / M XI',
+        'M / L  XI',
+        'E /M XI',
+        'E XI / M XI',
+        'E XI/M XI',
+        'E / M  XI',
+        'XI-XII',
+        'M  / L XI',
+        'mid XI',
+        '1041/2',
+        'mid-XI',
+        'late XI',
+        'L XI?',
+        '1088',
+        '1060',
+        'M-E XI',
+        'M/L XI',
+        'E-L XI',
+        'E XI-',
+        'L XI-E XII',
+        'M-L XI',
+        'L XI/E XII',
+        'E XI-1071',
+        'c. 1006-1067',
+        'c. 1050-1103',
+        'c. 1007-1061',
+        'E XI-c. 1088',
+        'M XI/LXI',
+        '1066-1123?',
+        '1083-c. 1154',
+        '1057-1118',
+        'E/M XI',
+        'XI / XII',
+        'X / XI',
+        '1050',
+        '1070',
+        '1075',
+        'L XI /  E XII',
+        'E X1',
+        '??',
+        '(XI)',
+        'E  / L XI',
+        '1090',
+        'L XI / L XII',
+        'X / XII',
+        'LXI / E XII',
+        'L XI /  M XII',
+        '1084',
+        'L XI - E XII',
+        '? / M XI',
+        'L X/ E XI',
+        '1025',
+        '11th c.',
+        ' L XI',
+        'L XI / XII',
+        '?  XI?',
+    }
+    return floruit in allowed
+
+
 def escape_text(t):
     """Escape any single quotes or double quotes in strings that need to go into Neo4J properties"""
     return t.replace("'", "\\'").replace('"', '\\"')
@@ -258,8 +336,7 @@ def escape_text(t):
 
 def collect_person_records(sqlsession):
     """Get a list of people whose floruit matches our needs"""
-    floruit = r'XI(?!I)|10[3-8]\d'
-    relevant = [x for x in sqlsession.query(pbw.Person).all() if re.search(floruit, x.floruit) and len(x.factoids) > 0]
+    relevant = [x for x in sqlsession.query(pbw.Person).all() if inrange(x.floruit) and len(x.factoids) > 0]
     print("Found %d relevant people" % len(relevant))
     return relevant
     # Debugging / testing: restrict the list of relevant people
@@ -294,7 +371,7 @@ def _init_typology(session, superclass, instances):
             cypherq += "MERGE (%s:crm_E55_Type {value:\"%s\", constant:TRUE})-[:crm_P127_has_broader_term]->(super) " \
                        % (var, inst)
         cypherq += "RETURN %s" % ', '.join(["%s" % x for x in varmap.keys()])
-        print(cypherq)
+        # print(cypherq)
         types = session.run(cypherq).single()
         for k, v in types.items():
             retmap[varmap[k]] = v.id
@@ -319,6 +396,7 @@ def _smooth_labels(label):
 
 def setup_constants(sqlsession, graphdriver):
     """Set up the necessary object and predicate nodes that will be shared by the individual records"""
+    print("Setting up PBW constants...")
     with graphdriver.session() as session:
         # Make our anonymous agent PBW for the un-sourced information
         generic_agent = session.run("MERGE (a:crm_E39_Actor {identifier:'PBW', constant:TRUE}) return a").single()['a']
@@ -333,11 +411,8 @@ def setup_constants(sqlsession, graphdriver):
         controlled_vocabs = dict()
         controlled_vocabs['Gender'] = _init_typology(session, 'Gender', ['Female', 'Male', 'Eunuch'])
         controlled_vocabs['SocietyRole'] = _init_typology(session, 'SocietyRole',
-                                                         [x.occupationName for x
-                                                          in sqlsession.query(pbw.Occupation).all()])
-        # Not sure we will use this vocabulary as nodes...
-        # controlled_vocabs['Kinship'] = _init_typology(session, 'Kinship',
-        #                                               [x.gspecRelat for x in sqlsession.query(pbw.KinshipType).all()])
+                                                          [x.occupationName for x
+                                                           in sqlsession.query(pbw.Occupation).all()])
         controlled_vocabs['Ethnicity'] = _init_typology(session, 'Ethnicity',
                                                         [x.ethName for x in sqlsession.query(pbw.Ethnicity).all()])
         controlled_vocabs['Religion'] = _init_typology(session, 'Religion',
@@ -353,13 +428,22 @@ def setup_constants(sqlsession, graphdriver):
             all_dignities.add(dignity[0])
         controlled_vocabs['Dignity'] = _init_typology(session, 'Dignity', list(all_dignities))
 
+        # Kinship is expressed as typed predicates as opposed to E55 Types.
+        kinnodes = {}
+        for x in sqlsession.query(pbw.KinshipType).all():
+            kt = x.gspecRelat
+            cypherq = "MERGE (kt:crm_P107_has_current_or_former_member {type:\"%s\"}) RETURN kt" % kt
+            result = session.run(cypherq).single()
+            kinnodes[kt] = result['kt'].id
+        controlled_vocabs['Kinship'] = kinnodes
+
         # Language has its own subtype so handle this separately
         langnodes = {}
         for x in sqlsession.query(pbw.LanguageSkill).all():
             lang = x.languageName
             cypherq = "MERGE (lang:crm_E56_Language {value:'%s', constant:TRUE}) RETURN lang" % lang
             result = session.run(cypherq).single()
-            langnodes[lang] = result['lang']
+            langnodes[lang] = result['lang'].id
         controlled_vocabs['Language'] = langnodes
 
         # Set up the predicates that we will be using
@@ -413,7 +497,7 @@ def _create_assertion_query(subj, pred, obj, auth, src, var="a"):
         anodes.append(('subj', subj))
 
     # Now build the query using the order in anodes
-    aclass = ':crm_E13_Attribute_Assignment'
+    aclass = ':crm_E13_Assertion'
     aclassed = False
     aqparts = []
     for nt in anodes:
@@ -440,7 +524,7 @@ def gender_handler(graphdriver, agent, sqlperson, graphperson, constants):
         else:
             assertion_props = ''
         if pbw_sex != "Unknown":
-            print("...setting gender assignment to %s%s" % (pbw_sex, " (maybe)" if uncertain else ""))
+            # print("...setting gender assignment to %s%s" % (pbw_sex, " (maybe)" if uncertain else ""))
             # Make the event tied to this person
             genderassertion = "MATCH (p), (s), (pbw), (sp41) " \
                               "WHERE id(p) = %d AND id(s) = %d AND id(pbw) = %d AND id(sp41) = %d " % \
@@ -489,7 +573,7 @@ def _find_or_create_event(graphdriver, person, crm_eventclass, crm_predicate):
     """Helper function to find the relevant event for event-based factoids"""
     with graphdriver.session() as session:
         query = "MATCH (pers), (pred) WHERE id(pers) = %d AND id(pred) = %d " % (person.id, crm_predicate)
-        query += "MATCH (a:crm_E13_Attribute_Assignment)-[:crm_P140_assigned_attribute_to]->(event:%s), " \
+        query += "MATCH (a:crm_E13_Assertion)-[:crm_P140_assigned_attribute_to]->(event:%s), " \
                  % crm_eventclass
         query += "(a)-[:crm_P177_assigned_property_type]->(pred), "
         query += "(a)-[:crm_P141_assigned]->(pers) "
@@ -511,7 +595,7 @@ def get_source_and_agent(session, factoid, predicates):
     author = None
     if authoritylist["authorities"].get(factoid.source) is None:
         if factoid.source != 'Seals' or factoid.boulloterion is None:
-            print("No boulloterion found for seal-sourced factoid %d" % factoid.factoidKey
+            warn("No boulloterion found for seal-sourced factoid %d" % factoid.factoidKey
                   if factoid.source == 'Seals'
                   else "Source %s of factoid %d not known" % (factoid.source, factoid.factoidKey))
             return None, None
@@ -519,7 +603,7 @@ def get_source_and_agent(session, factoid, predicates):
         # This factoid is taken from a seal inscription. Let's pull that out into CRM objects.
         # If the boulloterion has no associated publications, we shouldn't use it.
         if len(factoid.boulloterion.publication) == 0:
-            print("No published source found for boulloterion %d" % factoid.boulloterion.boulloterionKey)
+            warn("No published source found for boulloterion %d" % factoid.boulloterion.boulloterionKey)
             return None, None
         # First find who did the analysis
         alist = set()
@@ -699,7 +783,7 @@ def death_handler(graphdriver, sourcenode, agent, factoid, graphperson, constant
         # - the event description predicate
         # - the event dating predicate
         if factoid.deathRecord is None:
-            print("Someone has a death factoid (%d, \"%s\") without a death record! Go check it out."
+            warn("Someone has a death factoid (%d, \"%s\") without a death record! Go check it out."
                   % (factoid.factoidKey, factoid.engDesc))
         else:
             # TODO parse this later into a real date range
@@ -730,10 +814,18 @@ def death_handler(graphdriver, sourcenode, agent, factoid, graphperson, constant
 
 
 def _find_or_create_group(graphdriver, idlabel, category):
+    grouplabels = {'Ethnicity': 'Ethnic_Group',
+                   'Religion': 'Religious_Community',
+                   'SocietyRole': 'Society_Role',
+                   'Language': 'Language_Skilled'}
+    if category == 'Language':
+        labelquery = 'MATCH (l:crm_E56_Language {value:"%s"}) ' % idlabel
+    else:
+        labelquery = 'MATCH (l:crm_E55_Type {value:"%s"})-[:crm_P127_has_broader_term]' \
+                         '->(super:crm_E55_Type {value:"%s"}) ' % (idlabel, category)
     with graphdriver.session() as session:
-        groupassertion = "MATCH (l:crm_E55_Type {value:\"%s\"})-[:crm_P127_has_broader_term]" \
-                         "->(super:crm_E55_Type {value:\"%s\"}) " % (idlabel, category)
-        groupassertion += "MERGE (g:crm_E74_Group)-[:crm_P1_is_identified_by]->(l) RETURN g"
+        groupassertion = labelquery + "MERGE (g:crm_E74_%s)-[:crm_P1_is_identified_by]->(l) RETURN g" \
+                         % grouplabels[category]
         result = session.run(groupassertion).single()
     return result['g']
 
@@ -756,7 +848,7 @@ def _assign_group_membership(graphdriver, sourcenode, agent, graphperson, consta
 def ethnicity_handler(graphdriver, sourcenode, agent, factoid, graphperson, constants):
     if factoid.ethnicityInfo is None or factoid.ethnicityInfo.ethnicity is None:
         # We can't assign any ethnicity without the ethnicity info
-        print("Empty ethnicity factoid found: id %s" % factoid.factoidKey)
+        warn("Empty ethnicity factoid found: id %s" % factoid.factoidKey)
         return
     elabel = factoid.ethnicityInfo.ethnicity.ethName
     _assign_group_membership(graphdriver, sourcenode, agent, graphperson, constants, 'Ethnicity', elabel)
@@ -764,7 +856,7 @@ def ethnicity_handler(graphdriver, sourcenode, agent, factoid, graphperson, cons
 
 def religion_handler(graphdriver, sourcenode, agent, factoid, graphperson, constants):
     if factoid.religion is None:
-        print("Empty religion factoid found: id %d" % factoid.factoidKey)
+        warn("Empty religion factoid found: id %d" % factoid.factoidKey)
         return
     rlabel = factoid.religion
     # Special case
@@ -779,10 +871,16 @@ def societyrole_handler(graphdriver, sourcenode, agent, factoid, graphperson, co
     _assign_group_membership(graphdriver, sourcenode, agent, graphperson, constants, 'SocietyRole', factoid.occupation)
 
 
+def language_handler(graphdriver, sourcenode, agent, factoid, graphperson, constants):
+    if factoid.languageSkill is None:
+        return
+    _assign_group_membership(graphdriver, sourcenode, agent, graphperson, constants, 'Language', factoid.languageSkill)
+
+
 def description_handler(graphdriver, sourcenode, agent, factoid, graphperson, constants):
     # Get the descriptions and the relevant languages
     langdesc = {'en': escape_text(factoid.replace_referents())}
-    langkey = {2: 'gr', 3: 'la', 4: 'ar'}
+    langkey = {2: 'gr', 3: 'la', 4: 'ar', 5: 'hy'}
     if factoid.origLang != '(Unspecified)':
         langdesc[langkey[factoid.oLangKey]] = escape_text(factoid.origLDesc)
     descattributes = []
@@ -802,19 +900,18 @@ def description_handler(graphdriver, sourcenode, agent, factoid, graphperson, co
             session.run(descassertion.replace('COMMAND', 'CREATE'))
 
 
-def _find_or_create_kinship(session, graphperson, graphkin, source):
+def _find_or_create_kinship(session, graphperson, graphkin):
     # See if there is an existing kinship group between the person and their kin according to the
-    # source in question. UNUSED
-    kinquery = "MATCH (p), (kin), (source) WHERE id(p) = %d AND id(kin) = %d AND id(source) = %d " \
-               % (graphperson.id, graphkin.id, source.id)
-    kinquery += "COMMAND (a1:crm_E13_attribute_assignment)-[:crm_p140_assigned_attribute_to]" \
-                "->(kg:crm_E74_Kinship_Group), "
-    kinquery += "(a1)-[:crm_p141_assigned]->(p), (a1)-[:crm_P70r_is_documented_in]->(source) "
-    kinquery += "COMMAND (a2:crm_E13_attribute_assignment)-[:crm_p140_assigned_attribute_to]->(kg), "
-    kinquery += "(a2)-[:crm_p141_assigned]->(kin), (a2)-[:crm_P70r_is_documented_in]->(source) RETURN kg"
-    result = session.run(kinquery.replace('COMMAND', 'MATCH')).single()
+    # source in question. If not, return a new (not yet connected) kinship group node.
+    kinquery = "MATCH (p), (kin) WHERE id(p) = %d AND id(kin) = %d " % (graphperson.id, graphkin.id)
+    kinquery += "MATCH (p)<-[:crm_P141_assigned]-(a1:crm_E13_Assertion)-[:crm_P140_assigned_attribute_to]" \
+                "->(kg:crm_E74_Kinship)<-[:crm_P140_assigned_attribute_to]-(a2)-[:crm_P141_assigned]->(kin) " \
+                "RETURN DISTINCT kg"
+    result = session.run(kinquery).single()
     if result is None:
-        result = session.run(kinquery.replace('COMMAND', 'CREATE')).single()
+        # If the kinship pair hasn't been referenced yet, then create a new empty kinship and return it
+        # for use in the assertions below.
+        result = session.run("CREATE (kg:crm_E74_Kinship) RETURN kg").single()
     return result['kg']
 
 
@@ -822,21 +919,23 @@ def kinship_handler(graphdriver, sourcenode, agent, factoid, graphperson, consta
     # Kinships are modeled as two-person groups with their own separate label (because, honestly)
     # and with .1 types as property attributes as per the CRM spec.
     if factoid.kinshipType is None:
-        print("Empty kinship factoid found: id %d" % factoid.factoidKey)
+        warn("Empty kinship factoid found: id %d" % factoid.factoidKey)
         return
+    predspec = constants[factoid.kinshipType.gspecRelat]
+    predgen = constants['P107']
     with graphdriver.session() as session:
         for kin in factoid.referents():
             graphkin = _find_or_create_graphperson(session, pbwagent, kin.name, kin.mdbCode)
-            kinassertion = "MATCH (p), (kin), (agent), (source) " \
-                           "WHERE id(p) = %d AND id(kin) = %d AND id(agent) = %d AND id(source) = %d " \
-                           % (graphperson.id, graphkin.id, agent.id, sourcenode.id)
-            kinassertion += "MERGE (kp1:crm_P107_has_current_or_former_member {type:\"%s\"}) " \
-                            "MERGE (kp2:crm_P107_has_current_or_former_member {type:\"%s_inverse\"}) " \
-                            % (factoid.kinshipType.gunspecRelat, factoid.kinshipType.gunspecRelat)
-            kinassertion += "CREATE (kg:crm_E74_Kinship_Group) "
-            kinassertion += "WITH kg, kp1, kp2, p, kin, agent, source "
-            kinassertion += _create_assertion_query('kg', 'kp1', 'p', 'agent', 'source', 'a1')
-            kinassertion += _create_assertion_query('kg', 'kp2', 'kin', 'agent', 'source', 'a2')
+            if graphkin.id == graphperson.id:
+                warn("Person %s listed as related to self" % kin)
+                continue
+            kgroup = _find_or_create_kinship(session, graphperson, graphkin)
+            kinassertion = "MATCH (p), (kin), (kg), (agent), (source), (pspec), (pgen) WHERE id(p) = %d " \
+                           "AND id(kin) = %d AND id(kg) = %d AND id(agent) = %d AND id(source) = %d " \
+                           "AND id(pspec) = %d AND id(pgen) = %d " \
+                           % (graphperson.id, graphkin.id, kgroup.id, agent.id, sourcenode.id, predspec, predgen)
+            kinassertion += _create_assertion_query('kg', 'pspec', 'p', 'agent', 'source', 'a1')
+            kinassertion += _create_assertion_query('kg', 'pgen', 'kin', 'agent', 'source', 'a2')
             kinassertion += "RETURN a1, a2"
             result = session.run(kinassertion.replace('COMMAND', 'MATCH')).single()
             if result is None:
@@ -897,7 +996,7 @@ def get_location_node(session, pbwloc):
                     "MERGE (p:crm_E55_Type {property:'crm_P168_place_is_defined_by'}) RETURN p").single()['p']
                 session.run(
                     "MATCH (l), (ag), (dbl), (p) WHERE id(l) = %d AND id(ag) = %d AND id(dbl) = %d AND id(p) = %d "
-                    "MERGE (a:crm_E13_Attribute_Assignment)-[:crm_P140_assigned_attribute_to]->(l) "
+                    "MERGE (a:crm_E13_Assertion)-[:crm_P140_assigned_attribute_to]->(l) "
                     "MERGE (a)-[:crm_P177_assigned_property_type]->(p) MERGE (a)-[:crm_P141_assigned]->(dbl) "
                     "MERGE (a)-[:crm_P14_carried_out_by]->(ag)" % (loc_node.id, ag.id, dbloc.id, pred.id))
     else:
@@ -927,7 +1026,7 @@ def process_persons(personlist, graphdriver, pbwagent, pbwfactoids, pbwrecordinf
                 method = eval("%s_handler" % ourftype.lower())
                 method(graphdriver, pbwagent, person, graph_person, ourvocab)
             except NameError:
-                print("No handler for %s record info; skipping." % ourftype)
+                warn("No handler for %s record info; skipping." % ourftype)
 
         # Now get the factoids that are really factoids
         for ftype in pbwfactoids:
@@ -936,7 +1035,7 @@ def process_persons(personlist, graphdriver, pbwagent, pbwfactoids, pbwrecordinf
             ourvocab.update(pbwvocabs.get('Predicates'))
             try:
                 method = eval("%s_handler" % ourftype.lower())
-                print("Ingesting %s factoids" % ourftype)
+                fprocessed = 0
                 for f in person.main_factoids(ftype):
                     # Get the source, either a text passage or a seal inscription, and the authority
                     # for the factoid. Authority will either be the author of the text, or the PBW
@@ -944,13 +1043,16 @@ def process_persons(personlist, graphdriver, pbwagent, pbwfactoids, pbwrecordinf
                     (source_node, authority_node) = get_source_and_agent(session, f, pbwvocabs.get('Predicates'))
                     # If the factoid has no source then we skip it
                     if source_node is None:
-                        print("Skipping factoid %d without a traceable source" % f.factoidKey)
+                        warn("Skipping factoid %d without a traceable source" % f.factoidKey)
                         continue
                     # If the factoid has no authority then we assign it to the generic PBW agent
                     if authority_node is None:
                         authority_node = pbwagent
                     # Call the handler for this factoid type
                     method(graphdriver, source_node, authority_node, f, graph_person, ourvocab)
+                    fprocessed += 1
+                if fprocessed > 0:
+                    print("Ingested %d %s factoid(s)" % (fprocessed, ftype))
 
             except NameError:
                 pass
