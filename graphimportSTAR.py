@@ -766,6 +766,36 @@ def _find_or_create_authority_group(session, members):
     return g['group']
 
 
+def _get_source_lang(factoid):
+    lkeys = {2: 'gr', 3: 'la', 4: 'ar', 5: 'hy'}
+    try:
+        return lkeys.get(factoid.oLangKey)
+    except NameError:
+        return None
+
+
+def appellation_handler(graphdriver, sourcenode, agent, factoid, graphperson, constants):
+    """Add an alternative or second name that the person is identified by"""
+    lkspec = _get_source_lang(factoid)
+    lkgen = None if factoid.secondName is None else _get_source_lang(factoid.secondName)
+    props = {'en': factoid.engDesc, lkspec: factoid.origLDesc}
+    if lkgen is not None:
+        sn = factoid.secondName
+        if factoid.engDesc == sn.famName:
+            # If the English name in the factoid matches the one in the FamilyName table,
+            # assume that the original language one should match as well, assuming it's the
+            # same language
+            props[lkgen] = sn.famNameOL
+        else:
+            # If the English names don't match, 
+
+    with graphdriver.session() as session:
+        appassertion = "MATCH (p), (agent), (source), (pred) " \
+                       "WHERE id(p) = %d AND id(agent) = %d AND id(source) = %d AND id(pred) = %d " % (
+            graphperson.id, agent.id, sourcenode.id, constants['P1'])
+        appassertion += "MERGE (n:crm_E41_Appellation {value:'%s'}) " % factoid.
+
+
 def death_handler(graphdriver, sourcenode, agent, factoid, graphperson, constants):
     with graphdriver.session() as session:
         # Each factoid is its own set of assertions pertaining to the single death of a person.
@@ -880,9 +910,9 @@ def language_handler(graphdriver, sourcenode, agent, factoid, graphperson, const
 def description_handler(graphdriver, sourcenode, agent, factoid, graphperson, constants):
     # Get the descriptions and the relevant languages
     langdesc = {'en': escape_text(factoid.replace_referents())}
-    langkey = {2: 'gr', 3: 'la', 4: 'ar', 5: 'hy'}
-    if factoid.origLang != '(Unspecified)':
-        langdesc[langkey[factoid.oLangKey]] = escape_text(factoid.origLDesc)
+    langkey = _get_source_lang(factoid)
+    if langkey is not None:
+        langdesc[langkey] = escape_text(factoid.origLDesc)
     descattributes = []
     for k, v in langdesc.items():
         descattributes.append('%s: \"%s\"' % (k, v))
