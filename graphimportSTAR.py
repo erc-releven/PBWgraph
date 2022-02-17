@@ -775,25 +775,50 @@ def _get_source_lang(factoid):
 
 
 def appellation_handler(graphdriver, sourcenode, agent, factoid, graphperson, constants):
-    """Add an alternative or second name that the person is identified by"""
-    lkspec = _get_source_lang(factoid)
-    lkgen = None if factoid.secondName is None else _get_source_lang(factoid.secondName)
-    props = {'en': factoid.engDesc, lkspec: factoid.origLDesc}
-    if lkgen is not None:
-        sn = factoid.secondName
-        if factoid.engDesc == sn.famName:
-            # If the English name in the factoid matches the one in the FamilyName table,
-            # assume that the original language one should match as well, assuming it's the
-            # same language
-            props[lkgen] = sn.famNameOL
-        else:
-            # If the English names don't match, 
-
+    """This handler deals with Second Name factoids and also Alternative Name factoids.
+    The Second Names might be in all sorts of languages in the factoid itself, but refer
+    to a canonical version of the name in the FamilyName table, which is probably usually
+    Greek. The Alternative Name factoids should exclusively use the information in the
+    base factoid."""
+    appassertion = "MATCH (p), (agent), (source), (pred) " \
+                   "WHERE id(p) = %d AND id(agent) = %d AND id(source) = %d AND id(pred) = %d " % (
+                       graphperson.id, agent.id, sourcenode.id, constants['P1'])
+    if factoid.factoidType == 'Alternative Name':
+        # We need to do some data cleaning here, since the engDesc is not particularly clean.
+        captures = [
+            r'^([\w\s]+):.*$',
+            r'^[\w\s]+ \(Different Name.*\).*$',
+            r'^[\w\s]+ \(monastic name\).*$',
+            r'^.*name.* was (\w+).*$',
+            r'^.*was called (\w+).*$'
+        ]
+        thename = None
+        for exp in captures:
+            appel = re.match(exp, factoid.engDesc)
+            if appel is not None:
+                thename = appel.group(1)
+                break
+        if thename is None:
+            thename = factoid.engDesc
+        appassertion += "MERGE (n:crm_E41_Appellation {value:'%s'}) " % thename
+    else:
+        # We need to fish out the family name and reconcile some languages.
+        lkspec = _get_source_lang(factoid)
+        lkgen = None if factoid.secondName is None else _get_source_lang(factoid.secondName)
+        props = {'en': factoid.engDesc, lkspec: factoid.origLDesc}
+        if lkgen is not None:
+            sn = factoid.secondName
+            if factoid.engDesc == sn.famName:
+                # If the English name in the factoid matches the one in the FamilyName table,
+                # assume that the original language one should match as well, assuming it's the
+                # same language
+                props[lkgen] = sn.famNameOL
+            else:
+                pass
     with graphdriver.session() as session:
-        appassertion = "MATCH (p), (agent), (source), (pred) " \
-                       "WHERE id(p) = %d AND id(agent) = %d AND id(source) = %d AND id(pred) = %d " % (
-            graphperson.id, agent.id, sourcenode.id, constants['P1'])
-        appassertion += "MERGE (n:crm_E41_Appellation {value:'%s'}) " % factoid.
+        result = session.run(appassertion.replace('COMMAND', 'MATCH')).single()
+        if result is None:
+            session.run(appassertion.replace('COMMAND', 'CREATE'))
 
 
 def death_handler(graphdriver, sourcenode, agent, factoid, graphperson, constants):
