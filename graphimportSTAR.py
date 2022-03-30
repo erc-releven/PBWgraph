@@ -596,8 +596,8 @@ def get_source_and_agent(session, factoid, predicates):
     if authoritylist["authorities"].get(factoid.source) is None:
         if factoid.source != 'Seals' or factoid.boulloterion is None:
             warn("No boulloterion found for seal-sourced factoid %d" % factoid.factoidKey
-                  if factoid.source == 'Seals'
-                  else "Source %s of factoid %d not known" % (factoid.source, factoid.factoidKey))
+                 if factoid.source == 'Seals'
+                 else "Source %s of factoid %d not known" % (factoid.source, factoid.factoidKey))
             return None, None
     if factoid.boulloterion is not None:
         # This factoid is taken from a seal inscription. Let's pull that out into CRM objects.
@@ -783,38 +783,54 @@ def appellation_handler(graphdriver, sourcenode, agent, factoid, graphperson, co
     appassertion = "MATCH (p), (agent), (source), (pred) " \
                    "WHERE id(p) = %d AND id(agent) = %d AND id(source) = %d AND id(pred) = %d " % (
                        graphperson.id, agent.id, sourcenode.id, constants['P1'])
+    name_en = None
     if factoid.factoidType == 'Alternative Name':
         # We need to do some data cleaning here, since the engDesc is not particularly clean.
         captures = [
             r'^([\w\s]+):.*$',
-            r'^[\w\s]+ \(Different Name.*\).*$',
-            r'^[\w\s]+ \(monastic name\).*$',
-            r'^.*name.* was (\w+).*$',
-            r'^.*was called (\w+).*$'
+            r'^([\w\s]+) \(Different Name.*\).*$',
+            r'^([\w\s]+) \(monastic name\).*$',
+            r'^.*name changed to (\w+).*$',
+            r'^.*also known as (\w+).*$',
+            r'^.*was called (\w+).*$',
+            r'^.*was renamed (\w+).*$',
+            r'^Baptised (\w+).*$'
+            r'^.*name.*? was (\w+).*$',
+            r'^.*changed.*? name to (\w+).*$',
         ]
-        thename = None
         for exp in captures:
             appel = re.match(exp, factoid.engDesc)
             if appel is not None:
-                thename = appel.group(1)
+                name_en = appel.group(1)
                 break
-        if thename is None:
-            thename = factoid.engDesc
-        appassertion += "MERGE (n:crm_E41_Appellation {value:'%s'}) " % thename
-    else:
-        # We need to fish out the family name and reconcile some languages.
-        lkspec = _get_source_lang(factoid)
-        lkgen = None if factoid.secondName is None else _get_source_lang(factoid.secondName)
-        props = {'en': factoid.engDesc, lkspec: factoid.origLDesc}
-        if lkgen is not None:
-            sn = factoid.secondName
-            if factoid.engDesc == sn.famName:
-                # If the English name in the factoid matches the one in the FamilyName table,
-                # assume that the original language one should match as well, assuming it's the
-                # same language
-                props[lkgen] = sn.famNameOL
-            else:
-                pass
+        if name_en is None:
+            name_en = factoid.engDesc
+        if name_en == '':
+            # The name is in the origLDesc
+            name_en = factoid.origLDesc
+        if len(' '.split(name_en)) > 3:
+            warn("Could not resolve alternative name from description '%s'" % factoid.engDesc)
+            return None
+        name_ol = factoid.origLDesc
+        olang = _get_source_lang(factoid)
+        print("Adding alternative name %s (%s '%s')" % (name_en, olang, name_ol))
+    else:  # factoidType is 'Second Name'
+        # We need to fish out the canonical family name, which is in secondName.famName
+        if factoid.secondName is not None:
+            name_en = factoid.secondName.famName
+            name_ol = factoid.secondName.famNameOL
+            olang = _get_source_lang(factoid.secondName) or 'gr'
+        else:
+            name_en = factoid.engDesc
+            name_ol = factoid.origLDesc
+            olang = _get_source_lang(factoid) or 'gr'
+        print("Adding second name %s (%s '%s')" % (name_en, olang, name_ol))
+
+    appassertion += "MERGE (n:crm_E41_Appellation {en:'%s', %s:'%s'}) " % (
+        escape_text(name_en), olang, escape_text(name_ol))
+    appassertion += "WITH p, agent, source, pred, n "
+    appassertion += _create_assertion_query('p', 'pred', 'n', 'agent', 'source')
+    appassertion += "RETURN a"
     with graphdriver.session() as session:
         result = session.run(appassertion.replace('COMMAND', 'MATCH')).single()
         if result is None:
@@ -838,8 +854,8 @@ def death_handler(graphdriver, sourcenode, agent, factoid, graphperson, constant
         # - the event description predicate
         # - the event dating predicate
         if factoid.deathRecord is None:
-            warn("Someone has a death factoid (%d, \"%s\") without a death record! Go check it out."
-                  % (factoid.factoidKey, factoid.engDesc))
+            warn("Someone has a death factoid (%d, \"%s\") without a death record! Go check it out." % (
+                factoid.factoidKey, factoid.engDesc))
         else:
             # TODO parse this later into a real date range
             deathdate = factoid.deathRecord.sourceDate
