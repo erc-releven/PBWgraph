@@ -50,8 +50,6 @@ def create_factoid_uris(a):
 #     person_base_uri_str=f"{pbwfpo}factoid/{b.personKey}"
 #     return person_base_uri_str
 
-
-
 def create_factoid(engine, g, mysqlsession):
     #print(f"""pbw factoid: {fa.factoidKey}""")
     for a in mysqlsession.query(pbw.Factoid).all():
@@ -60,9 +58,9 @@ def create_factoid(engine, g, mysqlsession):
         g.add((URIRef(factoid_base_uri_str), RDF.type, (URIRef(f"{fpocore}{(a.factoidTypeKey)}"))))
         g.add((URIRef(f"{pbw_fpo_extension}{a.factoidTypeKey}"), RDFS.label, Literal(f"{a.factoidType} Factoid")))
         if a.factoidTypeKey in EventFactoidList:
-            g.add((URIRef(f"{pbw_fpo_extension}{a.factoidTypeKey}"), RDFS.subClassOf, (URIRef(f"{fpocore}EventFactoid"))))
+            g.add((URIRef(f"{pbw_fpo_extension}factiodtype/{a.factoidTypeKey}"), RDFS.subClassOf, (URIRef(f"{fpocore}EventFactoid"))))
         if a.factoidTypeKey in StateOfAffairsFactoid:
-            g.add((URIRef(f"{pbw_fpo_extension}{a.factoidTypeKey}"), RDFS.subClassOf, (URIRef(f"{fpocore}StateOfAffairsFactoid"))))
+            g.add((URIRef(f"{pbw_fpo_extension}factiodtype/{a.factoidTypeKey}"), RDFS.subClassOf, (URIRef(f"{fpocore}StateOfAffairsFactoid"))))
         g.add(((URIRef(factoid_base_uri_str)), fpocore.sourcedForm, (URIRef(f"{pbwfpo}SourceCitation/{a.factoidKey}"))))
         g.add((URIRef(f"{pbwfpo}SourceCitation/{a.factoidKey}"), RDF.type, fpocore.SourceCitation))
         g.add((URIRef(f"{pbwfpo}SourceCitation/{a.factoidKey}"), fpocore.hasPlaceInSource, Literal(a.sourceRef)))
@@ -87,6 +85,28 @@ def create_occupation_label(engine, g, mysqlsession):
         g.add((URIRef(f"{pbwfpo}occupation/{d.occupationKey}"), RDFS.label, Literal(d.occupationName)))
         g.add((URIRef(f"{pbwfpo}occupation/{d.occupationKey}"), RDF.type, pbw_fpo_extension.Occupation))
     return g
+
+def create_person_uris(pk):
+    person_base_uri_str=f"{pbwfpo}person/{pk}"
+    return person_base_uri_str
+
+
+def create_person_reference (engine, g, mysqlsession):
+    for e in mysqlsession.query(pbw.FactoidPerson).all():
+        factoid_base_uri = create_factoid_uris(e.factoidKey)
+        person_uri = create_person_uris(e.personKey)
+        g.add((URIRef(factoid_base_uri), fpocore.hasReference, (URIRef(f"{pbwfpo}personref/{e.fpKey}"))))
+        g.add((URIRef(f"{pbwfpo}personref/{e.fpKey}"), RDF.type, fpocore.PersonReference))
+        g.add((URIRef(f"{pbwfpo}personref/{e.fpKey}"), fpocore.referencesPerson, URIRef(person_uri)))
+        g.add((URIRef(person_uri), RDF.type, fpocore.Person))
+    return g
+
+def create_person_labels(engine, g, mysqlsession):
+    for f in mysqlsession.query(pbw.Person).all():
+        person_uri = create_person_uris(f.personKey)
+        g.add((URIRef(person_uri), RDFS.label, Literal(f.descName)))
+    return g
+
 
 # def create_vname_association(engine, g, mysqlsession):
 #     for e in mysqlsession.query(pbw.vname_association).all():
@@ -119,6 +139,8 @@ def main(starttime, engine, mysqlsession):
     g = create_source(engine, g, mysqlsession)
     g = create_occupation_factoid(engine, g, mysqlsession)
     g = create_occupation_label(engine, g, mysqlsession)
+    g = create_person_reference(engine, g, mysqlsession)
+    g = create_person_labels(engine, g, mysqlsession)
     pbw_fpo = serializeto_ttl(g)
 
 
