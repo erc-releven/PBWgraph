@@ -7,372 +7,8 @@ from sqlalchemy.orm import sessionmaker
 from neo4j import GraphDatabase
 from warnings import warn
 
-
-# Make our list of sources / authorities
-def get_authmap():
-    """Return, for the sources in PBW, a list of contemporary authors of those sources and a list of the
-    scholars responsible for ingesting the source info into the database. Information on the latter is taken
-    from https://pbw2016.kdl.kcl.ac.uk/ref/sources/ and https://pbw2016.kdl.kcl.ac.uk/ref/seal-editions/"""
-
-    # These are the people in the PBW database credited with authorship of the source
-    authors = {
-        'Albert of Aachen': ['Albert', 26101],
-        'Alexios Stoudites': ['Alexios', 11],
-        'Anna Komnene': ['Anna', 62],
-        'Aristakes': ['Aristakes', 101],
-        'Attaleiates: Diataxis': ['Michael', 202],
-        'Attaleiates: History': ['Michael', 202],
-        'Basilakios, Orationes et epistulae': ['Nikephoros', 17003],
-        'Basileios of Calabria to Nikolaos III': ['Basileios', 254],
-        'Boilas': ['Eustathios', 105],
-        'Bryennios': ['Nikephoros', 117],
-        'Christophoros of Mitylene': ['Christophoros', 13102],
-        'Chrysobull of 1079': ['Nikephoros', 3],
-        'Clement III to Basileios of Calabria': ['Klemes', 23],
-        'Domenico of Grado': ['Dominikos', 101],
-        'Edict on Clergy Reform': ['Alexios', 1],
-        'Edict on clergy reform': ['Alexios', 1],
-        'Eustathios Romaios': ['Eustathios', 61],
-        'Eustathios: Capture of Thessalonike': ['Eustathios', 20147],
-        'Fulcher of Chartres': ['Fulcher', 101],
-        'Glykas': ['Michael', 305],
-        'Gregory VII, Epistolae vagantes': ['Gregorios', 27],
-        'Gregory VII, in Caspar': ['Gregorios', 27],
-        'Humbert, Commemoratio': ['Humbert', 101],
-        'Humbert, Dialogus': ['Humbert', 101],
-        'Humbert, Excommunication': ['Humbert', 101],
-        'Ioannes Italos': ['Ioannes', 66],
-        'Italikos': ['Michael', 20130],
-        'Kekaumenos': ['Anonymus', 274],
-        'Keroularios  ': ['Michael', 11],
-        'Kinnamos': ['Ioannes', 17001],
-        'Leo IX  ': ['Leon', 29],
-        'Leon of Chalcedon': ['Leon', 114],
-        'Leon of Ohrid (Greek)': ['Leon', 108],
-        'Leon of Ohrid (Latin)': ['Leon', 108, 'Humbert', 101],
-        'Manasses, Chronicle': ['Konstantinos', 302],
-        'Manasses, Chronicle: Dedication': ['Konstantinos', 302],
-        'Manasses, Hodoiporikon': ['Konstantinos', 302],
-        'Manganeios Prodromos': ['Manganeios', 101],
-        'Mauropous: Letters': ['Ioannes', 289],
-        'Mauropous: Orations': ['Ioannes', 289],
-        'Michael the Rhetor, Regel': ['Michael', 17004],
-        'Michel, Amalfi': ['Laycus', 101],
-        'Nicolas d\'Andida': ['Nikolaos', 257],
-        'Nicole, Chartophylax': ['Alexios', 1],
-        'Niketas Choniates, Historia': ['Niketas', 25001],
-        'Niketas Stethatos (Darrouzes)': ['Niketas', 105],
-        'Niketas Stethatos, On the Holy Spirit': ['Niketas', 105],
-        'Nikolaos III to Urban II': ['Nikolaos', 13],
-        'Oath of Eudokia': ['Eudokia', 1],
-        'Odo of Deuil': ['Odo', 102],
-        'Pakourianos': ['Gregorios', 61],
-        'Paschal II, Letter to Alexios I': ['Paschales', 22],
-        'Petros of Antioch  ': ['Petros', 103],
-        'Petros of Antioch, ep. 2': ['Petros', 103],
-        'Prodromos, Historische Gedichte': ['Theodoros', 25001],
-        'Psellos': ['Michael', 61],
-        'Psellos: Chronographia': ['Michael', 61],
-        'Ralph of Caen': ['Radulf', 112],
-        'Semeioma on Leon of Chalcedon': ['Alexios', 1],
-        'Skylitzes': ['Ioannes', 110],
-        'Skylitzes Continuatus': ['Anonymus', 102],
-        'Theophylact of Ohrid, Speech to Alexios I': ['Theophylaktos', 105],
-        'Theophylaktos of Ohrid, Letters': ['Theophylaktos', 105],
-        'Tornikes, Georgios': ['Georgios', 25002],
-        'Tzetzes, Exegesis of Homer': ['Ioannes', 459],
-        'Tzetzes, Historiai': ['Ioannes', 459],
-        'Tzetzes, Homerica': ['Ioannes', 459],
-        'Tzetzes, Letters': ['Ioannes', 459],
-        'Tzetzes, Posthomerica': ['Ioannes', 459],
-        'Usama': ['Usama', 101],
-        'Victor (pope)': ['Victor', 23],
-        'Walter the Chancellor': ['Walter', 101],
-        'William of Tyre': ['William', 4001],
-        'Zetounion': ['Nikolaos', 13],
-        'Zonaras': ['Ioannes', 6007]
-    }
-
-    # These are the modern scholars who put the source information into PBW records
-    mj = 'Michael Jeffreys'
-    tp = 'Tassos Papacostas'
-    ta = 'Tara Andrews'
-    jr = 'Judith Ryder'
-    mw = 'Mary Whitby'
-    wa = 'Wahid Amin'
-    bs = 'Bruna Soravia'
-    hm = 'Harry Munt'
-    lo = 'Letizia Osti'
-    cr = 'Charlotte Roueché'
-    ok = 'Olga Karagiorgiou'
-
-    authorities = {
-        'Albert of Aachen': [mj],
-        'Alexios Stoudites': [tp],
-        'Anna Komnene': [mj],
-        'Annales Barenses': [mj],
-        'Anonymus Barensis': [mj],
-        'Aristakes': [tp, ta],
-        'Attaleiates: Diataxis': [tp],
-        'Attaleiates: History': [tp],
-        'Basilakios, Orationes et epistulae': [],
-        'Basileios of Calabria to Nikolaos III': [mj],
-        'Boilas': [tp],
-        'Bryennios': [tp],
-        'Cheynet, Antioche et Tarse': [ok],
-        'Christophoros of Mitylene': [mj],
-        'Christos Philanthropos, note': [mj],
-        'Chrysobull of 1079': [tp],
-        'Clement III to Basileios of Calabria': [jr],
-        'Codice Diplomatico Barese IV': [mw],
-        'Council of 1147': [mj],
-        'Council of 1157': [mj],
-        'Dionysiou': [tp],
-        'Docheiariou': [tp],
-        'Documents d\'ecclesiologie ': [jr],
-        'Domenico of Grado': [jr],
-        'Droit matrimonial': [jr],
-        'Edict on Clergy Reform': [mj],
-        'Edict on clergy reform': [mj],
-        'Eleousa: Acts': [tp],
-        'Eleousa: Typikon': [mw],
-        'Esphigmenou': [tp],
-        'Eustathios Romaios': [mj],
-        'Eustathios: Capture of Thessalonike': [mj],
-        'Fulcher of Chartres': [mj],
-        'Geonames': [cr],
-        'Glykas': [tp],
-        'Gregory VII, Epistolae vagantes': [jr],
-        'Gregory VII, in Caspar': [jr],
-        'Hilandar': [tp],
-        'Humbert, Commemoratio': [jr],
-        'Humbert, Dialogus': [jr],
-        'Humbert, Excommunication': [jr],
-        'Hypomnema on marriage': [mj],
-        'Hypomnesis of May, 1094': [],
-        'Ibn Shaddad': [bs, hm],
-        'Ibn al-Athir': [wa],
-        'Ioannes Italos': [mj],
-        'Italikos': [mj],
-        'Italos trial': [mj],
-        'Iveron': [tp],
-        'Jus Graeco-Romanum, III': [mj],
-        'Kastamonitou': [tp],
-        'Kecharitomene': [mj],
-        'Kekaumenos': [tp],
-        'Keroularios  ': [jr],
-        'Kinnamos': [mj],
-        'Kleinchroniken': [tp],
-        'Koltsida-Makri': [ok],
-        'Kyrillos Phileotes': [tp],
-        'Laurent, Corpus V.2': [ok],
-        'Laurent, Corpus V.3': [ok],
-        'Lavra': [tp],
-        'Lazaros of Galesion': [tp],
-        'Leo IX  ': [jr],
-        'Leon of Chalcedon': [jr],
-        'Leon of Ohrid (Greek)': [jr],
-        'Leon of Ohrid (Latin)': [jr],
-        'Lupus protospatharius': [mj],
-        'Manasses, Chronicle': [mj],
-        'Manasses, Chronicle: Dedication': [mj],
-        'Manasses, Hodoiporikon': [mj],
-        'Manganeios Prodromos': [mj],
-        'Matthew of Edessa': [ta],
-        'Mauropous: Letters': [tp],
-        'Mauropous: Orations': [tp],
-        'Michael the Rhetor, Regel': [mj],
-        'Michel, Amalfi': [jr],
-        'Nea Mone': [tp],
-        'Nea Mone,': [tp],
-        'Nicolas d\'Andida': [jr],
-        'Nicole, Chartophylax': [jr],
-        'Niketas Choniates, Historia': [mj],
-        'Niketas Stethatos (Darrouzes)': [jr],
-        'Niketas Stethatos, On the Holy Spirit': [jr],
-        'Nikolaos III to Urban II': [jr],
-        'Oath of Eudokia': [mj],
-        'Odo of Deuil': [mj],
-        'Pakourianos': [tp],
-        'Panteleemon': [tp],
-        'Pantokrator (Athos)': [tp],
-        'Pantokrator Typikon': [tp],
-        'Parthenon inscriptions': [mj],
-        'Paschal II, Letter to Alexios I': [mj],
-        'Patmos: Acts': [tp],
-        'Patmos: Codicil': [mw],
-        'Patmos: Testament': [mw],
-        'Patmos: Typikon': [mw],
-        'Peri metatheseon': [mj],
-        'Petros of Antioch  ': [tp],
-        'Petros of Antioch, ep. 2': [tp],
-        'Pleiades': [cr],
-        'Prodromos, Historische Gedichte': [mj],
-        'Protaton': [tp],
-        'Psellos': [mj, tp],
-        'Psellos: Chronographia': [mw],
-        'Ralph of Caen': [mj],
-        'Sakkos (1166)': [mj],
-        'Sakkos (1170)': [mj],
-        'Seibt – Zarnitz': [ok],
-        'Semeioma on Leon of Chalcedon': [jr],
-        'Sode, Berlin': [ok],
-        'Skylitzes': [tp],
-        'Skylitzes Continuatus': [tp],
-        'Speck, Berlin': [ok],
-        'Stavrakos': [ok],
-        'Synod of 1072': [mj],
-        'Synod of 1094': [tp],
-        'Synodal edict (1054)': [jr],
-        'Synodal protocol (1089)': [jr],
-        'Synopsis Chronike': [],
-        'Thebes: Cadaster': [mj],
-        'Thebes: Confraternity': [mj],
-        'Theophylact of Ohrid, Speech to Alexios I': [mj],
-        'Theophylaktos of Ohrid, Letters': [mj],
-        'Tornikes, Georgios': [mj],
-        'Tzetzes, Exegesis of Homer': [mj],
-        'Tzetzes, Historiai': [mj],
-        'Tzetzes, Homerica': [mj],
-        'Tzetzes, Letters': [mj],
-        'Tzetzes, Posthomerica': [mj],
-        'Usama': [lo, hm],
-        'Vatopedi': [tp],
-        'Victor (pope)': [jr],
-        'Walter the Chancellor': [mj],
-        'Wassiliou, Hexamilites': [ok],
-        'William of Tyre': [mj],
-        'Xenophontos': [tp],
-        'Xeropotamou': [tp],
-        'Yahya al-Antaki': [tp, lo, hm],
-        'Zacos II': [ok],
-        'Zetounion': [jr],
-        'Zonaras': [mw]
-    }
-    return {'authors': authors, 'authorities': authorities}
-
-
-def inrange(floruit):
-    allowed = {
-        'E / M XI',
-        'L XI',
-        'M XI',
-        'L XI / E XII',
-        'M / L XI',
-        'XI',
-        'E / L XI',
-        'M XI / E XII',
-        'E  / M XI',
-        'L X / E XI',
-        'E XI',
-        'L XI / M XII',
-        'L  XI',
-        'M XI / L XI',
-        'M XI/L XI',
-        'L X / M XI',
-        'M / L  XI',
-        'E /M XI',
-        'E XI / M XI',
-        'E XI/M XI',
-        'E / M  XI',
-        'XI-XII',
-        'M  / L XI',
-        'mid XI',
-        '1041/2',
-        'mid-XI',
-        'late XI',
-        'L XI?',
-        '1088',
-        '1060',
-        'M-E XI',
-        'M/L XI',
-        'E-L XI',
-        'E XI-',
-        'L XI-E XII',
-        'M-L XI',
-        'L XI/E XII',
-        'E XI-1071',
-        'c. 1006-1067',
-        'c. 1050-1103',
-        'c. 1007-1061',
-        'E XI-c. 1088',
-        'M XI/LXI',
-        '1066-1123?',
-        '1083-c. 1154',
-        '1057-1118',
-        'E/M XI',
-        'XI / XII',
-        'X / XI',
-        '1050',
-        '1070',
-        '1075',
-        'L XI /  E XII',
-        'E X1',
-        '??',
-        '(XI)',
-        'E  / L XI',
-        '1090',
-        'L XI / L XII',
-        'X / XII',
-        'LXI / E XII',
-        'L XI /  M XII',
-        '1084',
-        'L XI - E XII',
-        '? / M XI',
-        'L X/ E XI',
-        '1025',
-        '11th c.',
-        ' L XI',
-        'L XI / XII',
-        '?  XI?',
-    }
-    return floruit in allowed
-
-
-def _get_label(tag):
-    # Set up the ontology labels that we will be using
-    our_predicates = {
-        'C11': 'sdh-so__C11_Gender',
-        'C24': 'sdh-so__C24_Religion_or_religious_denomination',
-        'E13': 'crm__E13_Assertion',
-        'E17': 'crm_E17_Type_Assignment',
-        'E22': 'crm__E22_Human-Made_Object',
-        'E31': 'crm__E31_Document',
-        'E34': 'crm__E34_Inscription',
-        'E39': 'crm__E39_Actor',
-        'E41': 'crm__E41_Appellation',
-        'E52': 'crm__E52_Time-Span',
-        'E55': 'crm__E55_Type',
-        'E56': 'crm__E56_Language',
-        'E62': 'crm__E62_String',
-        'E74': 'crm__E74_Group',
-        'F1': 'frbroo__F1_Work',
-        'F2': 'frbroo__F2_Expression',
-        'F22': 'frbroo__F22_Self-contained_Expression',
-        'F28': 'frbroo__F28_Expression_Creation',
-        'P1': 'crm__P1_is_identified_by',
-        'P3': 'crm__P3_has_note',
-        'P4': 'crm__P4_has_time_span',
-        'P14': 'crm__P14_carried_out_by',
-        'P41': 'crm__P41_classified',
-        'P42': 'crm__P42_assigned',
-        'P51': 'crm__P51_has_former_or_current_owner',
-        'P70r': 'crm__P70r_is_documented_in',
-        'P94': 'crm__P94_has_created',
-        'P100': 'crm__P100_was_death_of',
-        'P107': 'crm__P107_has_current_or_former_member',
-        'P127': 'crm__P127_has_broader_term',
-        'P128': 'crm__P128_carries',
-        'P140': 'crm__P140_assigned_attribute_to',
-        'P141': 'crm__P140_assigned',
-        'P165': 'crm__P165_incorporates',
-        'P177': 'crm__P177_assigned_property_type',
-        'R2': 'frbroo__R2_is_derivative_of',
-        'R3': 'frbroo__R3_is_realised_in',
-        'R5': 'frbroo__R5_has_component',
-        'R17': 'frbroo__R17_created'
-    }
-    return our_predicates[tag]  # we want to throw an error if it isn't here
+# Global variable for our constants object
+constants = None
 
 
 def escape_text(t):
@@ -380,48 +16,497 @@ def escape_text(t):
     return t.replace("'", "\\'").replace('"', '\\"')
 
 
-def collect_person_records(sqlsession):
+class PBWstarConstants:
+    """A class to deal with all of our constants, where the data is nicely encapsulated"""
+
+    def __init__(self, sqlsession, graphdriver):
+        self.graphdriver = graphdriver
+
+        self.authorlist = {
+            'Albert of Aachen': ['Albert', 26101],
+            'Alexios Stoudites': ['Alexios', 11],
+            'Anna Komnene': ['Anna', 62],
+            'Aristakes': ['Aristakes', 101],
+            'Attaleiates: Diataxis': ['Michael', 202],
+            'Attaleiates: History': ['Michael', 202],
+            'Basilakios, Orationes et epistulae': ['Nikephoros', 17003],
+            'Basileios of Calabria to Nikolaos III': ['Basileios', 254],
+            'Boilas': ['Eustathios', 105],
+            'Bryennios': ['Nikephoros', 117],
+            'Christophoros of Mitylene': ['Christophoros', 13102],
+            'Chrysobull of 1079': ['Nikephoros', 3],
+            'Clement III to Basileios of Calabria': ['Klemes', 23],
+            'Domenico of Grado': ['Dominikos', 101],
+            'Edict on Clergy Reform': ['Alexios', 1],
+            'Edict on clergy reform': ['Alexios', 1],
+            'Eustathios Romaios': ['Eustathios', 61],
+            'Eustathios: Capture of Thessalonike': ['Eustathios', 20147],
+            'Fulcher of Chartres': ['Fulcher', 101],
+            'Glykas': ['Michael', 305],
+            'Gregory VII, Epistolae vagantes': ['Gregorios', 27],
+            'Gregory VII, in Caspar': ['Gregorios', 27],
+            'Humbert, Commemoratio': ['Humbert', 101],
+            'Humbert, Dialogus': ['Humbert', 101],
+            'Humbert, Excommunication': ['Humbert', 101],
+            'Ioannes Italos': ['Ioannes', 66],
+            'Italikos': ['Michael', 20130],
+            'Kekaumenos': ['Anonymus', 274],
+            'Keroularios  ': ['Michael', 11],
+            'Kinnamos': ['Ioannes', 17001],
+            'Leo IX  ': ['Leon', 29],
+            'Leon of Chalcedon': ['Leon', 114],
+            'Leon of Ohrid (Greek)': ['Leon', 108],
+            'Leon of Ohrid (Latin)': ['Leon', 108, 'Humbert', 101],
+            'Manasses, Chronicle': ['Konstantinos', 302],
+            'Manasses, Chronicle: Dedication': ['Konstantinos', 302],
+            'Manasses, Hodoiporikon': ['Konstantinos', 302],
+            'Manganeios Prodromos': ['Manganeios', 101],
+            'Mauropous: Letters': ['Ioannes', 289],
+            'Mauropous: Orations': ['Ioannes', 289],
+            'Michael the Rhetor, Regel': ['Michael', 17004],
+            'Michel, Amalfi': ['Laycus', 101],
+            'Nicolas d\'Andida': ['Nikolaos', 257],
+            'Nicole, Chartophylax': ['Alexios', 1],
+            'Niketas Choniates, Historia': ['Niketas', 25001],
+            'Niketas Stethatos (Darrouzes)': ['Niketas', 105],
+            'Niketas Stethatos, On the Holy Spirit': ['Niketas', 105],
+            'Nikolaos III to Urban II': ['Nikolaos', 13],
+            'Oath of Eudokia': ['Eudokia', 1],
+            'Odo of Deuil': ['Odo', 102],
+            'Pakourianos': ['Gregorios', 61],
+            'Paschal II, Letter to Alexios I': ['Paschales', 22],
+            'Petros of Antioch  ': ['Petros', 103],
+            'Petros of Antioch, ep. 2': ['Petros', 103],
+            'Prodromos, Historische Gedichte': ['Theodoros', 25001],
+            'Psellos': ['Michael', 61],
+            'Psellos: Chronographia': ['Michael', 61],
+            'Ralph of Caen': ['Radulf', 112],
+            'Semeioma on Leon of Chalcedon': ['Alexios', 1],
+            'Skylitzes': ['Ioannes', 110],
+            'Skylitzes Continuatus': ['Anonymus', 102],
+            'Theophylact of Ohrid, Speech to Alexios I': ['Theophylaktos', 105],
+            'Theophylaktos of Ohrid, Letters': ['Theophylaktos', 105],
+            'Tornikes, Georgios': ['Georgios', 25002],
+            'Tzetzes, Exegesis of Homer': ['Ioannes', 459],
+            'Tzetzes, Historiai': ['Ioannes', 459],
+            'Tzetzes, Homerica': ['Ioannes', 459],
+            'Tzetzes, Letters': ['Ioannes', 459],
+            'Tzetzes, Posthomerica': ['Ioannes', 459],
+            'Usama': ['Usama', 101],
+            'Victor (pope)': ['Victor', 23],
+            'Walter the Chancellor': ['Walter', 101],
+            'William of Tyre': ['William', 4001],
+            'Zetounion': ['Nikolaos', 13],
+            'Zonaras': ['Ioannes', 6007]
+        }
+
+        # These are the modern scholars who put the source information into PBW records
+        mj = 'Michael Jeffreys'
+        tp = 'Tassos Papacostas'
+        ta = 'Tara Andrews'
+        jr = 'Judith Ryder'
+        mw = 'Mary Whitby'
+        wa = 'Wahid Amin'
+        bs = 'Bruna Soravia'
+        hm = 'Harry Munt'
+        lo = 'Letizia Osti'
+        cr = 'Charlotte Roueché'
+        ok = 'Olga Karagiorgiou'
+
+        self.authoritylist = {
+            'Albert of Aachen': [mj],
+            'Alexios Stoudites': [tp],
+            'Anna Komnene': [mj],
+            'Annales Barenses': [mj],
+            'Anonymus Barensis': [mj],
+            'Aristakes': [tp, ta],
+            'Attaleiates: Diataxis': [tp],
+            'Attaleiates: History': [tp],
+            'Basilakios, Orationes et epistulae': [],
+            'Basileios of Calabria to Nikolaos III': [mj],
+            'Boilas': [tp],
+            'Bryennios': [tp],
+            'Cheynet, Antioche et Tarse': [ok],
+            'Christophoros of Mitylene': [mj],
+            'Christos Philanthropos, note': [mj],
+            'Chrysobull of 1079': [tp],
+            'Clement III to Basileios of Calabria': [jr],
+            'Codice Diplomatico Barese IV': [mw],
+            'Council of 1147': [mj],
+            'Council of 1157': [mj],
+            'Dionysiou': [tp],
+            'Docheiariou': [tp],
+            'Documents d\'ecclesiologie ': [jr],
+            'Domenico of Grado': [jr],
+            'Droit matrimonial': [jr],
+            'Edict on Clergy Reform': [mj],
+            'Edict on clergy reform': [mj],
+            'Eleousa: Acts': [tp],
+            'Eleousa: Typikon': [mw],
+            'Esphigmenou': [tp],
+            'Eustathios Romaios': [mj],
+            'Eustathios: Capture of Thessalonike': [mj],
+            'Fulcher of Chartres': [mj],
+            'Geonames': [cr],
+            'Glykas': [tp],
+            'Gregory VII, Epistolae vagantes': [jr],
+            'Gregory VII, in Caspar': [jr],
+            'Hilandar': [tp],
+            'Humbert, Commemoratio': [jr],
+            'Humbert, Dialogus': [jr],
+            'Humbert, Excommunication': [jr],
+            'Hypomnema on marriage': [mj],
+            'Hypomnesis of May, 1094': [],
+            'Ibn Shaddad': [bs, hm],
+            'Ibn al-Athir': [wa],
+            'Ioannes Italos': [mj],
+            'Italikos': [mj],
+            'Italos trial': [mj],
+            'Iveron': [tp],
+            'Jus Graeco-Romanum, III': [mj],
+            'Kastamonitou': [tp],
+            'Kecharitomene': [mj],
+            'Kekaumenos': [tp],
+            'Keroularios  ': [jr],
+            'Kinnamos': [mj],
+            'Kleinchroniken': [tp],
+            'Koltsida-Makri': [ok],
+            'Kyrillos Phileotes': [tp],
+            'Laurent, Corpus V.2': [ok],
+            'Laurent, Corpus V.3': [ok],
+            'Lavra': [tp],
+            'Lazaros of Galesion': [tp],
+            'Leo IX  ': [jr],
+            'Leon of Chalcedon': [jr],
+            'Leon of Ohrid (Greek)': [jr],
+            'Leon of Ohrid (Latin)': [jr],
+            'Lupus protospatharius': [mj],
+            'Manasses, Chronicle': [mj],
+            'Manasses, Chronicle: Dedication': [mj],
+            'Manasses, Hodoiporikon': [mj],
+            'Manganeios Prodromos': [mj],
+            'Matthew of Edessa': [ta],
+            'Mauropous: Letters': [tp],
+            'Mauropous: Orations': [tp],
+            'Michael the Rhetor, Regel': [mj],
+            'Michel, Amalfi': [jr],
+            'Nea Mone': [tp],
+            'Nea Mone,': [tp],
+            'Nicolas d\'Andida': [jr],
+            'Nicole, Chartophylax': [jr],
+            'Niketas Choniates, Historia': [mj],
+            'Niketas Stethatos (Darrouzes)': [jr],
+            'Niketas Stethatos, On the Holy Spirit': [jr],
+            'Nikolaos III to Urban II': [jr],
+            'Oath of Eudokia': [mj],
+            'Odo of Deuil': [mj],
+            'Pakourianos': [tp],
+            'Panteleemon': [tp],
+            'Pantokrator (Athos)': [tp],
+            'Pantokrator Typikon': [tp],
+            'Parthenon inscriptions': [mj],
+            'Paschal II, Letter to Alexios I': [mj],
+            'Patmos: Acts': [tp],
+            'Patmos: Codicil': [mw],
+            'Patmos: Testament': [mw],
+            'Patmos: Typikon': [mw],
+            'Peri metatheseon': [mj],
+            'Petros of Antioch  ': [tp],
+            'Petros of Antioch, ep. 2': [tp],
+            'Pleiades': [cr],
+            'Prodromos, Historische Gedichte': [mj],
+            'Protaton': [tp],
+            'Psellos': [mj, tp],
+            'Psellos: Chronographia': [mw],
+            'Ralph of Caen': [mj],
+            'Sakkos (1166)': [mj],
+            'Sakkos (1170)': [mj],
+            'Seibt – Zarnitz': [ok],
+            'Semeioma on Leon of Chalcedon': [jr],
+            'Sode, Berlin': [ok],
+            'Skylitzes': [tp],
+            'Skylitzes Continuatus': [tp],
+            'Speck, Berlin': [ok],
+            'Stavrakos': [ok],
+            'Synod of 1072': [mj],
+            'Synod of 1094': [tp],
+            'Synodal edict (1054)': [jr],
+            'Synodal protocol (1089)': [jr],
+            'Synopsis Chronike': [],
+            'Thebes: Cadaster': [mj],
+            'Thebes: Confraternity': [mj],
+            'Theophylact of Ohrid, Speech to Alexios I': [mj],
+            'Theophylaktos of Ohrid, Letters': [mj],
+            'Tornikes, Georgios': [mj],
+            'Tzetzes, Exegesis of Homer': [mj],
+            'Tzetzes, Historiai': [mj],
+            'Tzetzes, Homerica': [mj],
+            'Tzetzes, Letters': [mj],
+            'Tzetzes, Posthomerica': [mj],
+            'Usama': [lo, hm],
+            'Vatopedi': [tp],
+            'Victor (pope)': [jr],
+            'Walter the Chancellor': [mj],
+            'Wassiliou, Hexamilites': [ok],
+            'William of Tyre': [mj],
+            'Xenophontos': [tp],
+            'Xeropotamou': [tp],
+            'Yahya al-Antaki': [tp, lo, hm],
+            'Zacos II': [ok],
+            'Zetounion': [jr],
+            'Zonaras': [mw]
+        }
+
+        self.entitylabels = {
+            'C11': 'sdh-so__C11_Gender',
+            'C24': 'sdh-so__C24_Religion_or_religious_denomination',
+            'E13': 'crm__E13_Assertion',
+            'E17': 'crm_E17_Type_Assignment',
+            'E22': 'crm__E22_Human-Made_Object',
+            'E31': 'crm__E31_Document',
+            'E34': 'crm__E34_Inscription',
+            'E39': 'crm__E39_Actor',
+            'E41': 'crm__E41_Appellation',
+            'E52': 'crm__E52_Time-Span',
+            'E55': 'crm__E55_Type',
+            'E56': 'crm__E56_Language',
+            'E62': 'crm__E62_String',
+            'E74': 'crm__E74_Group',
+            'F1': 'frbroo__F1_Work',
+            'F2': 'frbroo__F2_Expression',
+            'F22': 'frbroo__F22_Self-contained_Expression',
+            'F28': 'frbroo__F28_Expression_Creation'
+        }
+
+        self.allowed = {
+            'E / M XI',
+            'L XI',
+            'M XI',
+            'L XI / E XII',
+            'M / L XI',
+            'XI',
+            'E / L XI',
+            'M XI / E XII',
+            'E  / M XI',
+            'L X / E XI',
+            'E XI',
+            'L XI / M XII',
+            'L  XI',
+            'M XI / L XI',
+            'M XI/L XI',
+            'L X / M XI',
+            'M / L  XI',
+            'E /M XI',
+            'E XI / M XI',
+            'E XI/M XI',
+            'E / M  XI',
+            'XI-XII',
+            'M  / L XI',
+            'mid XI',
+            '1041/2',
+            'mid-XI',
+            'late XI',
+            'L XI?',
+            '1088',
+            '1060',
+            'M-E XI',
+            'M/L XI',
+            'E-L XI',
+            'E XI-',
+            'L XI-E XII',
+            'M-L XI',
+            'L XI/E XII',
+            'E XI-1071',
+            'c. 1006-1067',
+            'c. 1050-1103',
+            'c. 1007-1061',
+            'E XI-c. 1088',
+            'M XI/LXI',
+            '1066-1123?',
+            '1083-c. 1154',
+            '1057-1118',
+            'E/M XI',
+            'XI / XII',
+            'X / XI',
+            '1050',
+            '1070',
+            '1075',
+            'L XI /  E XII',
+            'E X1',
+            '??',
+            '(XI)',
+            'E  / L XI',
+            '1090',
+            'L XI / L XII',
+            'X / XII',
+            'LXI / E XII',
+            'L XI /  M XII',
+            '1084',
+            'L XI - E XII',
+            '? / M XI',
+            'L X/ E XI',
+            '1025',
+            '11th c.',
+            ' L XI',
+            'L XI / XII',
+            '?  XI?',
+        }
+
+        self.predicates = {
+            'P1': 'crm__P1_is_identified_by',
+            'P3': 'crm__P3_has_note',
+            'P4': 'crm__P4_has_time_span',
+            'P14': 'crm__P14_carried_out_by',
+            'P41': 'crm__P41_classified',
+            'P42': 'crm__P42_assigned',
+            'P51': 'crm__P51_has_former_or_current_owner',
+            'P70r': 'crm__P70i_is_documented_in',
+            'P94': 'crm__P94_has_created',
+            'P100': 'crm__P100_was_death_of',
+            'P107': 'crm__P107_has_current_or_former_member',
+            'P127': 'crm__P127_has_broader_term',
+            'P128': 'crm__P128_carries',
+            'P140': 'crm__P140_assigned_attribute_to',
+            'P141': 'crm__P141_assigned',
+            'P165': 'crm__P165_incorporates',
+            'P177': 'crm__P177_assigned_property_type',
+            'R2': 'frbroo__R2_is_derivative_of',
+            'R3': 'frbroo__R3_is_realised_in',
+            'R5': 'frbroo__R5_has_component',
+            'R17': 'frbroo__R17_created'
+        }
+
+        # Define our STAR model predicates
+        self.star_subject = 'crm__P140_assigned_attribute_to'
+        self.star_predicate = 'crm__P177_assigned_property_type'
+        self.star_object = 'crm__P141_assigned'
+        self.star_source = 'crm__P70i_is_documented_in'
+        self.star_auth = 'crm__P14_carried_out_by'
+
+        # Get the list of factoid types
+        self.factoidTypes = [x.typeName for x in sqlsession.query(pbw.FactoidType).all()
+                             if x.typeName != '(Unspecified)']
+        # Get the classes of info that are directly in the person record
+        self.directPersonRecords = ['Gender', 'Disambiguation', 'Identifier']
+
+        def _init_typology(session, superclass, instances):
+            """Initialize the typologies that are in the PBW database, knowing that the type names were not chosen
+            for ease of variable expression. Returns a map of type name -> Neo4J node ID."""
+            retmap = dict()
+            # Batch these into groups of 100
+            doloop = True
+            while doloop:
+                if len(instances) > 100:
+                    batch = instances[0:100]
+                    del instances[0:100]
+                else:
+                    batch = instances
+                    doloop = False
+                i = 0
+                varmap = dict()
+                cypherq = "MERGE (super:%s {value:\"%s\", constant:TRUE}) " % (self.get_label('E55'), superclass)
+                for inst in batch:
+                    # Leave out blank instances
+                    if inst == '':
+                        continue
+                    var = "inst%d" % i
+                    i += 1
+                    varmap[var] = inst
+                    cypherq += "MERGE (%s:%s {value:\"%s\", constant:TRUE})-[:%s]->(super) " \
+                               % (var, self.get_label('E55'), inst, self.get_label('P127'))
+                cypherq += "RETURN %s" % ', '.join(["%s" % x for x in varmap.keys()])
+                # print(cypherq)
+                types = session.run(cypherq).single()
+                for k, v in types.items():
+                    retmap[varmap[k]] = v.id
+            return retmap
+
+        ###  Initialise constants held in the SQL database
+        print("Setting up PBW constants...")
+        with graphdriver.session() as session:
+            # Make our anonymous agent PBW for the un-sourced information
+            self.generic_agent = session.run("MERGE (a:%s {identifier:'PBW editors', constant:TRUE}) return a"
+                                             % self.entitylabels.get('E39')).single()['a']
+
+            # Some of these factoid types have their own controlled vocabularies. Extract them here and
+            # simplify the broader term.
+            self.cv = dict()
+            self.cv['Gender'] = _init_typology(session, self.get_label('C11'), ['Female', 'Male', 'Eunuch'])
+            self.cv['SocietyRole'] = _init_typology(session, 'SocietyRole',
+                                                    [x.occupationName for x in sqlsession.query(pbw.Occupation).all()])
+            self.cv['Ethnicity'] = _init_typology(session, self.get_label('E74'),
+                                                  [x.ethName for x in sqlsession.query(pbw.Ethnicity).all()])
+            self.cv['Religion'] = _init_typology(session, self.get_label('C24'),
+                                                 [x.religionName for x in sqlsession.query(pbw.Religion).all()])
+
+            # Dignities in PBW tend to be specific to institutions / areas;
+            # make an initial selection by breaking on the 'of'
+            all_dignities = set()
+            for x in sqlsession.query(pbw.DignityOffice).all():
+                if ' of the ' in x.stdName:  # Don't split (yet) titles that probably don't refer to places
+                    dignity = [x.stdName]
+                else:
+                    dignity = x.stdName.split(' of ')
+                all_dignities.add(dignity[0])
+            self.cv['Dignity'] = _init_typology(session, 'Dignity', list(all_dignities))
+
+            # Kinship is expressed as typed predicates as opposed to E55 Types.
+            kinnodes = {}
+            for x in sqlsession.query(pbw.KinshipType).all():
+                kt = x.gspecRelat
+                cypherq = "MERGE (kt:%s {type:\"%s\"}) RETURN kt" % (self.get_predicate('P107'), kt)
+                result = session.run(cypherq).single()
+                kinnodes[kt] = result['kt'].id
+            self.cv['Kinship'] = kinnodes
+
+            # Language has its own subtype so handle this separately
+            langnodes = {}
+            for x in sqlsession.query(pbw.LanguageSkill).all():
+                lang = x.languageName
+                cypherq = "MERGE (lang:%s {value:'%s', constant:TRUE}) RETURN lang" % (self.get_label('E56'), lang)
+                result = session.run(cypherq).single()
+                langnodes[lang] = result['lang'].id
+            self.cv['Language'] = langnodes
+
+    ### Lookup functions
+
+    def author(self, a):
+        """Return the PBW person identifier for the given source author."""
+        return self.authorlist.get(a, None)
+
+    def authorities(self, a):
+        """Return the name(s) of the scholar(s) responsible for ingesting the info from the given source
+        into the database. Information on the latter is taken from https://pbw2016.kdl.kcl.ac.uk/ref/sources/
+        and https://pbw2016.kdl.kcl.ac.uk/ref/seal-editions/"""
+        return self.authoritylist.get(a, None)
+
+    def get_label(self, lbl):
+        """Return the fully-qualified entity label given the short name"""
+        return self.entitylabels.get(lbl, None)
+
+    def get_predicate(self, p):
+        """Return the reified predicate node for the given short name"""
+        if isinstance(self.predicates[p], str):
+            fqname = self.predicates[p]
+            with self.graphdriver.session() as session:
+                npred = session.run("MERGE (n:%s {constant:TRUE}) RETURN n" % fqname).single()['n']
+                self.predicates[p] = npred
+        return self.predicates[p]
+
+    def inrange(self, floruit):
+        """Return true if the given floruit tag falls within RELEVEN's range"""
+        return floruit in self.allowed
+
+
+def collect_person_records(sqlsession, constants):
     """Get a list of people whose floruit matches our needs"""
-    relevant = [x for x in sqlsession.query(pbw.Person).all() if inrange(x.floruit) and len(x.factoids) > 0]
+    relevant = [x for x in sqlsession.query(pbw.Person).all() if constants.inrange(x.floruit) and len(x.factoids) > 0]
     print("Found %d relevant people" % len(relevant))
     return relevant
     # Debugging / testing: restrict the list of relevant people
     # debugnames = ['Herve', 'Ioannes', 'Konstantinos', 'Anna']
     # debugcodes = [62, 68, 101, 102]
     # return [x for x in relevant if x.name in debugnames and x.mdbCode in debugcodes]
-
-
-def _init_typology(session, superclass, instances):
-    """Initialize the typologies that are in the PBW database, knowing that the type names were not chosen
-    for ease of variable expression. Returns a map of type name -> Neo4J node ID."""
-    retmap = dict()
-    # Batch these into groups of 100
-    doloop = True
-    while doloop:
-        if len(instances) > 100:
-            batch = instances[0:100]
-            del instances[0:100]
-        else:
-            batch = instances
-            doloop = False
-        i = 0
-        varmap = dict()
-        cypherq = "MERGE (super:%s {value:\"%s\", constant:TRUE}) " % (_get_label('E55'), superclass)
-        for inst in batch:
-            # Leave out blank instances
-            if inst == '':
-                continue
-            var = "inst%d" % i
-            i += 1
-            varmap[var] = inst
-            cypherq += "MERGE (%s:%s {value:\"%s\", constant:TRUE})-[:%s]->(super) " \
-                       % (var, _get_label('E55'), inst, _get_label('P127'))
-        cypherq += "RETURN %s" % ', '.join(["%s" % x for x in varmap.keys()])
-        # print(cypherq)
-        types = session.run(cypherq).single()
-        for k, v in types.items():
-            retmap[varmap[k]] = v.id
-    return retmap
 
 
 def _smooth_labels(label):
@@ -440,95 +525,15 @@ def _smooth_labels(label):
     return label
 
 
-def setup_constants(sqlsession, graphdriver):
-    """Set up the necessary object and predicate nodes that will be shared by the individual records"""
-    print("Setting up PBW constants...")
-    with graphdriver.session() as session:
-        # Make our anonymous agent PBW for the un-sourced information
-        generic_agent = session.run("MERGE (a:%s {identifier:'PBW', constant:TRUE}) return a"
-                                    % _get_label('E39')).single()['a']
-        # Get the list of factoid types
-        pbw_factoid_types = [x.typeName for x in sqlsession.query(pbw.FactoidType).all()
-                             if x.typeName != '(Unspecified)']
-        # Add the info that is directly in the person record
-        pbw_pr_info = ['Gender', 'Disambiguation', 'Identifier']
-
-        # Some of these factoid types have their own controlled vocabularies. Extract them here and
-        # simplify the broader term.
-        controlled_vocabs = dict()
-        controlled_vocabs['Gender'] = _init_typology(session, _get_label('C11'), ['Female', 'Male', 'Eunuch'])
-        controlled_vocabs['SocietyRole'] = _init_typology(session, 'SocietyRole',
-                                                          [x.occupationName for x
-                                                           in sqlsession.query(pbw.Occupation).all()])
-        controlled_vocabs['Ethnicity'] = _init_typology(session, _get_label('E74'),
-                                                        [x.ethName for x in sqlsession.query(pbw.Ethnicity).all()])
-        controlled_vocabs['Religion'] = _init_typology(session, _get_label('C24'),
-                                                       [x.religionName for x in sqlsession.query(pbw.Religion).all()])
-        # Dignities in PBW tend to be specific to institutions / areas;
-        # make an initial selection by breaking on the 'of'
-        all_dignities = set()
-        for x in sqlsession.query(pbw.DignityOffice).all():
-            if ' of the ' in x.stdName:  # Don't split (yet) titles that probably don't refer to places
-                dignity = [x.stdName]
-            else:
-                dignity = x.stdName.split(' of ')
-            all_dignities.add(dignity[0])
-        controlled_vocabs['Dignity'] = _init_typology(session, 'Dignity', list(all_dignities))
-
-        # Kinship is expressed as typed predicates as opposed to E55 Types.
-        kinnodes = {}
-        for x in sqlsession.query(pbw.KinshipType).all():
-            kt = x.gspecRelat
-            cypherq = "MERGE (kt:%s {type:\"%s\"}) RETURN kt" % (_get_label('P107'), kt)
-            result = session.run(cypherq).single()
-            kinnodes[kt] = result['kt'].id
-        controlled_vocabs['Kinship'] = kinnodes
-
-        # Language has its own subtype so handle this separately
-        langnodes = {}
-        for x in sqlsession.query(pbw.LanguageSkill).all():
-            lang = x.languageName
-            cypherq = "MERGE (lang:%s {value:'%s', constant:TRUE}) RETURN lang" % (_get_label('E56'), lang)
-            result = session.run(cypherq).single()
-            langnodes[lang] = result['lang'].id
-        controlled_vocabs['Language'] = langnodes
-
-        # Set up the predicates that we will be using
-        our_predicates = [
-            'crm_P1_is_identified_by',
-            'crm_P3_has_note',
-            'crm_P4_has_time_span',
-            'crm_P14_carried_out_by',
-            'crm_P41_classified',
-            'crm_P51_has_former_or_current_owner',
-            'crm_P94_has_created',
-            'crm_P100_was_death_of',
-            'crm_P107_has_current_or_former_member',
-            'crm_P128_carries',
-            'crm_P165_incorporates'
-        ]
-        prednodes = dict()
-        for pred in our_predicates:
-            # Make the predicate node
-            npred = session.run("MERGE (n:%s {constant:TRUE}) RETURN n" % pred).single()['n']
-            # Store the predicates by their short code
-            predcode = pred.replace('crm_', '')
-            predcode = predcode.split('_')[0]
-            prednodes[predcode] = npred.id
-        controlled_vocabs['Predicates'] = prednodes
-
-    return generic_agent, pbw_factoid_types, pbw_pr_info, controlled_vocabs
-
-
-def _create_assertion_query(subj, pred, obj, auth, src, var="a"):
+def _create_assertion_query(factoid, subj, pred, obj, auth, src, var="a"):
     """Create the query pattern for an assertion with the given connections. Use 'var' to control
     the variable name for the assertion. Attempts to build the query with specific information first,
     assuming that plain node variable names indicate an already known node."""
-    apreds = {'subj': '[:%s]' % _get_label('P140'),
-              'pred': '[:%s]' % _get_label('P177'),
-              'obj': '[:%s]' % _get_label('P141'),
-              'auth': '[:%s]' % _get_label('P14'),
-              'src': '[:%s]' % _get_label('P70r')}
+    apreds = {'subj': '[:%s]' % constants.star_subject,
+              'pred': '[:%s]' % constants.star_predicate,
+              'obj': '[:%s]' % constants.star_object,
+              'auth': '[:%s]' % constants.star_auth,
+              'src': '[:%s]' % constants.star_source}
     # Do the subject and object first, then source, authority and predicate
     # as search area probably increases for each in that order
     anodes = [('auth', auth), ('pred', pred)]
@@ -544,17 +549,26 @@ def _create_assertion_query(subj, pred, obj, auth, src, var="a"):
         anodes.append(('subj', subj))
 
     # Now build the query using the order in anodes
-    aclass = ':' + _get_label('E13')
+    aclass = ':crm__E13_Attribute_Assignment:frbroo__F22_Self-contained_Expression'
+    afromfact = 'https://pbw2016.kdl.kcl.ac.uk/rdf/factoid/'
+    if factoid is not None:
+        afromfact += factoid.factoidKey
+    else:
+        afromfact += 'NONE'
     aclassed = False
     aqparts = []
     for nt in anodes:
-        aqparts.append("(%s%s)-%s->(%s)" % (var, aclass if not aclassed else '', apreds[nt[0]], nt[1]))
+        aqparts.append("(%s%s%s)-%s->(%s)" % (var,
+                                              aclass if not aclassed else '',
+                                              ' {fromfact: "%s"}' % afromfact if not aclassed else '',
+                                              apreds[nt[0]],
+                                              nt[1]))
         aclassed = True
     return "COMMAND %s " % ", ".join(aqparts)
 
 
-def gender_handler(graphdriver, agent, sqlperson, graphperson, constants):
-    with graphdriver.session() as session:
+def gender_handler(agent, sqlperson, graphperson):
+    with constants.graphdriver.session() as session:
         uncertain = False
         pbw_sex = sqlperson.sex
         if pbw_sex == 'Mixed':  # we have already excluded Anonymi
@@ -575,11 +589,13 @@ def gender_handler(graphdriver, agent, sqlperson, graphperson, constants):
             # Make the event tied to this person
             genderassertion = "MATCH (p), (s), (pbw), (sp41) " \
                               "WHERE id(p) = %d AND id(s) = %d AND id(pbw) = %d AND id(sp41) = %d " % \
-                              (graphperson.id, constants[pbw_sex], agent.id, _get_label('P41'))
-            genderassertion += "MERGE (sp42:%s%s) " % (_get_label('P42'), assertion_props)
+                              (graphperson.id, constants.cv['Gender'][pbw_sex],
+                               agent.id, constants.get_predicate('P41'))
+            genderassertion += "MERGE (sp42:%s%s) " % (constants.get_predicate('P42'), assertion_props)
             genderassertion += "WITH p, s, pbw, sp41, sp42 "
-            genderassertion += _create_assertion_query('ga:%s' % _get_label('E17'), 'sp41', 'p', 'pbw', None, 'a1')
-            genderassertion += _create_assertion_query('ga', 'sp42', 's', 'pbw', None, 'a2')
+            genderassertion += _create_assertion_query(None, 'ga:%s' % constants.get_label('E17'),
+                                                       'sp41', 'p', 'pbw', None, 'a1')
+            genderassertion += _create_assertion_query(None, 'ga', 'sp42', 's', 'pbw', None, 'a2')
             genderassertion += "RETURN a1, a2"
             # print(genderassertion % (graphperson.id, constants[pbw_sex], agent.id, assertion_props))
             result = session.run(genderassertion.replace('COMMAND', 'MATCH')).single()
@@ -587,42 +603,42 @@ def gender_handler(graphdriver, agent, sqlperson, graphperson, constants):
                 session.run(genderassertion.replace('COMMAND', 'CREATE'))
 
 
-def identifier_handler(graphdriver, agent, sqlperson, graphperson, constants):
+def identifier_handler(agent, sqlperson, graphperson):
     """The identifier in this context is the 'origName' field, thus an identifier assigned by PBW
     not on the basis of any particular source"""
-    with graphdriver.session() as session:
+    with constants.graphdriver.session() as session:
         idassertion = "MATCH (p), (pbw), (pred) WHERE id(p) = %d AND id(pbw) = %d AND id(pred) = %d " \
-                      % (graphperson.id, agent.id, _get_label('P1'))
-        idassertion += "MERGE (app:%s {value: \"%s\"}) " % (_get_label('E41'), sqlperson.nameOL)
+                      % (graphperson.id, agent.id, constants.get_predicate('P1'))
+        idassertion += "MERGE (app:%s {value: \"%s\"}) " % (constants.get_label('E41'), sqlperson.nameOL)
         idassertion += "WITH p, pbw, pred, app "
-        idassertion += _create_assertion_query('p', 'pred', 'app', 'pbw', None)
+        idassertion += _create_assertion_query(None, 'p', 'pred', 'app', 'pbw', None)
         idassertion += "RETURN a"
         result = session.run(idassertion.replace('COMMAND', 'MATCH')).single()
         if result is None:
             return session.run(idassertion.replace('COMMAND', 'CREATE'))
 
 
-def disambiguation_handler(graphdriver, agent, sqlperson, graphperson, constants):
+def disambiguation_handler(agent, sqlperson, graphperson):
     """The short description of the person provided by PBW"""
-    with graphdriver.session() as session:
+    with constants.graphdriver.session() as session:
         disassertion = "MATCH (p), (pbw), (pred) WHERE id(p) = %d AND id(pbw) = %d AND id(pred) = %d " % \
-                       (graphperson.id, agent.id, _get_label('P3'))
+                       (graphperson.id, agent.id, constants.get_predicate('P3'))
         disassertion += "MERGE (desc:crm__E62_String {value:\"%s\"}) " % escape_text(sqlperson.descName)
         disassertion += "WITH p, pred, desc, pbw "
-        disassertion += _create_assertion_query('p', 'pred', 'desc', 'pbw', None)
+        disassertion += _create_assertion_query(None, 'p', 'pred', 'desc', 'pbw', None)
         disassertion += "RETURN a"
         result = session.run(disassertion.replace('COMMAND', 'MATCH')).single()
         if result is None:
             return session.run(disassertion.replace('COMMAND', 'CREATE'))
 
 
-def _find_or_create_event(graphdriver, person, eventclass, predicate):
+def _find_or_create_event(person, eventclass, predicate):
     """Helper function to find the relevant event for event-based factoids"""
-    with graphdriver.session() as session:
+    with constants.graphdriver.session() as session:
         query = "MATCH (pers), (pred) WHERE id(pers) = %d AND id(pred) = %d " % (person.id, predicate)
-        query += "MATCH (a:%s)-[:%s]->(event:%s), " % (_get_label('P13'), _get_label('P140'), eventclass)
-        query += "(a)-[:%s]->(pred), " % _get_label('P177')
-        query += "(a)-[:%s]->(pers) " % _get_label('P141')
+        query += "MATCH (a:%s)-[:%s]->(event:%s), " % (constants.get_label('P13'), constants.star_subject, eventclass)
+        query += "(a)-[:%s]->(pred), " % constants.star_predicate
+        query += "(a)-[:%s]->(pers) " % constants.star_object
         query += "RETURN DISTINCT event"  # There may well be multiple assertions about this event
         result = session.run(query).single()
         if result is None:
@@ -637,9 +653,8 @@ def get_source_and_agent(session, factoid):
     relationships to describe that source, if necessary. The source will either be a physical E22 Human-Made Object
     (the boulloterion) or an E31 Document (the written primary source)."""
     # Is this a 'seals' source without a boulloterion? If so warn and return None
-    authoritylist = get_authmap()
     author = None
-    if authoritylist["authorities"].get(factoid.source) is None:
+    if constants.authorities(factoid.source) is None:
         if factoid.source != 'Seals' or factoid.boulloterion is None:
             warn("No boulloterion found for seal-sourced factoid %d" % factoid.factoidKey
                  if factoid.source == 'Seals'
@@ -656,42 +671,43 @@ def get_source_and_agent(session, factoid):
         for pub in factoid.boulloterion.publication:
             # If the publication isn't in the authority list, Michael analysed it
             if pub.bibSource is not None:
-                thispubauth = authoritylist["authorities"].get(pub.bibSource.shortName, ["Michael Jeffreys"])
+                thispubauth = constants.authoritylist.get(pub.bibSource.shortName, ["Michael Jeffreys"])
                 alist.update(thispubauth)
         agent = get_authority_node(session, list(alist))
         # Then get the node that points to the boulloterion's sources
         srclist = get_boulloterion_sourcelist(session, factoid.boulloterion)
         if srclist is not None:
             q = "MATCH (pred), (agent), (srclist) WHERE id(pred) = %d AND id(agent) = %d AND id(srclist) = %d " \
-                % (_get_label('P128'), agent.id, srclist.id)
+                % (constants.get_predicate('P128'), agent.id, srclist.id)
         else:
-            q = "MATCH (pred), (agent) WHERE id(pred) = %d AND id(agent) = %d " % (_get_label('P128'), agent.id)
+            q = "MATCH (pred), (agent) WHERE id(pred) = %d AND id(agent) = %d " \
+                % (constants.get_predicate('P128'), agent.id)
         # boulloterion is an E22 Human-Made Object
-        q += "MERGE (boul:%s {reference:%s}) " % (_get_label('E22'), factoid.boulloterion.boulloterionKey)
+        q += "MERGE (boul:%s {reference:%s}) " % (constants.get_label('E22'), factoid.boulloterion.boulloterionKey)
         # which is asserted by the agent to P128 carry an E34 Inscription (we can even record the inscription)
         q += "MERGE (src:%s:%s {text:\"%s\"}) " \
-             % (_get_label('E34'), _get_label('E31'), factoid.boulloterion.origLText)
+             % (constants.get_label('E34'), constants.get_label('E31'), factoid.boulloterion.origLText)
         q += "WITH boul, pred, src, agent%s " % (", srclist" if srclist else "")
-        q += _create_assertion_query("boul", "pred", "src", "agent", "srclist" if srclist else None)
+        q += _create_assertion_query(factoid, "boul", "pred", "src", "agent", "srclist" if srclist else None)
         # MAYBE LATER: which is asserted by MJ to P108 have produced various E22 Human-Made Objects (the seals)
         # - which seals are asserted by the collection authors (with pub source) to also carry the inscriptions?
     else:
         # This factoid is taken from a document.
         # Do we have a known author for this text?
-        author = get_author_node(session, authoritylist['authors'].get(factoid.source))
+        author = get_author_node(session, constants.author(factoid.source))
         # If not, we use the PBW scholar as the authority.
-        agent = get_authority_node(session, authoritylist['authorities'].get(factoid.source))
+        agent = get_authority_node(session, constants.authorities(factoid.source))
         # If there is no PBW scholar known for this source, we use the generic PBW agent.
         if agent is None:
-            agent = pbwagent
+            agent = constants.generic_agent
         # Now we find an E31 Document (the whole work), its author (if any), and the PBW scholar who analyzed it
         work = get_source_work(session, factoid, author)
         q = "MATCH (work), (agent), (p165) WHERE id(work) = %d AND id(agent) = %d AND id(p165) = %d " % (
-            work.id, agent.id, _get_label('P165'))
+            work.id, agent.id, constants.get_predicate('P165'))
         q += "MERGE (src:%s {reference:'%s', text:'%s'}) " % \
-             (_get_label('E31'), escape_text(factoid.sourceRef), escape_text(factoid.origLDesc))
+             (constants.get_label('E31'), escape_text(factoid.sourceRef), escape_text(factoid.origLDesc))
         q += "WITH work, p165, src, agent "
-        q += _create_assertion_query("work", "p165", "src", "agent", None)
+        q += _create_assertion_query(factoid, "work", "p165", "src", "agent", None)
     q += "RETURN src"  # SOMEDAY work out why this query needs a 'distinct'
     source_result = session.run(q.replace('COMMAND', 'MATCH')).single()
     if source_result is None:
@@ -891,7 +907,7 @@ def death_handler(graphdriver, sourcenode, agent, factoid, graphperson, constant
         # When there are multiple sources, we will have to review them for consistency and make
         # proxies for the death event as necessary.
         # See if we can find the death event
-        deathevent = _find_or_create_event(graphdriver, graphperson, 'crm__E69_Death', _get_label('P100'))
+        deathevent = _find_or_create_event(graphdriver, graphperson, constants.get_label('E69'), constants.get_predicate('P100'))
         # Create the new assertion that says the death happened. Start by gathering all our existing
         # nodes and reified predicates:
         # - the person
@@ -1053,8 +1069,8 @@ def kinship_handler(graphdriver, sourcenode, agent, factoid, graphperson, consta
                            "AND id(kin) = %d AND id(kg) = %d AND id(agent) = %d AND id(source) = %d " \
                            "AND id(pspec) = %d AND id(pgen) = %d " \
                            % (graphperson.id, graphkin.id, kgroup.id, agent.id, sourcenode.id, predspec, predgen)
-            kinassertion += _create_assertion_query('kg', 'pspec', 'p', 'agent', 'source', 'a1')
-            kinassertion += _create_assertion_query('kg', 'pgen', 'kin', 'agent', 'source', 'a2')
+            kinassertion += _create_assertion_query(factoid, 'kg', 'pspec', 'p', 'agent', 'source', 'a1')
+            kinassertion += _create_assertion_query(factoid, 'kg', 'pgen', 'kin', 'agent', 'source', 'a2')
             kinassertion += "RETURN a1, a2"
             result = session.run(kinassertion.replace('COMMAND', 'MATCH')).single()
             if result is None:
@@ -1082,51 +1098,51 @@ def possession_handler(graphdriver, sourcenode, agent, factoid, graphperson, con
             session.run(posassertion.replace('COMMAND', 'CREATE'))
 
 
-def _find_or_create_graphperson(session, agent, name, code):
+def _find_or_create_graphperson(name, code):
     """Return an E21 Person, labeled with the name and code via an E14 Identifier Assignment carried out by PBW."""
     # We can't merge with comma statements, so we have to do it with successive one-liners.
     # Start the merge from the specific information we have, which is the identifier itself.
     nodelookup = "MATCH (pbw) WHERE id(pbw) = %d " \
-                 "MERGE (idlabel:crm__E42_Identifier {value:'%s %d'}) " \
-                 "MERGE (pbw)<-[:crm__P14_carried_out_by]-(idass:crm__E15_Identifier_Assignment)" \
+                 "MERGE (idlabel:%s {value:'%s %d'}) " \
+                 "MERGE (pbw)<-[:%s]-(idass:%s)" \
                  "-[:crm__P37_assigned]->(idlabel) " \
                  "MERGE (idass)-[:crm__P140_assigned_attribute_to]->(p:crm__E21_Person) RETURN p" % \
-                 (agent.id, name, code)
+                 (constants.get_label('E42'), constants.star_agent, constants.get_label('E15'), agent.id, name, code)
     graph_person = session.run(nodelookup).single()['p']
     return graph_person
 
 
-def get_location_node(session, pbwloc):
-    # The location record has an identifer, plus a couple of assertions by Charlotte about its
-    # correspondence in the GeoNames and/or Pleiades database.
-    loc_query = session.run("MATCH (l:crm__E53_Place {identifier: '%s', pbwid: %d}) RETURN l"
-                            % (escape_text(pbwloc.locName), pbwloc.locationKey)).single()
-    if loc_query is None:
-        # We need to create it.
-        loc_node = session.run("CREATE (l:crm__E53_Place {identifier: '%s', pbwid: %d}) RETURN l"
-                               % (escape_text(pbwloc.locName), pbwloc.locationKey)).single()['l']
-        for db in ("pleiades", "geonames"):
-            dbid = pbwloc.__getattribute__("%s_id" % db)
-            if dbid is not None:
-                ag = session.run("MERGE (ag:crm__E39_Actor {identifier:'Charlotte Roueché'}) RETURN ag").single()['ag']
-                dbloc = session.run("MERGE (l:crm__E94_Space_Primitive {db: '%s', id: %d}) "
-                                    "RETURN l" % (db, dbid)).single()['l']
-                pred = session.run(
-                    "MERGE (p:crm__E55_Type {property:'crm__P168_place_is_defined_by'}) RETURN p").single()['p']
-                session.run(
-                    "MATCH (l), (ag), (dbl), (p) WHERE id(l) = %d AND id(ag) = %d AND id(dbl) = %d AND id(p) = %d "
-                    "MERGE (a:crm__E13_Assertion)-[:crm__P140_assigned_attribute_to]->(l) "
-                    "MERGE (a)-[:crm__P177_assigned_property_type]->(p) MERGE (a)-[:crm__P141_assigned]->(dbl) "
-                    "MERGE (a)-[:crm__P14_carried_out_by]->(ag)" % (loc_node.id, ag.id, dbloc.id, pred.id))
-    else:
-        loc_node = loc_query['l']
-    return loc_node
+# def get_location_node(session, pbwloc):
+#     # The location record has an identifer, plus a couple of assertions by Charlotte about its
+#     # correspondence in the GeoNames and/or Pleiades database.
+#     loc_query = session.run("MATCH (l:crm__E53_Place {identifier: '%s', pbwid: %d}) RETURN l"
+#                             % (escape_text(pbwloc.locName), pbwloc.locationKey)).single()
+#     if loc_query is None:
+#         # We need to create it.
+#         loc_node = session.run("CREATE (l:crm__E53_Place {identifier: '%s', pbwid: %d}) RETURN l"
+#                                % (escape_text(pbwloc.locName), pbwloc.locationKey)).single()['l']
+#         for db in ("pleiades", "geonames"):
+#             dbid = pbwloc.__getattribute__("%s_id" % db)
+#             if dbid is not None:
+#                 ag = session.run("MERGE (ag:crm__E39_Actor {identifier:'Charlotte Roueché'}) RETURN ag").single()['ag']
+#                 dbloc = session.run("MERGE (l:crm__E94_Space_Primitive {db: '%s', id: %d}) "
+#                                     "RETURN l" % (db, dbid)).single()['l']
+#                 pred = session.run(
+#                     "MERGE (p:crm__E55_Type {property:'crm__P168_place_is_defined_by'}) RETURN p").single()['p']
+#                 session.run(
+#                     "MATCH (l), (ag), (dbl), (p) WHERE id(l) = %d AND id(ag) = %d AND id(dbl) = %d AND id(p) = %d "
+#                     "MERGE (a:crm__E13_Assertion)-[:crm__P140_assigned_attribute_to]->(l) "
+#                     "MERGE (a)-[:crm__P177_assigned_property_type]->(p) MERGE (a)-[:crm__P141_assigned]->(dbl) "
+#                     "MERGE (a)-[:crm__P14_carried_out_by]->(ag)" % (loc_node.id, ag.id, dbloc.id, pred.id))
+#     else:
+#         loc_node = loc_query['l']
+#     return loc_node
 
 
-def process_persons(personlist, graphdriver, pbwagent, pbwfactoids, pbwrecordinfo, pbwvocabs):
+def process_persons(sqlsession, graphdriver):
     """Go through the relevant person records and process them for factoids"""
     processed = 0
-    for person in personlist:
+    for person in collect_person_records(sqlsession, constants):
         # Skip the anonymous groups for now
         if person.name == 'Anonymi':
             continue
@@ -1137,7 +1153,7 @@ def process_persons(personlist, graphdriver, pbwagent, pbwfactoids, pbwrecordinf
             graph_person = _find_or_create_graphperson(session, pbwagent, person.name, person.mdbCode)
 
         # Get the 'factoids' that are directly in the person record
-        for ftype in pbwrecordinfo:
+        for ftype in constants.directPersonRecords:
             ourftype = _smooth_labels(ftype)
             ourvocab = pbwvocabs.get(ourftype, dict())
             ourvocab.update(pbwvocabs.get('Predicates'))
@@ -1188,8 +1204,8 @@ if __name__ == '__main__':
     # Connect to the graph DB
     driver = GraphDatabase.driver(config.graphuri, auth=(config.graphuser, config.graphpw))
     # Make / retrieve the global nodes and constants
-    (pbwagent, pbwfactoids, pbwrecordinfo, pbwvocabs) = setup_constants(mysqlsession, driver)
+    constants = PBWstarConstants(mysqlsession, driver)
     # Process the person records
-    process_persons(collect_person_records(mysqlsession), driver, pbwagent, pbwfactoids, pbwrecordinfo, pbwvocabs)
+    process_persons(mysqlsession, driver)
     duration = datetime.datetime.now() - starttime
     print("Done! Ran in %s" % str(duration))
