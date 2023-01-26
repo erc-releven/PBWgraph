@@ -541,7 +541,7 @@ class Factoid(Base):
     vnameInfo = relationship('VariantName', secondary=vname_association, backref="factoidData", uselist=False)
     secondName = relationship('FamilyName', secondary=family_association, uselist=False)
     kinshipType = relationship('KinshipType', secondary=kinship_association, uselist=False)
-    cursusRecord = relationship('Cursus', secondary=cursus_association, uselist=False)
+    cursusRecord = relationship('Cursus', secondary=cursus_association, uselist=False, overlaps="cursusFactoids")
 
     # From association classes that return a record, we have:
     # - deathRecord

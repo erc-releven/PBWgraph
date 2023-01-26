@@ -252,23 +252,30 @@ class PBWstarConstants:
         self.entitylabels = {
             'C1': '`sdh-so__C1_Social_Quality_of_an_Actor`',
             'C5': '`sdh-so__C5_Membership`',
+            'C7': '`sdh-so__C7_Occupation`',
             'C11': '`sdh-so__C11_Gender`',
             'C12': '`sdh-so__C12_Actors_Social_Role`',
             'C21': 'sdh__C21_Skill',
             'C23': '`sdh-so__C23_Religious_identity`',
             'C24': '`sdh-so__C24_Religion_or_religious_denomination`',
             'C29': '`sdh__C29_Know-How`',
-            'E13': 'crm__E13_Assertion',
-            'E17': 'crm_E17_Type_Assignment',
+            'E13': 'crm__E13_Attribute_Assignment',
+            'E15': 'crm__E15_Identifier_Assignment',
+            'E17': 'crm__E17_Type_Assignment',
+            'E18': 'crm__E18_Physical_Thing',
+            'E21': 'crm__E21_Person',
             'E22': '`crm__E22_Human-Made_Object`',
             'E31': 'crm__E31_Document',
             'E34': 'crm__E34_Inscription',
             'E39': 'crm__E39_Actor',
             'E41': 'crm__E41_Appellation',
+            'E42': 'crm__E42_Identifier',
             'E52': '`crm__E52_Time-Span`',
             'E55': 'crm__E55_Type',
             'E56': 'crm__E56_Language',
             'E62': 'crm__E62_String',
+            'E69': 'crm__E69_Death',
+            'E73': 'crm__E73_Information_Object',
             'E74': 'crm__E74_Group',
             'F1': 'lrmer__F1_Work',
             'F2': 'lrmer__F2_Expression',
@@ -282,6 +289,8 @@ class PBWstarConstants:
             'P3': 'crm__P3_has_note',
             'P4': 'crm__P4_has_time_span',
             'P14': 'crm__P14_carried_out_by',
+            'P17': 'crm__P17_was_motivated_by',
+            'P37': 'crm__P37_assigned',
             'P41': 'crm__P41_classified',
             'P42': 'crm__P42_assigned',
             'P51': 'crm__P51_has_former_or_current_owner',
@@ -298,7 +307,9 @@ class PBWstarConstants:
             'P177': 'crm__P177_assigned_property_type',
             'R3': 'lrmer__R3_is_realised_in',
             'R5': 'lrmer__R5_has_component',
+            'R16': 'lrmer__R16_created',
             'R17': 'lrmer__R17_created',
+            'R76': 'lrmer__R76_is_derivative_of',
             'SP13': '`sdh-so__P13_pertains_to`',
             'SP14': '`sdh-so__P14_is_defined_by`',
             'SP35': '`sdh-so__P35_is_defined_by`',
@@ -306,6 +317,8 @@ class PBWstarConstants:
             'SP37': '`sdh-so__P37_concerns`',
             'SP38': 'sdh__P38_has_skill'
         }
+
+        self.prednodes = dict()
 
         self.allowed = {
             'E / M XI',
@@ -382,11 +395,11 @@ class PBWstarConstants:
         }
 
         # Define our STAR model predicates
-        self.star_subject = 'crm__P140_assigned_attribute_to'
-        self.star_predicate = 'crm__P177_assigned_property_type'
-        self.star_object = 'crm__P141_assigned'
-        self.star_source = 'crm__P17_was_motivated_by'
-        self.star_auth = 'crm__P14_carried_out_by'
+        self.star_subject = self.predicates['P140']
+        self.star_predicate = self.predicates['P177']
+        self.star_object = self.predicates['P141']
+        self.star_source = self.predicates['P17']
+        self.star_auth = self.predicates['P14']
 
         # Get the list of factoid types
         self.factoidTypes = [x.typeName for x in sqlsession.query(pbw.FactoidType).all()
@@ -490,17 +503,22 @@ class PBWstarConstants:
         return self.authoritylist.get(a, None)
 
     def get_label(self, lbl):
-        """Return the fully-qualified entity or predicate label given the short name"""
-        return self.entitylabels.get(lbl, self.predicates.get(lbl, None))
+        """Return the fully-qualified entity or predicate label given the short name.
+        We want this to throw an exception if nothing is found."""
+        try:
+            return self.entitylabels[lbl]
+        except KeyError:
+            return self.predicates[lbl]
 
     def get_predicate(self, p):
-        """Return the reified predicate node for the given short name"""
-        if isinstance(self.predicates[p], str):
+        """Return the reified predicate node for the given short name. We want this to throw
+        an exception if no predicate with this key is defined."""
+        if p not in self.prednodes:
             fqname = self.predicates[p]
             with self.graphdriver.session() as session:
                 npred = session.run("MERGE (n:%s {constant:TRUE}) RETURN n" % fqname).single()['n']
-                self.predicates[p] = npred
-        return self.predicates[p]
+                self.prednodes[p] = npred.id
+        return self.prednodes[p]
 
     def inrange(self, floruit):
         """Return true if the given floruit tag falls within RELEVEN's range"""
