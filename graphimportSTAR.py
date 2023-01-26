@@ -275,10 +275,10 @@ class PBWstarConstants:
             'E56': 'crm__E56_Language',
             'E62': 'crm__E62_String',
             'E74': 'crm__E74_Group',
-            'F1': 'frbroo__F1_Work',
-            'F2': 'frbroo__F2_Expression',
-            'F22': 'frbroo__F22_Self-contained_Expression',
-            'F28': 'frbroo__F28_Expression_Creation'
+            'F1': 'lrmer__F1_Work',
+            'F2': 'lrmer__F2_Expression',
+            'F22': 'lrmer__F22_Self-contained_Expression',
+            'F28': 'lrmer__F28_Expression_Creation'
         }
 
         self.predicates = {
@@ -299,10 +299,9 @@ class PBWstarConstants:
             'P141': 'crm__P141_assigned',
             'P165': 'crm__P165_incorporates',
             'P177': 'crm__P177_assigned_property_type',
-            'R2': 'frbroo__R2_is_derivative_of',
-            'R3': 'frbroo__R3_is_realised_in',
-            'R5': 'frbroo__R5_has_component',
-            'R17': 'frbroo__R17_created',
+            'R3': 'lrmer__R3_is_realised_in',
+            'R5': 'lrmer__R5_has_component',
+            'R17': 'lrmer__R17_created',
             'SP13': 'sdh-so__P13_pertains_to',
             'SP38': 'sdh__P38_has_skill'
         }
@@ -385,7 +384,7 @@ class PBWstarConstants:
         self.star_subject = 'crm__P140_assigned_attribute_to'
         self.star_predicate = 'crm__P177_assigned_property_type'
         self.star_object = 'crm__P141_assigned'
-        self.star_source = 'crm__P70i_is_documented_in'
+        self.star_source = 'crm__P17_was_motivated_by'
         self.star_auth = 'crm__P14_carried_out_by'
 
         # Get the list of factoid types
@@ -560,7 +559,7 @@ def _create_assertion_query(factoid, subj, pred, obj, auth, src, var="a"):
         anodes.append(('subj', subj))
 
     # Now build the query using the order in anodes
-    aclass = ':crm__E13_Attribute_Assignment:frbroo__F22_Self-contained_Expression'
+    aclass = ':crm__E13_Attribute_Assignment:lrmer__F22_Self-contained_Expression'
     afromfact = 'https://pbw2016.kdl.kcl.ac.uk/rdf/factoid/'
     if factoid is not None:
         afromfact += factoid.factoidKey
@@ -571,7 +570,7 @@ def _create_assertion_query(factoid, subj, pred, obj, auth, src, var="a"):
     for nt in anodes:
         aqparts.append("(%s%s%s)-%s->(%s)" % (var,
                                               aclass if not aclassed else '',
-                                              ' {fromfact: "%s"}' % afromfact if not aclassed else '',
+                                              ' {"lrmer__R76_is_derivative_of": "%s"}' % afromfact if not aclassed else '',
                                               apreds[nt[0]],
                                               nt[1]))
         aclassed = True
