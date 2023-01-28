@@ -17,15 +17,16 @@ def escape_text(t):
     return t.replace("'", "\\'").replace('"', '\\"')
 
 
-def collect_person_records(sqlsession):
+def collect_person_records():
     """Get a list of people whose floruit matches our needs"""
-    relevant = [x for x in sqlsession.query(pbw.Person).all() if constants.inrange(x.floruit) and len(x.factoids) > 0]
+    relevant = [x for x in constants.sqlsession.query(pbw.Person).all()
+                if constants.inrange(x.floruit) and len(x.factoids) > 0]
     print("Found %d relevant people" % len(relevant))
-    # return relevant
+    return relevant
     # Debugging / testing: restrict the list of relevant people
-    debugnames = ['Herve', 'Ioannes', 'Konstantinos', 'Anna']
-    debugcodes = [62, 68, 101, 102]
-    return [x for x in relevant if x.name in debugnames and x.mdbCode in debugcodes]
+    # debugnames = ['Herve', 'Ioannes', 'Konstantinos', 'Anna']
+    # debugcodes = [62, 68, 101, 102]
+    # return [x for x in relevant if x.name in debugnames and x.mdbCode in debugcodes]
 
 
 def _smooth_labels(label):
@@ -100,8 +101,7 @@ def gender_handler(agent, sqlperson, graphperson):
         # Make the event tied to this person
         genderassertion = "MATCH (p), (s), (pbw), (sp41) " \
                           "WHERE id(p) = %d AND id(s) = %d AND id(pbw) = %d AND id(sp41) = %d " % \
-                          (graphperson.id, constants.cv['Gender'][pbw_sex],
-                           agent.id, constants.get_predicate('P41'))
+                          (graphperson.id, constants.cv['Gender'][pbw_sex], agent.id, constants.get_predicate('P41'))
         genderassertion += "MERGE (sp42:%s%s) " % (constants.get_label('P42'), assertion_props)
         genderassertion += "WITH p, s, pbw, sp41, sp42 "
         genderassertion += _create_assertion_query(orig, 'ga:%s' % constants.get_label('E17'),
@@ -182,13 +182,13 @@ def get_source_and_agent(session, factoid):
             warn("No published source found for boulloterion %d" % factoid.boulloterion.boulloterionKey)
             return None, None
         # First find who did the analysis
-        alist = set()
+        alist = dict() # It would be a set if we could put dicts in sets
         for pub in factoid.boulloterion.publication:
             # If the publication isn't in the authority list, Michael analysed it
             if pub.bibSource is not None:
-                thispubauth = constants.authoritylist.get(pub.bibSource.shortName, ["Michael Jeffreys"])
-                alist.update(thispubauth)
-        agent = get_authority_node(session, list(alist))
+                for a in constants.authoritylist.get(pub.bibSource.shortName, [constants.mj]):
+                    alist[a['identifier']] = a
+        agent = get_authority_node(session, list(alist.values()))
         # Then get the node that points to the boulloterion's sources
         srclist = get_boulloterion_sourcelist(session, factoid.boulloterion)
         if srclist is not None:
@@ -216,7 +216,7 @@ def get_source_and_agent(session, factoid):
         agent = get_authority_node(session, constants.authorities(factoid.source))
         # If there is no PBW scholar known for this source, we use the generic PBW agent.
         if agent is None:
-            agent = constants.generic_agent
+            agent = constants.pbw_agent
         # Now we find an F2 Expression (of the whole work), its author (if any), and the PBW scholar who analyzed it
         work = get_source_work_expression(session, factoid, workinfo, author)
         q = "MATCH (work), (agent), (p165) WHERE id(work) = %d AND id(agent) = %d AND id(p165) = %d " % (
@@ -254,7 +254,8 @@ def get_boulloterion_sourcelist(session, boulloterion):
         parts = []
         retvar = "srcgrp"
         q += "WITH %s " % ", ".join(["src%d" % x for x in range(i)])
-        # This size syntax taken blindly from https://stackoverflow.com/questions/68785613/neo4j-4-3-deprecation-of-size-function-and-pattern-comprehension
+        # This size syntax taken blindly from
+        # https://stackoverflow.com/questions/68785613/neo4j-4-3-deprecation-of-size-function-and-pattern-comprehension
         q += "MATCH (srcgrp:%s) WHERE size([(srcgrp)-[:%s]->(:%s) | srcgrp]) = %d " \
              % (e73, p165, f2, i)
         for n in range(i):
@@ -313,33 +314,62 @@ def get_source_work_expression(session, factoid, workinfo, author):
     return work_result['expr']
 
 
+def _find_or_create_identified_person(agent, identifier, dname):
+    """Return an E21 Person, labeled with the name and code via an E14 Identifier Assignment carried out
+    by the given agent (so far either PBW or VIAF.)"""
+    # We can't merge with comma statements, so we have to do it with successive one-liners.
+    # Start the merge from the specific information we have, which is the identifier itself.
+    nodelookup = "MATCH (coll) WHERE id(coll) = %d " \
+                 "MERGE (idlabel:%s {value:'%s'}) " \
+                 "MERGE (coll)<-[:%s]-(idass:%s)-[:%s]->(idlabel) " \
+                 "MERGE (idass)-[:%s]->(p:%s {dname:'%s'}) RETURN p" % \
+                 (agent.id,
+                  constants.get_label('E42'), escape_text(identifier),
+                  constants.get_label('P14'), constants.get_label('E15'), constants.get_label('P37'),
+                  constants.get_label('P140'), constants.get_label('E21'), escape_text(dname))
+    with constants.graphdriver.session() as session:
+        graph_person = session.run(nodelookup).single()['p']
+    return graph_person
+
+
+def _find_or_create_pbwperson(name, code, displayname):
+    return _find_or_create_identified_person(constants.pbw_agent, "%s %d" % (name, code), displayname)
+
+
+def _find_or_create_viafperson(name, viafid):
+    return _find_or_create_identified_person(constants.viaf_agent, viafid, name)
+
+
 def get_author_node(session, authorlist):
     """Return the E21 Person node for the author of a text, or a group of authors if authorship was composite"""
     if authorlist is None or len(authorlist) == 0:
         return None
-    if len(authorlist) == 2:  # It is a single name and mdbCode
-        return _find_or_create_graphperson(authorlist[0], authorlist[1])
-    # It is our multi-authored text. Make a group because both authors share authority.
     authors = []
     while len(authorlist) > 0:
         pname = authorlist.pop(0)
-        pcode = authorlist.pop(1)
-        authors.append(_find_or_create_graphperson(pname, pcode))
-    return _find_or_create_authority_group(session, authors)
+        pcode = authorlist.pop(0)
+        # We need to get the SQL record for the author in case they aren't in the DB yet
+        sqlperson = constants.sqlsession.query(pbw.Person).filter_by(name=pname, mdbCode=pcode).scalar()
+        authors.append(_find_or_create_pbwperson(pname, pcode, sqlperson.descName))
+    if len(authors) > 1:
+        # It is our multi-authored text. Make a group because both authors share authority.
+        return _find_or_create_authority_group(session, authors)
+    else:
+        return authors[0]
 
 
 def get_authority_node(session, authoritylist):
+    """Create or find the node for the given authority in our (modern) authority list."""
     if authoritylist is None or len(authoritylist) == 0:
         return None
     if len(authoritylist) == 1:
-        return session.run("MERGE (p:%s {identifier:'%s'}) RETURN p"
-                           % (constants.get_label('E21'), authoritylist[0])).single()['p']
+        authority = authoritylist[0]
+        return _find_or_create_viafperson(authority['identifier'], authority['viaf'])
     # If we get here, we have more than one authority for this source.
     # Ensure the existence of the people, and then ensure the existence of their group
     scholars = []
     for p in authoritylist:
-        scholars.append(session.run("MERGE (p:%s {identifier:'%s'}) RETURN p" %
-                                    (constants.get_label('E21'), p)).single()['p'])
+        scholars.append(_find_or_create_viafperson(p['identifier'], p['viaf']))
     return _find_or_create_authority_group(session, scholars)
 
 
@@ -587,7 +617,8 @@ def description_handler(sourcenode, agent, factoid, graphperson):
     descassertion = "MATCH (p), (agent), (source), (pred) " \
                     "WHERE id(p) = %d AND id(agent) = %d AND id (source) = %d AND id(pred) = %d " % \
                     (graphperson.id, agent.id, sourcenode.id, constants.get_predicate('P3'))
-    descassertion += 'MERGE (desc:%s {%s}) ' % (constants.get_label('E62'), ','.join(descattributes))  # TODO get rid of E62
+    # TODO get rid of E62
+    descassertion += 'MERGE (desc:%s {%s}) ' % (constants.get_label('E62'), ','.join(descattributes))
     descassertion += "WITH p, pred, desc, agent, source "
     descassertion += _create_assertion_query(orig, 'p', 'pred', 'desc', 'agent', 'source')
     descassertion += 'RETURN a'
@@ -625,7 +656,7 @@ def kinship_handler(sourcenode, agent, factoid, graphperson):
     predspec = constants.cv.get('Kinship')[factoid.kinshipType.gspecRelat]
     predgen = constants.get_predicate('P107')
     for kin in factoid.referents():
-        graphkin = _find_or_create_graphperson(kin.name, kin.mdbCode)
+        graphkin = _find_or_create_pbwperson(kin.name, kin.mdbCode, kin.descName)
         if graphkin.id == graphperson.id:
             warn("Person %s listed as related to self" % kin)
             continue
@@ -665,25 +696,6 @@ def possession_handler(sourcenode, agent, factoid, graphperson):
             session.run(posassertion.replace('COMMAND', 'CREATE'))
 
 
-def _find_or_create_graphperson(name, code):
-    """Return an E21 Person, labeled with the name and code via an E14 Identifier Assignment carried out by PBW."""
-    # We can't merge with comma statements, so we have to do it with successive one-liners.
-    # Start the merge from the specific information we have, which is the identifier itself.
-    nodelookup = "MATCH (pbw) WHERE id(pbw) = %d " \
-                 "MERGE (idlabel:%s {value:'%s %d'}) " \
-                 "MERGE (pbw)<-[:%s]-(idass:%s)" \
-                 "-[:%s]->(idlabel) " \
-                 "MERGE (idass)-[:%s]->(p:%s) RETURN p" % \
-                 (constants.generic_agent.id,
-                  constants.get_label('E42'), name, code,
-                  constants.get_label('P14'), constants.get_label('E15'),
-                  constants.get_label('P37'),
-                  constants.get_label('P140'), constants.get_label('E21'))
-    with constants.graphdriver.session() as session:
-        graph_person = session.run(nodelookup).single()['p']
-    return graph_person
-
-
 def record_assertion_factoids():
     """To be run after everything else is done. Creates the assertion record for all assertions created here,
     tying each to the factoid or person record that originated it and tying all the assertion records to the
@@ -697,7 +709,7 @@ def record_assertion_factoids():
     r17 = constants.get_label('R17')  # created
     r76 = constants.get_label('R76')  # is derivative of
     with constants.graphdriver.session() as session:
-        tla = get_authority_node(session, ['TLA'])
+        tla = get_authority_node(session, constants.ta)
         findnewassertions = "MATCH (tla) WHERE id(tla) = %s " \
                             "CREATE (dbr:%s {timestamp:datetime()})-[:%s {role:'recorder'}]->(tla) " \
                             "WITH tla, dbr " \
@@ -718,25 +730,25 @@ def record_assertion_factoids():
             session.run('MATCH (dbr) WHERE id(dbr) = %d DETACH DELETE dbr' % dbrecord.id)
 
 
-def process_persons(sqlsession, graphdriver):
+def process_persons():
     """Go through the relevant person records and process them for factoids"""
     processed = 0
     used_sources = set()
-    for person in collect_person_records(sqlsession):
+    for person in collect_person_records():
         # Skip the anonymous groups for now
         if person.name == 'Anonymi':
             continue
         processed += 1
         # Create or find the person node
         print("*** Making/finding node for person %s %d ***" % (person.name, person.mdbCode))
-        graph_person = _find_or_create_graphperson(person.name, person.mdbCode)
+        graph_person = _find_or_create_pbwperson(person.name, person.mdbCode, person.descName)
 
         # Get the 'factoids' that are directly in the person record
         for ftype in constants.directPersonRecords:
             ourftype = _smooth_labels(ftype)
             try:
                 method = eval("%s_handler" % ourftype.lower())
-                method(constants.generic_agent, person, graph_person)
+                method(constants.pbw_agent, person, graph_person)
             except NameError:
                 warn("No handler for %s record info; skipping." % ourftype)
 
@@ -752,7 +764,7 @@ def process_persons(sqlsession, graphdriver):
                     # Get the source, either a text passage or a seal inscription, and the authority
                     # for the factoid. Authority will either be the author of the text, or the PBW
                     # colleague who read the text and ingested the information.
-                    with graphdriver.session() as session:
+                    with constants.graphdriver.session() as session:
                         (source_node, authority_node) = get_source_and_agent(session, f)
                     # If the factoid has no source then we skip it
                     if source_node is None:
@@ -760,7 +772,7 @@ def process_persons(sqlsession, graphdriver):
                         continue
                     # If the factoid has no authority then we assign it to the generic PBW agent
                     if authority_node is None:
-                        authority_node = constants.generic_agent
+                        authority_node = constants.pbw_agent
                     # Call the handler for this factoid type
                     method(source_node, authority_node, f, graph_person)
                     fprocessed += 1
@@ -786,6 +798,6 @@ if __name__ == '__main__':
     # Make / retrieve the global nodes and constants
     constants = PBWstarConstants.PBWstarConstants(mysqlsession, driver)
     # Process the person records
-    process_persons(mysqlsession, driver)
+    process_persons()
     duration = datetime.datetime.now() - starttime
     print("Done! Ran in %s" % str(duration))

@@ -8,6 +8,7 @@ class PBWstarConstants:
     """A class to deal with all of our constants, where the data is nicely encapsulated"""
 
     def __init__(self, sqlsession, graphdriver):
+        self.sqlsession = sqlsession
         self.graphdriver = graphdriver
 
         self.authorlist = {
@@ -52,7 +53,7 @@ class PBWstarConstants:
             'Leo IX  ': {'author': ['Leon', 29]},  # opera
             'Leon of Chalcedon': {'author': ['Leon', 114], 'factoid': 444848},
             'Leon of Ohrid (Greek)': {'author': ['Leon', 108], 'factoid': 434954},
-            'Leon of Ohrid (Latin)': {'author': ['Humbert', 101], 'factoid': 434954},
+            'Leon of Ohrid (Latin)': {'author': ['Leon', 108, 'Humbert', 101], 'factoid': 434954},
             'Manasses, Chronicle': {'author': ['Konstantinos', 302], 'factoid': 441043},
             'Manasses, Chronicle: Dedication': {'author': ['Konstantinos', 302], 'factoid': 440958},
             'Manganeios Prodromos': {'author': ['Manganeios', 101]},  # opera
@@ -93,17 +94,20 @@ class PBWstarConstants:
         }
 
         # These are the modern scholars who put the source information into PBW records
-        mj = 'Michael Jeffreys'
-        tp = 'Tassos Papacostas'
-        ta = 'Tara Andrews'
-        jr = 'Judith Ryder'
-        mw = 'Mary Whitby'
-        wa = 'Wahid Amin'
-        bs = 'Bruna Soravia'
-        hm = 'Harry Munt'
-        lo = 'Letizia Osti'
-        cr = 'Charlotte Roueché'
-        ok = 'Olga Karagiorgiou'
+        mj = {'identifier': 'Michael Jeffreys', 'viaf': '73866641'}
+        # We need Michael and Tara on the outside
+        self.mj = mj
+        tp = {'identifier': 'Tassos Papacostas', 'viaf': '316793603'}
+        ta = {'identifier': 'Tara Andrews', 'viaf': '316505144'}
+        self.ta = ta
+        jr = {'identifier': 'Judith Ryder', 'viaf': '51999624'}
+        mw = {'identifier': 'Mary Whitby', 'viaf': '34477027'}
+        wa = {'identifier': 'Wahid Amin', 'viaf': '213149617100303751518'}
+        bs = {'identifier': 'Bruna Soravia', 'viaf': '69252167'}
+        hm = {'identifier': 'Harry Munt', 'viaf': '78568758'}
+        lo = {'identifier': 'Letizia Osti', 'viaf': '236145542536996640148'}
+        cr = {'identifier': 'Charlotte Roueché', 'viaf': '44335536'}
+        ok = {'identifier': 'Olga Karagiorgiou', 'viaf': '253347413'}
 
         self.authoritylist = {
             'Albert of Aachen': [mj],
@@ -446,8 +450,12 @@ class PBWstarConstants:
         print("Setting up PBW constants...")
         with graphdriver.session() as session:
             # Make our anonymous agent PBW for the un-sourced information
-            self.generic_agent = session.run("MERGE (a:%s {identifier:'PBW editors', constant:TRUE}) return a"
-                                             % self.entitylabels.get('E39')).single()['a']
+            self.pbw_agent = session.run("MERGE (a:%s {identifier:'Prosopography of the Byzantine World', "
+                                             "prefix:'https://pbw2016.kdl.kcl.ac.uk/person/', constant:TRUE}) return a"
+                                         % self.entitylabels.get('E39')).single()['a']
+            self.viaf_agent = session.run("MERGE (a:%s {identifier:'Virtual Internet Authority File', "
+                                             "prefix:'https://viaf.org/viaf/', constant:TRUE}) return a"
+                                         % self.entitylabels.get('E39')).single()['a']
 
             # Some of these factoid types have their own controlled vocabularies. Extract them here and
             # simplify the broader term.
