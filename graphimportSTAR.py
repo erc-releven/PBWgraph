@@ -709,7 +709,7 @@ def record_assertion_factoids():
     r17 = constants.get_label('R17')  # created
     r76 = constants.get_label('R76')  # is derivative of
     with constants.graphdriver.session() as session:
-        tla = get_authority_node(session, constants.ta)
+        tla = get_authority_node(session, [constants.ta])
         findnewassertions = "MATCH (tla) WHERE id(tla) = %s " \
                             "CREATE (dbr:%s {timestamp:datetime()})-[:%s {role:'recorder'}]->(tla) " \
                             "WITH tla, dbr " \
