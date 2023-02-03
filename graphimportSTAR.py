@@ -135,7 +135,7 @@ def disambiguation_handler(agent, sqlperson, graphperson):
     """The short description of the person provided by PBW"""
     orig = 'person/%d' % sqlperson.personKey
     disassertion = "MATCH (p), (pbw), (pred) WHERE p.uuid = '%s' AND pbw.uuid = '%s' AND pred.uuid = '%s' " % \
-                   (graphperson.id, agent.id, constants.get_predicate('P3'))
+                   (graphperson, agent, constants.get_predicate('P3'))
     disassertion += "MERGE (desc:%s {value:\"%s\"}) " % (constants.get_label('E62'), escape_text(sqlperson.descName))
     disassertion += "WITH p, pred, desc, pbw "
     disassertion += _create_assertion_query(orig, 'p', 'pred', 'desc', 'pbw', None)
@@ -159,7 +159,8 @@ def _find_or_create_event(person, eventclass, predicate):
             # If we don't have an event of this class tied to this person yet, create a new one,
             # look it up again for its UUID, and return it for use in the assertion being made about it.
             session.run("CREATE (event:%s {justcreated:true}) RETURN event" % eventclass)
-            result = session.run("MATCH (event:%s {justcreated:true}) REMOVE event.justcreated RETURN event" % eventclass)
+            result = session.run("MATCH (event:%s {justcreated:true}) REMOVE event.justcreated RETURN event"
+                                 % eventclass).single()
         return result['event'].get('uuid')
 
 
@@ -196,8 +197,7 @@ def get_source_and_agent(session, factoid):
         if srclist is not None:
             q = "MATCH (pred), (agent), (srclist) WHERE pred.uuid = '%s' AND agent.uuid = '%s' " \
                 "AND srclist.uuid = '%s' " \
-                % (constants.get_predicate('P128'), agent,
-                   srclist.get('uuid'))
+                % (constants.get_predicate('P128'), agent, srclist)
         else:
             q = "MATCH (pred), (agent) WHERE pred.uuid = '%s' AND agent.uuid = '%s' " \
                 % (constants.get_predicate('P128'), agent)
@@ -213,18 +213,17 @@ def get_source_and_agent(session, factoid):
     else:
         # This factoid is taken from a document.
         # Do we have a known author for this text?
-        workinfo = constants.author(factoid.source)
-        if workinfo is not None:
-            author = get_author_node(session, workinfo.get('author'))
+        workinfo = constants.source(factoid.source)
+        author = get_author_node(session, workinfo.get('author'))
         # If not, we use the PBW scholar as the authority.
-        agent = get_authority_node(session, constants.authorities(factoid.source))
+        agent = get_authority_node(session, workinfo.get('authority'))
         # If there is no PBW scholar known for this source, we use the generic PBW agent.
         if agent is None:
             agent = constants.pbw_agent
         # Now we find an F2 Expression (of the whole work), its author (if any), and the PBW scholar who analyzed it
         work = get_source_work_expression(session, factoid, workinfo, author)
         q = "MATCH (work), (agent), (p165) WHERE work.uuid = '%s' AND agent.uuid = '%s' AND p165.uuid = '%s' " % (
-            work.id, agent.id, constants.get_predicate('P165'))
+            work, agent, constants.get_predicate('P165'))
         q += "MERGE (src:%s {reference:'%s', text:'%s'}) " % \
              (constants.get_label('F2'), escape_text(factoid.sourceRef), escape_text(factoid.origLDesc))
         q += "WITH work, p165, src, agent "
@@ -302,8 +301,8 @@ def get_source_work_expression(session, factoid, workinfo, author):
         workinfo = dict()
     identifier = workinfo.get('work', factoid.source)
     orig = 'factoid/%d' % workinfo.get('factoid', 0)
-    expression = workinfo.get('expression', factoid.source.sourceBib)
-    q = "MERGE (work:%s {identifier:'%s'})-[:%s]->(expr:%s {identifier:'%s'}) " \
+    expression = workinfo.get('expression', identifier)
+    q = "COMMAND (work:%s {identifier:'%s'})-[:%s]->(expr:%s {identifier:'%s'}) " \
         % (constants.get_label('F1'), escape_text(identifier), constants.get_label('R3'),
            constants.get_label('F2'), escape_text(expression))
     if author is not None:
@@ -633,7 +632,7 @@ def description_handler(sourcenode, agent, factoid, graphperson):
     # Make the query
     descassertion = "MATCH (p), (agent), (source), (pred) " \
                     "WHERE p.uuid = '%s' AND agent.uuid = '%s' AND source.uuid = '%s' AND pred.uuid = '%s' " % \
-                    (graphperson.id, agent.id, sourcenode.id, constants.get_predicate('P3'))
+                    (graphperson, agent, sourcenode, constants.get_predicate('P3'))
     # TODO get rid of E62
     descassertion += 'MERGE (desc:%s {%s}) ' % (constants.get_label('E62'), ','.join(descattributes))
     descassertion += "WITH p, pred, desc, agent, source "
@@ -647,7 +646,7 @@ def description_handler(sourcenode, agent, factoid, graphperson):
 
 def _find_or_create_kinship(session, graphperson, graphkin):
     # See if there is an existing kinship group between the person and their kin according to the
-    # source in question. If not, return a new (not yet connected) kinship group node.
+    # source in question. If not, return a new (not yet connected) E74 Kinship group node.
     e13 = constants.get_label('E13')
     e74 = constants.get_label('E74')
     p140 = constants.get_label('P140')
@@ -665,8 +664,11 @@ def _find_or_create_kinship(session, graphperson, graphkin):
 
 
 def kinship_handler(sourcenode, agent, factoid, graphperson):
-    # Kinships are modeled as two-person groups
-    # and with .1 types as property attributes as per the CRM spec.
+    # Kinships are modeled as two-person groups connected with P107 and with .1 types
+    # as property attributes as per the CRM spec. A kinship has to be modeled thus as
+    # two assertions, one for each person's membership of the group. The main person
+    # has the specific predicate in their assertion; the secondary person has the
+    # generic predicate.
     orig = "factoid/%d" % factoid.factoidKey
     if factoid.kinshipType is None:
         warn("Empty kinship factoid found: id %d" % factoid.factoidKey)
@@ -675,14 +677,14 @@ def kinship_handler(sourcenode, agent, factoid, graphperson):
     predgen = constants.get_predicate('P107')
     for kin in factoid.referents():
         graphkin = _find_or_create_pbwperson(kin.name, kin.mdbCode, kin.descName)
-        if graphkin.id == graphperson.id:
+        if graphkin == graphperson:
             warn("Person %s listed as related to self" % kin)
             continue
         kgroup = _find_or_create_kinship(session, graphperson, graphkin)
-        kinassertion = "MATCH (p), (kin), (kg), (agent), (source), (pspec), (pgen) WHERE id(p) = %d " \
-                       "AND id(kin) = %d AND id(kg) = %d AND id(agent) = %d AND id(source) = %d " \
-                       "AND id(pspec) = %d AND id(pgen) = %d " \
-                       % (graphperson.id, graphkin.id, kgroup.id, agent.id, sourcenode.id, predspec, predgen)
+        kinassertion = "MATCH (p), (kin), (kg), (agent), (source), (pspec), (pgen) WHERE p.uuid = '%s' " \
+                       "AND kin.uuid = '%s' AND kg.uuid = '%s' AND agent.uuid = '%s' AND source.uuid = '%s' " \
+                       "AND pspec.uuid = '%s' AND pgen.uuid = '%s' " \
+                       % (graphperson, graphkin, kgroup, agent, sourcenode, predspec, predgen)
         kinassertion += _create_assertion_query(orig, 'kg', 'pspec', 'p', 'agent', 'source', 'a1')
         kinassertion += _create_assertion_query(orig, 'kg', 'pgen', 'kin', 'agent', 'source', 'a2')
         kinassertion += "RETURN a1, a2"
@@ -702,8 +704,8 @@ def possession_handler(sourcenode, agent, factoid, graphperson):
         possession_attributes[constants.get_label('P3')] = escape_text(factoid.possession)
     possession_attrs = ", ".join(["%s: '%s'" % (k, v) for k, v in possession_attributes.items()])
     posassertion = "MATCH (p), (agent), (source), (pred) " \
-                   "WHERE id(p) = %d AND id(agent) = %d AND id (source) = %d AND id(pred) = %d " % \
-                   (graphperson.id, agent.id, sourcenode.id, constants.get_predicate('P51'))
+                   "WHERE p.uuid = '%s' AND agent.uuid = '%s' AND source.uuid = '%s' AND pred.uuid = '%s' " % \
+                   (graphperson, agent, sourcenode, constants.get_predicate('P51'))
     posassertion += "MERGE (poss:%s {%s}) " % (constants.get_label('E18'), possession_attrs)
     posassertion += "WITH p, agent, source, pred, poss "
     posassertion += _create_assertion_query(orig, 'poss', 'pred', 'p', 'agent', 'source')
@@ -728,14 +730,14 @@ def record_assertion_factoids():
     r76 = constants.get_label('R76')  # is derivative of
     with constants.graphdriver.session() as session:
         tla = get_authority_node(session, [constants.ta])
-        timestamp = datetime.now(timezone.utc)
+        timestamp = datetime.now(timezone.utc).isoformat()
         findnewassertions = "MATCH (tla) WHERE tla.uuid = '%s' " \
                             "CREATE (dbr:%s {timestamp:datetime('%s')})-[:%s {role:'recorder'}]->(tla) " \
                             "WITH tla, dbr " \
                             "MATCH (a:%s) WHERE NOT (a)<-[:%s]-(:%s) " \
                             "CREATE (a)<-[:%s]-(d:%s:%s)<-[:%s]-(dbr) " \
                             "SET d.%s = a.origsource " \
-                            "REMOVE a.origsource RETURN dbr, d" % (tla.get('uuid'),
+                            "REMOVE a.origsource RETURN dbr, d" % (tla,
                                                                    f28, timestamp, p14,
                                                                    e13, p70, e31,
                                                                    p70, e31, f2, r17,

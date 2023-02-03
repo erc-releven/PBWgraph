@@ -117,7 +117,7 @@ class PBWstarConstants:
             'Nea Mone,': {'authority': [tp]},
             'Nicolas d\'Andida': {'author': ['Nikolaos', 257], 'factoid': 444805, 'authority': [jr]},
             'Nicole, Chartophylax': {'author': ['Alexios', 1], 'factoid': 444947, 'authority': [jr]},
-            'Niketas Choniates, Historia': {'author': ['Niketas', 25001], 'factoid': 435679}, 'authority': [mj],
+            'Niketas Choniates, Historia': {'author': ['Niketas', 25001], 'factoid': 435679, 'authority': [mj]},
             'Niketas Stethatos (Darrouzes)': {'author': ['Niketas', 105], 'authority': [jr]},  # opera
             'Niketas Stethatos, On the Holy Spirit': {'author': ['Niketas', 105], 'factoid': 445329, 'authority': [jr]},
             'Nikolaos III to Urban II': {'author': ['Nikolaos', 13], 'factoid': 444667, 'authority': [jr]},
@@ -177,8 +177,8 @@ class PBWstarConstants:
             'Xeropotamou': {'authority': [tp]},
             'Yahya al-Antaki': {'authority': [tp, lo, hm]},
             'Zacos II': {'authority': [ok]},
-            'Zetounion': {'author': ['Nikolaos', 13], 'factoid': 445037},
-            'Zonaras': {'author': ['Ioannes', 6007]}  # no explicit factoid
+            'Zetounion': {'author': ['Nikolaos', 13], 'factoid': 445037, 'authority': [jr]},
+            'Zonaras': {'author': ['Ioannes', 6007], 'authority': [mw]}  # no explicit factoid
         }
 
         self.entitylabels = {
@@ -346,6 +346,9 @@ class PBWstarConstants:
             retmap = dict()
             # Batch these into groups of 100
             doloop = True
+            supernode = ''
+            if supertype is not None:
+                supernode = "(super:%s {value:\"%s\", constant:TRUE})" % (self.get_label('E55'), supertype)
             while doloop:
                 if len(instances) > 100:
                     batch = instances[0:100]
@@ -355,9 +358,7 @@ class PBWstarConstants:
                     doloop = False
                 i = 0
                 varmap = dict()
-                q = ''
-                if supertype is not None:
-                    q = "MERGE (super:Resource:%s {value:\"%s\", constant:TRUE}) " % (self.get_label('E55'), supertype)
+                qcreate = "MERGE %s " % supernode if supernode != '' else ''
                 for inst in batch:
                     # Leave out blank instances
                     if inst == '':
@@ -365,17 +366,27 @@ class PBWstarConstants:
                     var = "inst%d" % i
                     i += 1
                     varmap[var] = inst
-                    q += "MERGE (%s:Resource:%s {value:\"%s\", constant:TRUE})" % (var, crmclass, inst)
+                    qcreate += " MERGE (%s:%s {value:\"%s\", constant:TRUE})" % (var, crmclass, inst)
                     if supertype is not None:
-                        q += "-[:%s]->(super)" % self.get_label('P2')
+                        qcreate += "-[:%s]->(super)" % self.get_label('P2')
                 with self.graphdriver.session() as gsession:
                     # Ensure the nodes exist
-                    gsession.run(q)
-                    # Now get the node UUIDs
-                    types = gsession.run("%s %s" % (q.replace('MERGE', 'MATCH'),
-                                                    "RETURN %s" % ', '.join(["%s" % x for x in varmap.keys()])))
-                    for k, v in types.items():
-                        retmap[varmap[k]] = v.get('uuid')
+                    # print(qcreate)
+                    gsession.run(qcreate)
+
+            # Now that everything is created, retrieve the nodes for their UUIDs
+            typenode = "MATCH (inst:%s {constant:TRUE})" % crmclass
+            if supertype is None:
+                qfetch = typenode
+            else:
+                qfetch = "MATCH %s %s<-[:%s]-(super)" % (supernode, typenode, self.get_label('P2'))
+            qfetch += " RETURN inst"
+            # print(qfetch)
+            with self.graphdriver.session() as gsession:
+                types = gsession.run(qfetch)
+                for record in types:
+                    tn = record['inst']
+                    retmap[tn.get('value')] = tn.get('uuid')
             return retmap
 
         #  Initialise constants held in the SQL database and get their UUIDs.
@@ -425,7 +436,8 @@ class PBWstarConstants:
         kinnodes = {}
         for x in sqlsession.query(pbw.KinshipType).all():
             kt = x.gspecRelat
-            cypherq = "(kt:Resource:%s {type:\"%s\"}) RETURN kt" % (self.get_label('P107'), kt)
+            cypherq = "(kt:Resource:%s {`crm__P107.1_kind_of_member`:\"%s\", constant:TRUE}) " \
+                      "RETURN kt" % (self.get_label('P107'), kt)
             kinnodes[kt] = self.fetch_uuid_from_query(cypherq)
         self.cv['Kinship'] = kinnodes
     # END OF __init__
@@ -477,8 +489,8 @@ class PBWstarConstants:
         """Helper function to create one node if it doesn't already exist and return the UUID that gets
         auto-generated upon commit."""
         with self.graphdriver.session() as session:
-            uuid = session.run("MATCH %s.uuid AS theid" % q).single()['theid']
+            uuid = session.run("MATCH %s.uuid AS theid" % q).single()
             if uuid is None:
                 session.run("CREATE %s" % q)
-                uuid = session.run("MATCH %s.uuid AS theid" % q).single()['theid']
-            return uuid
+                uuid = session.run("MATCH %s.uuid AS theid" % q).single()
+            return uuid['theid']
