@@ -334,8 +334,11 @@ class PBWstarConstants:
         self.star_auth = self.predicates['P14']
 
         # Get the list of factoid types
-        self.factoidTypes = [x.typeName for x in sqlsession.query(pbw.FactoidType).all()
-                             if x.typeName != '(Unspecified)']
+        if sqlsession is None:
+            self.factoidTypes = []
+        else:
+            self.factoidTypes = [x.typeName for x in sqlsession.query(pbw.FactoidType).all()
+                                 if x.typeName != '(Unspecified)']
         # Get the classes of info that are directly in the person record
         self.directPersonRecords = ['Gender', 'Disambiguation', 'Identifier']
 
@@ -404,42 +407,43 @@ class PBWstarConstants:
         # Some of these factoid types have their own controlled vocabularies. Extract them here and
         # simplify the broader term.
         self.cv = dict()
-        self.cv['Gender'] = _init_typology(self.get_label('C11'), None, ['Female', 'Male', 'Eunuch'])
-        self.cv['Ethnicity'] = _init_typology(self.get_label('E74'), 'Ethnic Group',
-                                              [x.ethName for x in sqlsession.query(pbw.Ethnicity).all()])
-        self.cv['Religion'] = _init_typology(self.get_label('C24'), None,
-                                             [x.religionName for x in sqlsession.query(pbw.Religion).all()])
-        self.cv['Language'] = _init_typology(self.get_label('C29'), 'Language Skill',
-                                             [x.languageName for x in sqlsession.query(pbw.LanguageSkill).all()])
+        if sqlsession is not None:
+            self.cv['Gender'] = _init_typology(self.get_label('C11'), None, ['Female', 'Male', 'Eunuch'])
+            self.cv['Ethnicity'] = _init_typology(self.get_label('E74'), 'Ethnic Group',
+                                                  [x.ethName for x in sqlsession.query(pbw.Ethnicity).all()])
+            self.cv['Religion'] = _init_typology(self.get_label('C24'), None,
+                                                 [x.religionName for x in sqlsession.query(pbw.Religion).all()])
+            self.cv['Language'] = _init_typology(self.get_label('C29'), 'Language Skill',
+                                                 [x.languageName for x in sqlsession.query(pbw.LanguageSkill).all()])
 
-        # Special-case 'slave' and possibly other items out of the occupation list
-        sc_occupation = ['Slave']
-        self.cv['SocietyRole'] = _init_typology(self.get_label('C7'), None,
-                                                [x.occupationName for x in sqlsession.query(pbw.Occupation).all()
-                                                 if x.occupationName not in sc_occupation])
-        for sc in sc_occupation:
-            cypherq = '(s:%s {value:"%s"}) RETURN s' % (self.get_label('C12'), sc)
-            self.cv['SocietyRole'][sc] = self.fetch_uuid_from_query(cypherq)
+            # Special-case 'slave' and possibly other items out of the occupation list
+            sc_occupation = ['Slave']
+            self.cv['SocietyRole'] = _init_typology(self.get_label('C7'), None,
+                                                    [x.occupationName for x in sqlsession.query(pbw.Occupation).all()
+                                                     if x.occupationName not in sc_occupation])
+            for sc in sc_occupation:
+                cypherq = '(s:%s {value:"%s"}) RETURN s' % (self.get_label('C12'), sc)
+                self.cv['SocietyRole'][sc] = self.fetch_uuid_from_query(cypherq)
 
-        # Dignities in PBW tend to be specific to institutions / areas;
-        # make an initial selection by breaking on the 'of'
-        all_dignities = set()
-        for x in sqlsession.query(pbw.DignityOffice).all():
-            if ' of the ' in x.stdName:  # Don't split (yet) titles that probably don't refer to places
-                dignity = [x.stdName]
-            else:
-                dignity = x.stdName.split(' of ')
-            all_dignities.add(dignity[0])
-        self.cv['Dignity'] = _init_typology(self.get_label('C12'), 'Dignity or Office', list(all_dignities))
+            # Dignities in PBW tend to be specific to institutions / areas;
+            # make an initial selection by breaking on the 'of'
+            all_dignities = set()
+            for x in sqlsession.query(pbw.DignityOffice).all():
+                if ' of the ' in x.stdName:  # Don't split (yet) titles that probably don't refer to places
+                    dignity = [x.stdName]
+                else:
+                    dignity = x.stdName.split(' of ')
+                all_dignities.add(dignity[0])
+            self.cv['Dignity'] = _init_typology(self.get_label('C12'), 'Dignity or Office', list(all_dignities))
 
-        # Kinship is expressed as typed predicates as opposed to E55 Types.
-        kinnodes = {}
-        for x in sqlsession.query(pbw.KinshipType).all():
-            kt = x.gspecRelat
-            cypherq = "(kt:Resource:%s {`crm__P107.1_kind_of_member`:\"%s\", constant:TRUE}) " \
-                      "RETURN kt" % (self.get_label('P107'), kt)
-            kinnodes[kt] = self.fetch_uuid_from_query(cypherq)
-        self.cv['Kinship'] = kinnodes
+            # Kinship is expressed as typed predicates as opposed to E55 Types.
+            kinnodes = {}
+            for x in sqlsession.query(pbw.KinshipType).all():
+                kt = x.gspecRelat
+                cypherq = "(kt:Resource:%s {`crm__P107.1_kind_of_member`:\"%s\", constant:TRUE}) " \
+                          "RETURN kt" % (self.get_label('P107'), kt)
+                kinnodes[kt] = self.fetch_uuid_from_query(cypherq)
+            self.cv['Kinship'] = kinnodes
     # END OF __init__
     # Lookup functions
 
@@ -474,9 +478,15 @@ class PBWstarConstants:
     def get_predicate(self, p):
         """Return the reified predicate UUID for the given short name. This will throw
         an exception if no predicate with this key is defined."""
+        # Deal with the fact that some predicates (currently only for kinship) have specific
+        # instances, and here we always want to return the general instance
+        specific_properties = {'P107': '`crm__P107.1_kind_of_member`'}
         if p not in self.prednodes:
             fqname = self.predicates[p]
-            predq = "(n:Resource:%s {constant:TRUE}) RETURN n" % fqname
+            restriction = ''
+            if p in specific_properties:
+                restriction = ' WHERE n.%s IS NULL' % specific_properties[p]
+            predq = "(n:Resource:%s {constant:TRUE})%s RETURN n" % (fqname, restriction)
             npred = self.fetch_uuid_from_query(predq)
             self.prednodes[p] = npred
         return self.prednodes[p]

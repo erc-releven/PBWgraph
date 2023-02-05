@@ -117,11 +117,17 @@ def gender_handler(agent, sqlperson, graphperson):
 
 def identifier_handler(agent, sqlperson, graphperson):
     """The identifier in this context is the 'origName' field, thus an identifier assigned by PBW
-    not on the basis of any particular source"""
+    not on the basis of any particular source. We turn this into an Appellation assertion"""
     orig = 'person/%d' % sqlperson.personKey
+    # Strip any parenthetical from the nameOL field
+    withparen = re.search(r'(.*)\s+\(.*\)', sqlperson.nameOL)
+    if withparen is not None:
+        appellation = withparen.group(1)
+    else:
+        appellation = sqlperson.nameOL.rstrip()
     idassertion = "MATCH (p), (pbw), (pred) WHERE p.uuid = '%s' AND pbw.uuid = '%s' AND pred.uuid = '%s' " \
                   % (graphperson, agent, constants.get_predicate('P1'))
-    idassertion += "MERGE (app:%s {value: \"%s\"}) " % (constants.get_label('E41'), sqlperson.nameOL)
+    idassertion += "MERGE (app:%s {value: \"%s\"}) " % (constants.get_label('E41'), appellation)
     idassertion += "WITH p, pbw, pred, app "
     idassertion += _create_assertion_query(orig, 'p', 'pred', 'app', 'pbw', None)
     idassertion += "RETURN a"
@@ -328,12 +334,16 @@ def _find_or_create_identified_person(agent, identifier, dname):
     by the given agent (so far either PBW or VIAF.)"""
     # We can't merge with comma statements, so we have to do it with successive one-liners.
     # Start the merge from the specific information we have, which is the identifier itself.
+    if 'Byzantine' in agent:
+        url = 'https://pbw2016.kdl.kcl.ac.uk/person/' + identifier.replace(' ', '/')
+    else:
+        url = 'https://viaf.org/viaf/%s/' % identifier
     nodelookup = "MATCH (coll) WHERE coll.uuid = '%s' " \
-                 "MERGE (idlabel:%s {value:'%s'}) " \
+                 "MERGE (idlabel:%s {value:'%s', url:'%s'}) " \
                  "MERGE (coll)<-[:%s]-(idass:%s)-[:%s]->(idlabel) " \
                  "MERGE (idass)-[:%s]->(p:%s {descname:'%s'}) RETURN p" % \
                  (agent,
-                  constants.get_label('E42'), escape_text(identifier),
+                  constants.get_label('E42'), escape_text(identifier), url,
                   constants.get_label('P14'), constants.get_label('E15'), constants.get_label('P37'),
                   constants.get_label('P140'), constants.get_label('E21'), escape_text(dname))
     with constants.graphdriver.session() as session:
@@ -582,7 +592,7 @@ def societyrole_handler(sourcenode, agent, factoid, graphperson):
         return
     roleid = constants.cv['SocietyRole'].get(factoid.occupation)
     # (r:C1 Social Quality of an Actor) [rwho:P13 pertains to] person
-    # (r:C23 Religious identity) [rwhich:P14 is defined by] rnode
+    # (r:C1) [rwhich:P14 is defined by] rnode
     rassertion = "MATCH (p), (agent), (source), (role), (rwhich), (rwho) " \
                  "WHERE p.uuid = '%s' AND agent.uuid = '%s' AND source.uuid = '%s' AND role.uuid = '%s' " \
                  "AND rwhich.uuid = '%s' AND rwho.uuid = '%s' " \
@@ -619,48 +629,49 @@ def language_handler(sourcenode, agent, factoid, graphperson):
             session.run(lassertion.replace('COMMAND', 'CREATE'))
 
 
-def description_handler(sourcenode, agent, factoid, graphperson):
-    # Get the descriptions and the relevant languages
-    orig = "factoid/%d" % factoid.factoidKey
-    langdesc = {'en': escape_text(factoid.replace_referents())}
-    langkey = _get_source_lang(factoid)
-    if langkey is not None:
-        langdesc[langkey] = escape_text(factoid.origLDesc)
-    descattributes = []
-    for k, v in langdesc.items():
-        descattributes.append('%s: \"%s\"' % (k, v))
-    # Make the query
-    descassertion = "MATCH (p), (agent), (source), (pred) " \
-                    "WHERE p.uuid = '%s' AND agent.uuid = '%s' AND source.uuid = '%s' AND pred.uuid = '%s' " % \
-                    (graphperson, agent, sourcenode, constants.get_predicate('P3'))
-    # TODO get rid of E62
-    descassertion += 'MERGE (desc:%s {%s}) ' % (constants.get_label('E62'), ','.join(descattributes))
-    descassertion += "WITH p, pred, desc, agent, source "
-    descassertion += _create_assertion_query(orig, 'p', 'pred', 'desc', 'agent', 'source')
-    descassertion += 'RETURN a'
-    with constants.graphdriver.session() as session:
-        result = session.run(descassertion.replace('COMMAND', 'MATCH')).single()
-        if result is None:
-            session.run(descassertion.replace('COMMAND', 'CREATE'))
+# def description_handler(sourcenode, agent, factoid, graphperson):
+#     # Get the descriptions and the relevant languages
+#     orig = "factoid/%d" % factoid.factoidKey
+#     langdesc = {'en': escape_text(factoid.replace_referents())}
+#     langkey = _get_source_lang(factoid)
+#     if langkey is not None:
+#         langdesc[langkey] = escape_text(factoid.origLDesc)
+#     descattributes = []
+#     for k, v in langdesc.items():
+#         descattributes.append('%s: \"%s\"' % (k, v))
+#     # Make the query
+#     descassertion = "MATCH (p), (agent), (source), (pred) " \
+#                     "WHERE p.uuid = '%s' AND agent.uuid = '%s' AND source.uuid = '%s' AND pred.uuid = '%s' " % \
+#                     (graphperson, agent, sourcenode, constants.get_predicate('P3'))
+#     # TODO get rid of E62
+#     descassertion += 'MERGE (desc:%s {%s}) ' % (constants.get_label('E62'), ','.join(descattributes))
+#     descassertion += "WITH p, pred, desc, agent, source "
+#     descassertion += _create_assertion_query(orig, 'p', 'pred', 'desc', 'agent', 'source')
+#     descassertion += 'RETURN a'
+#     with constants.graphdriver.session() as session:
+#         result = session.run(descassertion.replace('COMMAND', 'MATCH')).single()
+#         if result is None:
+#             session.run(descassertion.replace('COMMAND', 'CREATE'))
 
 
-def _find_or_create_kinship(session, graphperson, graphkin):
+def _find_or_create_kinship(graphperson, graphkin):
     # See if there is an existing kinship group between the person and their kin according to the
     # source in question. If not, return a new (not yet connected) E74 Kinship group node.
     e13 = constants.get_label('E13')
     e74 = constants.get_label('E74')
     p140 = constants.get_label('P140')
     p141 = constants.get_label('P141')
-    kinquery = "MATCH (p), (kin) WHERE p.uuid = %d AND kin.uuid = %d " % (graphperson, graphkin)
+    kinquery = "MATCH (p), (kin) WHERE p.uuid = '%s' AND kin.uuid = '%s' " % (graphperson, graphkin)
     kinquery += "MATCH (p)<-[:%s]-(a1:%s)-[:%s]->(kg:%s)<-[:%s]-(a2)-[:%s]->(kin) " \
                 "RETURN DISTINCT kg" % (p141, e13, p140, e74, p140, p141)
-    result = session.run(kinquery).single()
-    if result is None:
-        # If the kinship pair hasn't been referenced yet, then create a new empty kinship and return it
-        # for use in the assertions below.
-        session.run("CREATE (kg:%s {justcreated:true}) RETURN kg" % e74)
-        result = session.run("MATCH (kg:%s {justcreated:true}) REMOVE kg.justcreated RETURN kg" % e74).single()
-    return result['kg'].get('uuid')
+    with constants.graphdriver.session() as session:
+        result = session.run(kinquery).single()
+        if result is None:
+            # If the kinship pair hasn't been referenced yet, then create a new empty kinship and return it
+            # for use in the assertions below.
+            session.run("CREATE (kg:%s {justcreated:true}) RETURN kg" % e74)
+            result = session.run("MATCH (kg:%s {justcreated:true}) REMOVE kg.justcreated RETURN kg" % e74).single()
+        return result['kg'].get('uuid')
 
 
 def kinship_handler(sourcenode, agent, factoid, graphperson):
@@ -680,7 +691,7 @@ def kinship_handler(sourcenode, agent, factoid, graphperson):
         if graphkin == graphperson:
             warn("Person %s listed as related to self" % kin)
             continue
-        kgroup = _find_or_create_kinship(session, graphperson, graphkin)
+        kgroup = _find_or_create_kinship(graphperson, graphkin)
         kinassertion = "MATCH (p), (kin), (kg), (agent), (source), (pspec), (pgen) WHERE p.uuid = '%s' " \
                        "AND kin.uuid = '%s' AND kg.uuid = '%s' AND agent.uuid = '%s' AND source.uuid = '%s' " \
                        "AND pspec.uuid = '%s' AND pgen.uuid = '%s' " \
@@ -736,18 +747,18 @@ def record_assertion_factoids():
                             "WITH tla, dbr " \
                             "MATCH (a:%s) WHERE NOT (a)<-[:%s]-(:%s) " \
                             "CREATE (a)<-[:%s]-(d:%s:%s)<-[:%s]-(dbr) " \
-                            "SET d.%s = a.origsource " \
-                            "REMOVE a.origsource RETURN dbr, d" % (tla,
-                                                                   f28, timestamp, p14,
-                                                                   e13, p70, e31,
-                                                                   p70, e31, f2, r17,
-                                                                   r76)
-        result = session.run(findnewassertions)
-        new_assertions = result.value('d')
-        print("*** Created %d new assertions ***" % len(new_assertions))
-        if len(new_assertions) == 0:
+                            "SET d.%s = a.origsource REMOVE a.origsource " \
+                            "RETURN dbr, count(d) as newrecords" % (tla,
+                                                                    f28, timestamp, p14,
+                                                                    e13, p70, e31,
+                                                                    p70, e31, f2, r17,
+                                                                    r76)
+        result = session.run(findnewassertions).single()
+        new_assertions = result.get('newrecords', 0)
+        print("*** Created %d new assertions ***" % new_assertions)
+        if new_assertions == 0:
             # go back and delete the db record
-            session.run('MATCH (dbr) WHERE dbr.timestamp = "%s" DETACH DELETE dbr' % timestamp)
+            session.run('MATCH (dbr) WHERE dbr.timestamp = "%s" DELETE dbr' % timestamp)
 
 
 def process_persons():
