@@ -597,9 +597,30 @@ def societyrole_handler(sourcenode, agent, factoid, graphperson):
                  "WHERE p.uuid = '%s' AND agent.uuid = '%s' AND source.uuid = '%s' AND role.uuid = '%s' " \
                  "AND rwhich.uuid = '%s' AND rwho.uuid = '%s' " \
                  % (graphperson, agent, sourcenode, roleid,
-                    constants.get_predicate('SP13'), constants.get_predicate('SP14'))
+                    constants.get_predicate('SP14'), constants.get_predicate('SP13'))
     rassertion += _create_assertion_query(orig, 'r:%s' % constants.get_label('C1'), 'rwho', 'p', 'agent', 'source')
     rassertion += _create_assertion_query(orig, 'r', 'rwhich', 'role', 'agent', 'source', 'a1')
+    rassertion += "RETURN a"
+    with constants.graphdriver.session() as session:
+        result = session.run(rassertion.replace('COMMAND', 'MATCH')).single()
+        if result is None:
+            session.run(rassertion.replace('COMMAND', 'CREATE'))
+
+
+def dignity_handler(sourcenode, agent, factoid, graphperson):
+    orig = "factoid/%d" % factoid.factoidKey
+    if factoid.dignityOffice is None:
+        return
+    dignity_id = constants.cv['Dignity'].get(factoid.dignityOffice.stdName)
+    # (r:C13 Social Role Embodiment) [dwho:P26 is embodied by] person
+    # (r:C13) [dwhich:P33 is embodiment of] dignity
+    rassertion = "MATCH (p), (agent), (source), (dignity), (dwhich), (dwho) " \
+                 "WHERE p.uuid = '%s' AND agent.uuid = '%s' AND source.uuid = '%s' AND dignity.uuid = '%s' " \
+                 "AND dwhich.uuid = '%s' AND dwho.uuid = '%s' " \
+                 % (graphperson, agent, sourcenode, dignity_id,
+                    constants.get_predicate('SP33'), constants.get_predicate('SP26'))
+    rassertion += _create_assertion_query(orig, 'emb:%s' % constants.get_label('C13'), 'dwho', 'p', 'agent', 'source')
+    rassertion += _create_assertion_query(orig, 'emb', 'dwhich', 'dignity', 'agent', 'source', 'a1')
     rassertion += "RETURN a"
     with constants.graphdriver.session() as session:
         result = session.run(rassertion.replace('COMMAND', 'MATCH')).single()
