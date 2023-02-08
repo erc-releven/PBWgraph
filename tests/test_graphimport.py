@@ -1,5 +1,5 @@
 import unittest
-import PBWstarConstants
+import RELEVEN.PBWstarConstants
 import config
 from neo4j import GraphDatabase
 
@@ -25,7 +25,7 @@ class GraphImportTests(unittest.TestCase):
 
     def setUp(self):
         self.graphdriver = GraphDatabase.driver(config.graphuri, auth=(config.graphuser, config.graphpw))
-        self.constants = PBWstarConstants.PBWstarConstants(None, self.graphdriver)
+        self.constants = RELEVEN.PBWstarConstants.PBWstarConstants(None, self.graphdriver)
         # Get the UUIDs for each of our test people
         c = self.constants
         q = 'MATCH (id:%s)<-[:%s]-(idass:%s)-[:%s]->(person:%s), (idass)-[:%s]->(agent:%s) ' \
@@ -111,98 +111,3 @@ class GraphImportTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-
-
-scriptoutput = """
-/Users/tla/Projects/PBWgraph/venv/bin/python /Users/tla/Projects/PBWgraph/graphimportSTAR.py 
-Setting up PBW constants...
-Found 10172 relevant people
-*** Making/finding node for person Anna 62 ***
-Ingested 1 Death factoid(s)
-Ingested 12 Description factoid(s)
-Adding second name Komnenos (gr 'Κομνηνοῦ')
-Adding second name Komnenos (gr 'Κομνηνοῦ')
-Adding second name Doukas (gr 'Δούκα')
-Ingested 3 Second Name factoid(s)
-Ingested 48 Kinship factoid(s)
-Ingested 1 Occupation/Vocation factoid(s)
-Ingested 1 Religion factoid(s)
-*** Making/finding node for person Anna 101 ***
-Ingested 1 Description factoid(s)
-Ingested 5 Kinship factoid(s)
-Ingested 1 Occupation/Vocation factoid(s)
-Adding alternative name Arete (gr 'Ἀρετῆς')
-Ingested 1 Alternative Name factoid(s)
-*** Making/finding node for person Anna 102 ***
-Ingested 1 Death factoid(s)
-Ingested 1 Description factoid(s)
-Ingested 2 Kinship factoid(s)
-Ingested 1 Occupation/Vocation factoid(s)
-*** Making/finding node for person Herve 101 ***
-Ingested 4 Description factoid(s)
-Ingested 1 Ethnic label factoid(s)
-Adding second name Phrangopolos, Phrangopoulos (gr 'Φραγγόπωλον')
-Adding second name Phrangopolos, Phrangopoulos (gr 'Φραγγόπωλον')
-Ingested 2 Second Name factoid(s)
-Ingested 1 Possession factoid(s)
-*** Making/finding node for person Ioannes 62 ***
-Ingested 1 Death factoid(s)
-Ingested 26 Description factoid(s)
-Adding second name Doukas (gr 'Δούκα')
-Adding second name Doukas (gr 'Δούκα')
-Adding second name Doukas (gr 'Δούκα')
-Adding second name Doukas (gr 'Δούκα')
-Adding second name Doukas (gr 'Δούκα')
-Adding second name Doukas (gr 'Δούκα')
-Ingested 6 Second Name factoid(s)
-Ingested 54 Kinship factoid(s)
-Ingested 6 Occupation/Vocation factoid(s)
-Ingested 1 Possession factoid(s)
-Adding alternative name Ignatios (gr 'Ἰγνάτιος')
-Ingested 1 Alternative Name factoid(s)
-*** Making/finding node for person Ioannes 68 ***
-Ingested 4 Death factoid(s)
-Ingested 55 Description factoid(s)
-Ingested 38 Kinship factoid(s)
-Ingested 9 Occupation/Vocation factoid(s)
-*** Making/finding node for person Ioannes 101 ***
-Ingested 1 Death factoid(s)
-Ingested 1 Description factoid(s)
-Ingested 3 Occupation/Vocation factoid(s)
-*** Making/finding node for person Ioannes 102 ***
-Ingested 4 Description factoid(s)
-*** Making/finding node for person Konstantinos 62 ***
-Ingested 2 Death factoid(s)
-Ingested 12 Description factoid(s)
-Adding second name Doukas (gr 'Δούκα')
-Ingested 1 Second Name factoid(s)
-Ingested 21 Kinship factoid(s)
-Ingested 1 Possession factoid(s)
-*** Making/finding node for person Konstantinos 101 ***
-Ingested 2 Death factoid(s)
-Ingested 3 Description factoid(s)
-Adding second name Diogenes (gr 'Διογένης')
-Adding second name Diogenes (gr 'Διογένης')
-Adding second name Diogenes (gr 'Διογένης')
-Adding second name Diogenes (gr 'Διογένης')
-Adding second name Diogenes (gr 'Διογένης')
-Adding second name Diogenes (gr 'Διογένης')
-Ingested 6 Second Name factoid(s)
-Ingested 10 Kinship factoid(s)
-Ingested 1 Occupation/Vocation factoid(s)
-*** Making/finding node for person Konstantinos 102 ***
-Ingested 3 Description factoid(s)
-Adding second name Bodin (gr 'Βοδίνῳ')
-Adding second name Bodin (gr 'Βοδίνῳ')
-Adding second name Bodin (gr 'Βοδίνῳ')
-Ingested 3 Second Name factoid(s)
-Ingested 2 Kinship factoid(s)
-Adding alternative name Petros (gr 'Πέτρον ἀντὶ Κωνσταντίνου μετονομάσαντες')
-Ingested 1 Alternative Name factoid(s)
-*** Created 1019 new assertions ***
-Processed 11 person records.
-Used the following sources: ['Anna Komnene', 'Aristakes', 'Attaleiates: History', 'Boilas', 'Bryennios', 'Christophoros of Mitylene', 'Christos Philanthropos, note', 'Council of 1147', 'Eustathios: Capture of Thessalonike', 'Glykas', 'Italikos', 'Kecharitomene', 'Kinnamos', 'Manasses, Chronicle', 'Nea Mone,', 'Niketas Choniates, Historia', 'Patmos: Acts', 'Prodromos, Historische Gedichte', 'Psellos', 'Psellos: Chronographia', 'Seals', 'Skylitzes', 'Skylitzes Continuatus', 'Tornikes, Georgios', 'Zonaras']
-Done! Ran in 0:02:36.138840
-
-Process finished with exit code 0
-"""

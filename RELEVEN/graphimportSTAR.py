@@ -1,5 +1,5 @@
 import pbw
-import PBWstarConstants
+import RELEVEN.PBWstarConstants
 import config
 import re
 from datetime import datetime, timezone
@@ -851,7 +851,7 @@ if __name__ == '__main__':
     # Connect to the graph DB
     driver = GraphDatabase.driver(config.graphuri, auth=(config.graphuser, config.graphpw))
     # Make / retrieve the global nodes and constants
-    constants = PBWstarConstants.PBWstarConstants(mysqlsession, driver)
+    constants = RELEVEN.PBWstarConstants.PBWstarConstants(mysqlsession, driver)
     # Process the person records
     process_persons()
     duration = datetime.now() - starttime

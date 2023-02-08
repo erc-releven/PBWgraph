@@ -1,6 +1,6 @@
 import config
 import pbw
-import PBWstarConstants
+import RELEVEN.PBWstarConstants
 import re
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -15,7 +15,7 @@ mysqlsession = smaker()
 # Connect to the graph DB
 driver = GraphDatabase.driver(config.graphuri, auth=(config.graphuser, config.graphpw))
 # Retrieve the constants
-constants = PBWstarConstants.PBWstarConstants(None, driver)
+constants = RELEVEN.PBWstarConstants.PBWstarConstants(None, driver)
 
 # Project dates: beginning of 1025 to end of 1095
 project_mindate = julian_day(1025, 1, 1)
