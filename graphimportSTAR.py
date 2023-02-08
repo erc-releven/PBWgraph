@@ -21,6 +21,9 @@ def collect_person_records():
     """Get a list of people whose floruit matches our needs"""
     relevant = [x for x in constants.sqlsession.query(pbw.Person).all()
                 if constants.inrange(x.floruit) and len(x.factoids) > 0]
+    # Add the corner cases that we want to include: two emperors and a hegoumenos early in his career
+    for name, code in [('Konstantinos', 8), ('Romanos', 3), ('Neophytos', 107)]:
+        relevant.append(constants.sqlsession.query(pbw.Person).filter_by(name=name, mdbCode=code))
     print("Found %d relevant people" % len(relevant))
     # return relevant
     # Debugging / testing: restrict the list of relevant people
