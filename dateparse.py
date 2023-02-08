@@ -182,7 +182,8 @@ def parse_date(datestr):
             #     print("Parsed string %s as %s - %s" % (datestr, day_string(dmin), day_string(dmax)))
     # Handle interstitial qualifiers
     if dt is None:
-        beforeafter = re.match(r'(\d+)\s+(before|after|early|late|around|mid(dle)?|end)( of)?\s+(.*)$', datestr, flags=re.I)
+        beforeafter = re.match(r'(\d+)\s+(before|after|early|late|around|mid(dle)?|end)( of)?\s+(.*)$',
+                               datestr, flags=re.I)
         if beforeafter is not None:
             year = int(beforeafter.group(1))
             qualifier = beforeafter.group(2)
@@ -320,7 +321,8 @@ def parse_date_info(nunit):
         # print("Parsed date %s of type %d in range %s - %s"
         #       % (nunit.dates, datetype, day_string(dmin), day_string(dmax)))
         print("Unparsed date %s (%s)" % (nunit.dates, datestr))
-    return dmin, dmax
+    return dmin, dmax, datetype
+
 
 if __name__ == '__main__':
     # Connect to the SQL DB
