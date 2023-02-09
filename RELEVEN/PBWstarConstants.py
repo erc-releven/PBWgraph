@@ -46,7 +46,10 @@ class PBWstarConstants:
             'Basilakios, Orationes et epistulae': {'author': ['Nikephoros', 17003], 'factoid': 437070, 'authority': []},
             'Basileios of Calabria to Nikolaos III': {'author': ['Basileios', 254], 'authority': [mj]},
             'Boilas': {'author': ['Eustathios', 105], 'factoid': 226498, 'authority': [tp]},
-            'Bryennios': {'author': ['Nikephoros', 117], 'factoid': 237218, 'authority': [tp]},
+            'Bryennios': {'author': ['Nikephoros', 117], 'factoid': 237218, 'authority': [tp],
+                          'work': 'Hyle Historias',
+                          'expresssion': 'P. Gautier, Nicéphore Bryennios: Histoire. Introduction, texte, '
+                                         'traduction et notes, Brussels 1975'},
             'Cheynet, Antioche et Tarse': {'authority': [ok]},
             'Christophoros of Mitylene': {'author': ['Christophoros', 13102], 'authority': [mj]},  # opera
             'Christos Philanthropos, note': {'authority': [mj]},
@@ -67,7 +70,9 @@ class PBWstarConstants:
             'Esphigmenou': {'authority': [tp]},
             'Eustathios Romaios': {'author': ['Eustathios', 61], 'factoid': 374066, 'authority': [mj]},
             'Eustathios: Capture of Thessalonike': {'author': ['Eustathios', 20147], 'factoid': 451468,
-                                                    'authority': [mj]},
+                                                    'authority': [mj], 'work': 'De Thessalonica a Latinis capta',
+                                                    'expression': 'S. Kyriakides, La espugnazione di Tessalonica, '
+                                                                  'Palermo 1961'},
             'Fulcher of Chartres': {'author': ['Fulcher', 101], 'factoid': 442407, 'authority': [mj]},
             'Geonames': {'authority': [cr]},
             # http://apps.brepolis.net.uaccess.univie.ac.at/lexiema/test/Default2.aspx
@@ -348,12 +353,12 @@ class PBWstarConstants:
         # Initialise constants held in the SQL database and get their UUIDs.
         print("Setting up PBW constants...")
         # Make our anonymous agent PBW for the un-sourced information
-        pbwcmd = "(a:%s {identifier:'Prosopography of the Byzantine World', " \
+        pbwcmd = "COMMAND (a:%s {descname:'Prosopography of the Byzantine World', " \
                  "prefix:'https://pbw2016.kdl.kcl.ac.uk/person/', " \
                  "constant:TRUE}) RETURN a" % self.entitylabels.get('E39')
         self.pbw_agent = self._fetch_uuid_from_query(pbwcmd)
         # and our VIAF agent for identifying PBW contributors
-        viafcmd = "(a:%s {identifier:'Virtual Internet Authority File', prefix:'https://viaf.org/viaf/', " \
+        viafcmd = "COMMAND (a:%s {descname:'Virtual Internet Authority File', prefix:'https://viaf.org/viaf/', " \
                   "constant:TRUE}) RETURN a" % self.entitylabels.get('E39')
         self.viaf_agent = self._fetch_uuid_from_query(viafcmd)
 
@@ -419,7 +424,7 @@ class PBWstarConstants:
             restriction = ''
             if p in specific_properties:
                 restriction = ' WHERE n.%s IS NULL' % specific_properties[p]
-            predq = "(n:Resource:%s {constant:TRUE})%s RETURN n" % (fqname, restriction)
+            predq = "COMMAND (n:Resource:%s {constant:TRUE})%s RETURN n" % (fqname, restriction)
             npred = self._fetch_uuid_from_query(predq)
             self.prednodes[p] = npred
         return self.prednodes[p]
@@ -429,13 +434,17 @@ class PBWstarConstants:
         if label in self.cv[category]:
             return self.cv[category][label]
         # We have to create the node, possibly attaching it to a superclass
-        nq = "(cventry:%s {constant:TRUE, value:\"%s\"})" % (nodeclass, label)
+        nodeq = "(cventry:%s {constant:TRUE, value:\"%s\"})" % (nodeclass, label)
+        nq = "COMMAND %s" % nodeq
         if superlabel is not None:
-            nq += "-[:%s]->(super:%s {constant:TRUE, value:\"%s\"})" % (
-                self.get_label('P2'), self.get_label('E55'), superlabel)
+            nq = "MERGE (super:%s {constant:TRUE, value:\"%s\"}) WITH super COMMAND %s-[:%s]->(super) " % (
+                self.get_label('E55'), superlabel, nodeq, self.get_label('P2'))
         nq += " RETURN cventry"
         uuid = self._fetch_uuid_from_query(nq)
+        if uuid is None:
+            raise('UUID for %s label (%s) not found' % (label, category))
         self.cv[category][label] = uuid
+        return uuid
 
     def get_gender(self, gender):
         return self._find_or_create_cv_entry('Gender', self.get_label('C11'), gender)
@@ -470,7 +479,7 @@ class PBWstarConstants:
         if kinlabel in self.cv['Kinship']:
             return self.cv['Kinship'][kinlabel]
         # Kinship nodes are typed predicates
-        cypherq = "(kt:Resource:%s {`crm__P107.1_kind_of_member`:\"%s\", constant:TRUE}) RETURN kt" % (
+        cypherq = "COMMAND (kt:Resource:%s {`crm__P107.1_kind_of_member`:\"%s\", constant:TRUE}) RETURN kt" % (
             self.get_label('P107'), kinlabel)
         uuid = self._fetch_uuid_from_query(cypherq)
         self.cv['Kinship'][kinlabel] = uuid
@@ -482,11 +491,13 @@ class PBWstarConstants:
 
     def _fetch_uuid_from_query(self, q):
         """Helper function to create one node if it doesn't already exist and return the UUID that gets
-        auto-generated upon commit. The query should be missing its first command word, and end in a
-        return statement that returns the node whose UUID is wanted."""
+        auto-generated upon commit. The query passed in should have COMMAND where the node is match/created,
+        and should RETURN the node whose UUID is wanted."""
+        matchq = q.replace("COMMAND", "MATCH")
+        createq = q.replace("COMMAND", "CREATE")
         with self.graphdriver.session() as session:
-            uuid = session.run("MATCH %s.uuid AS theid" % q).single()
+            uuid = session.run("%s.uuid AS theid" % matchq).single()
             if uuid is None:
-                session.run("CREATE %s" % q)
-                uuid = session.run("MATCH %s.uuid AS theid" % q).single()
+                session.run(createq)
+                uuid = session.run("%s.uuid AS theid" % matchq).single()
             return uuid['theid']

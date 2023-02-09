@@ -226,7 +226,8 @@ def get_source_and_agent(session, factoid):
         # This factoid is taken from a document.
         # Do we have a known author for this text?
         workinfo = constants.source(factoid.source)
-        author = get_author_node(session, workinfo.get('author'))
+        authorlist = workinfo.get('author', [])
+        author = get_author_node(session, authorlist.copy())
         # If not, we use the PBW scholar as the authority.
         agent = get_authority_node(session, workinfo.get('authority'))
         # If there is no PBW scholar known for this source, we use the generic PBW agent.
@@ -239,6 +240,7 @@ def get_source_and_agent(session, factoid):
         q += "MERGE (src:%s {reference:'%s', text:'%s'}) " % \
              (constants.get_label('F2'), escape_text(factoid.sourceRef), escape_text(factoid.origLDesc))
         q += "WITH work, p165, src, agent "
+        # The agent (whoever worked on the source) asserts that the expression is from the given work.
         q += _create_assertion_query(orig, "work", "p165", "src", "agent", None)
     q += "RETURN src"
     source_result = session.run(q.replace('COMMAND', 'MATCH')).single()
@@ -370,7 +372,7 @@ def _find_or_create_viafperson(name, viafid):
 
 def get_author_node(session, authorlist):
     """Return the E21 Person node for the author of a text, or a group of authors if authorship was composite"""
-    if authorlist is None or len(authorlist) == 0:
+    if len(authorlist) == 0:
         return None
     authors = []
     while len(authorlist) > 0:
@@ -532,7 +534,7 @@ def death_handler(sourcenode, agent, factoid, graphperson):
     if deathdate is not None:
         deathassertion += _create_assertion_query(orig, 'devent', 'p4', 'datedesc', 'agent', 'source', 'a2')
     # Set the death description on the assertion as a P3 note. This should be idempotent...
-    deathassertion += "SET devent.%s = \"%s\" " % (constants.get_label('P3'), escape_text(factoid.replace_referents()))
+    deathassertion += "SET a.%s = \"%s\" " % (constants.get_label('P3'), escape_text(factoid.replace_referents()))
     deathassertion += "RETURN a%s" % (", a2" if deathdate else '')
 
     # print(deathassertion)
@@ -569,12 +571,12 @@ def _find_or_create_social_designation(sourcenode, agent, factoid, graphperson, 
     # (grouping:label) [:whopred] person
     # (grouping) [:whichpred] rnode
     orig = "factoid/%d" % factoid.factoidKey
-    gassertion = "MATCH (p), (agent), (source), (lnode), (lwho), (lwhich) " \
-                 "WHERE p.uuid = '%s' AND agent.uuid = '%s' AND source.uuid = '%s' AND lnode.uuid = '%s' " \
-                 "AND lwho.uuid = '%s' AND lwhich.uuid = '%s' " \
+    gassertion = "MATCH (p), (agent), (source), (designation), (whopred), (whichpred) " \
+                 "WHERE p.uuid = '%s' AND agent.uuid = '%s' AND source.uuid = '%s' AND designation.uuid = '%s' " \
+                 "AND whopred.uuid = '%s' AND whichpred.uuid = '%s' " \
                  % (graphperson, agent, sourcenode, des, whopred, whichpred)
-    gassertion += _create_assertion_query(orig, 'r:%s' % label, 'rwho', 'p', 'agent', 'source')
-    gassertion += _create_assertion_query(orig, 'r', 'rwhich', 'rel', 'agent', 'source', 'a1')
+    gassertion += _create_assertion_query(orig, 'persondes:%s' % label, 'whopred', 'p', 'agent', 'source')
+    gassertion += _create_assertion_query(orig, 'persondes', 'whichpred', 'designation', 'agent', 'source', 'a1')
     gassertion += "RETURN a"
     with constants.graphdriver.session() as session:
         result = session.run(gassertion.replace('COMMAND', 'MATCH')).single()
@@ -595,7 +597,7 @@ def religion_handler(sourcenode, agent, factoid, graphperson):
     # (r:C23 Religious identity) [rwho:P36 pertains to] person
     # (r:C23 Religious identity) [rwhich:P35 is defined by] rnode
     _find_or_create_social_designation(sourcenode, agent, factoid, graphperson, relid, constants.get_label('C23'),
-                                       constants.get_label('SP36'), constants.get_label('SP35'))
+                                       constants.get_predicate('SP36'), constants.get_predicate('SP35'))
 
 
 def societyrole_handler(sourcenode, agent, factoid, graphperson):
@@ -603,13 +605,13 @@ def societyrole_handler(sourcenode, agent, factoid, graphperson):
         return
     roleid = constants.get_societyrole(factoid.occupation)
     roletype = constants.get_label('C1')
-    whopred = constants.get_label('SP13')
-    whichpred = constants.get_label('SP14')
+    whopred = constants.get_predicate('SP13')
+    whichpred = constants.get_predicate('SP14')
     if factoid.occupation in constants.legal_designations:
         # We need to treat it as a legal role instead of an occupation
         roletype = constants.get_label('C13')
-        whopred = constants.get_label('SP26')
-        whichpred = constants.get_label('SP33')
+        whopred = constants.get_predicate('SP26')
+        whichpred = constants.get_predicate('SP33')
     # (r:C1 Social Quality of an Actor) [rwho:P13 pertains to] person
     # (r:C1) [rwhich:P14 is defined by] rnode
     _find_or_create_social_designation(sourcenode, agent, factoid, graphperson, roleid, roletype, whopred, whichpred)
@@ -623,7 +625,7 @@ def dignity_handler(sourcenode, agent, factoid, graphperson):
     # (r:C13 Social Role Embodiment) [dwho:P26 is embodied by] person
     # (r:C13) [dwhich:P33 is embodiment of] dignity
     _find_or_create_social_designation(sourcenode, agent, factoid, graphperson, dignity_id, constants.get_label('C13'),
-                                       constants.get_label('SP26'), constants.get_label('SP33'))
+                                       constants.get_predicate('SP26'), constants.get_predicate('SP33'))
 
 
 def languageskill_handler(sourcenode, agent, factoid, graphperson):
