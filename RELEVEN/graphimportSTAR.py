@@ -1,10 +1,9 @@
 import pbw
 import RELEVEN.PBWstarConstants
 import config
-import dateparse
 import re
 from datetime import datetime, timezone
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, and_
 from sqlalchemy.orm import sessionmaker
 from neo4j import GraphDatabase
 from warnings import warn
@@ -20,17 +19,19 @@ def escape_text(t):
 
 def collect_person_records():
     """Get a list of people whose floruit matches our needs"""
-    relevant = [x for x in constants.sqlsession.query(pbw.Person).all()
-                if constants.inrange(x.floruit) and len(x.factoids) > 0]
-    # Add the corner cases that we want to include: two emperors and a hegoumenos early in his career
-    for name, code in [('Konstantinos', 8), ('Romanos', 3), ('Neophytos', 107)]:
-        relevant.append(constants.sqlsession.query(pbw.Person).filter_by(name=name, mdbCode=code).scalar())
-    print("Found %d relevant people" % len(relevant))
+    # relevant = [x for x in constants.sqlsession.query(pbw.Person).all()
+    #             if constants.inrange(x.floruit) and len(x.factoids) > 0]
+    # # Add the corner cases that we want to include: two emperors and a hegoumenos early in his career
+    # for name, code in [('Konstantinos', 8), ('Romanos', 3), ('Neophytos', 107)]:
+    #     relevant.append(constants.sqlsession.query(pbw.Person).filter_by(name=name, mdbCode=code).scalar())
+    # print("Found %d relevant people" % len(relevant))
     # return relevant
     # Debugging / testing: restrict the list of relevant people
     debugnames = ['Anna', 'Apospharios', 'Balaleca', 'Herve', 'Ioannes', 'Konstantinos', 'Liparites']
-    debugcodes = [62, 68, 101, 102, 110]
-    return [x for x in relevant if x.name in debugnames and x.mdbCode in debugcodes]
+    debugcodes = [62, 64, 68, 101, 102, 110]
+    return constants.sqlsession.query(pbw.Person).filter(
+        and_(pbw.Person.name.in_(debugnames), pbw.Person.mdbCode.in_(debugcodes))
+    ).all()
 
 
 def _smooth_labels(label):
@@ -105,7 +106,7 @@ def gender_handler(agent, sqlperson, graphperson):
         # Make the event tied to this person
         genderassertion = "MATCH (p), (s), (pbw), (sp41) " \
                           "WHERE p.uuid = '%s' AND s.uuid = '%s' AND pbw.uuid = '%s' AND sp41.uuid = '%s' " % \
-                          (graphperson, constants.cv['Gender'][pbw_sex], agent, constants.get_predicate('P41'))
+                          (graphperson, constants.get_gender(pbw_sex), agent, constants.get_predicate('P41'))
         # Have to add the Resource tag here manually, since we are making a custom predicate node
         genderassertion += "MERGE (sp42:Resource:%s%s) " % (constants.get_label('P42'), assertion_props)
         genderassertion += "WITH p, s, pbw, sp41, sp42 "
@@ -516,7 +517,7 @@ def death_handler(sourcenode, agent, factoid, graphperson):
     deathdate = factoid.deathRecord.sourceDate
     if deathdate == '':
         deathdate = None
-    deathassertion = "MATCH (p), (agent), (source), (devent), (p100), (p3), (p4) " \
+    deathassertion = "MATCH (p), (agent), (source), (devent), (p100), (p4) " \
                      "WHERE p.uuid = '%s' AND agent.uuid = '%s' AND source.uuid = '%s' AND devent.uuid = '%s' " \
                      "AND p100.uuid = '%s' AND p4.uuid = '%s' " \
                      % (graphperson, agent, sourcenode, deathevent, constants.get_predicate('P100'),
@@ -549,7 +550,7 @@ def ethnicity_handler(sourcenode, agent, factoid, graphperson):
         warn("Empty ethnicity factoid found: id %s" % factoid.factoidKey)
         return
     elabel = factoid.ethnicityInfo.ethnicity.ethName
-    groupid = constants.cv['Ethnicity'].get(elabel)
+    groupid = constants.get_ethnicity(elabel)
     gassertion = "MATCH (p), (agent), (source), (group), (mpred)  " \
                  "WHERE p.uuid = '%s' AND agent.uuid = '%s' AND source.uuid = '%s' AND group.uuid = '%s' " \
                  "AND mpred.uuid = '%s' " % \
@@ -590,7 +591,7 @@ def religion_handler(sourcenode, agent, factoid, graphperson):
     # Special case, database had an error
     if factoid.religion == '':
         rlabel = 'Heretic'
-    relid = constants.cv['Religion'].get(rlabel)
+    relid = constants.get_religion(rlabel)
     # (r:C23 Religious identity) [rwho:P36 pertains to] person
     # (r:C23 Religious identity) [rwhich:P35 is defined by] rnode
     _find_or_create_social_designation(sourcenode, agent, factoid, graphperson, relid, constants.get_label('C23'),
@@ -600,7 +601,7 @@ def religion_handler(sourcenode, agent, factoid, graphperson):
 def societyrole_handler(sourcenode, agent, factoid, graphperson):
     if factoid.occupation is None:
         return
-    roleid = constants.cv['SocietyRole'].get(factoid.occupation)
+    roleid = constants.get_societyrole(factoid.occupation)
     roletype = constants.get_label('C1')
     whopred = constants.get_label('SP13')
     whichpred = constants.get_label('SP14')
@@ -615,10 +616,9 @@ def societyrole_handler(sourcenode, agent, factoid, graphperson):
 
 
 def dignity_handler(sourcenode, agent, factoid, graphperson):
-    orig = "factoid/%d" % factoid.factoidKey
     if factoid.dignityOffice is None:
         return
-    dignity_id = constants.cv['Dignity'].get(factoid.dignityOffice.stdName)
+    dignity_id = constants.get_dignity(factoid.dignityOffice.stdName)
     # We treat dignities as legal roles
     # (r:C13 Social Role Embodiment) [dwho:P26 is embodied by] person
     # (r:C13) [dwhich:P33 is embodiment of] dignity
@@ -631,7 +631,7 @@ def languageskill_handler(sourcenode, agent, factoid, graphperson):
     orig = "factoid/%d" % factoid.factoidKey
     if factoid.languageSkill is None:
         return
-    lkhid = constants.cv['Language'].get(factoid.languageSkill)
+    lkhid = constants.get_language(factoid.languageSkill)
     # This doesn't chain quite the same way as the others
     # person [rwho:P38 has skill] (r:C21 Skill)
     # (r:C21 Skill) [rwhich:P37 concerns] (l:C29 Know-How)
@@ -680,7 +680,7 @@ def kinship_handler(sourcenode, agent, factoid, graphperson):
     if factoid.kinshipType is None:
         warn("Empty kinship factoid found: id %d" % factoid.factoidKey)
         return
-    predspec = constants.cv.get('Kinship')[factoid.kinshipType.gspecRelat]
+    predspec = constants.get_kinship(factoid.kinshipType.gspecRelat)
     predgen = constants.get_predicate('P107')
     for kin in factoid.referents():
         graphkin = _find_or_create_pbwperson(kin.name, kin.mdbCode, kin.descName)

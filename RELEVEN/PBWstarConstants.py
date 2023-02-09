@@ -345,117 +345,38 @@ class PBWstarConstants:
         # Get the classes of info that are directly in the person record
         self.directPersonRecords = ['Gender', 'Disambiguation', 'Identifier']
 
-        def _init_typology(crmclass, supertype, instances):
-            """Initialize the typologies that are in the PBW database, knowing that the type names were not chosen
-            for ease of variable expression. Set UUIDs on all the constant nodes we create; these will be used
-            to refer to the nodes in our maps and elsewhere."""
-            retmap = dict()
-            # Batch these into groups of 100
-            doloop = True
-            supernode = ''
-            if supertype is not None:
-                supernode = "(super:%s {value:\"%s\", constant:TRUE})" % (self.get_label('E55'), supertype)
-            while doloop:
-                if len(instances) > 100:
-                    batch = instances[0:100]
-                    del instances[0:100]
-                else:
-                    batch = instances
-                    doloop = False
-                i = 0
-                varmap = dict()
-                qcreate = "MERGE %s " % supernode if supernode != '' else ''
-                for inst in batch:
-                    # Leave out blank instances
-                    if inst == '':
-                        continue
-                    var = "inst%d" % i
-                    i += 1
-                    varmap[var] = inst
-                    qcreate += " MERGE (%s:%s {value:\"%s\", constant:TRUE})" % (var, crmclass, inst)
-                    if supertype is not None:
-                        qcreate += "-[:%s]->(super)" % self.get_label('P2')
-                with self.graphdriver.session() as gsession:
-                    # Ensure the nodes exist
-                    # print(qcreate)
-                    gsession.run(qcreate)
-
-            # Now that everything is created, retrieve the nodes for their UUIDs
-            qfetch = "MATCH (inst:%s {constant:TRUE})" % crmclass
-            if supertype is not None:
-                qfetch += "-[:%s]->%s" % (self.get_label('P2'), supernode)
-            qfetch += " RETURN inst"
-            # print(qfetch)
-            with self.graphdriver.session() as gsession:
-                types = gsession.run(qfetch)
-                for record in types:
-                    tn = record['inst']
-                    retmap[tn.get('value')] = tn.get('uuid')
-            return retmap
-
-        #  Initialise constants held in the SQL database and get their UUIDs.
+        # Initialise constants held in the SQL database and get their UUIDs.
         print("Setting up PBW constants...")
         # Make our anonymous agent PBW for the un-sourced information
-        pbwcmd = "(a:Resource:%s {identifier:'Prosopography of the Byzantine World', " \
+        pbwcmd = "(a:%s {identifier:'Prosopography of the Byzantine World', " \
                  "prefix:'https://pbw2016.kdl.kcl.ac.uk/person/', " \
                  "constant:TRUE}) RETURN a" % self.entitylabels.get('E39')
-        self.pbw_agent = self.fetch_uuid_from_query(pbwcmd)
+        self.pbw_agent = self._fetch_uuid_from_query(pbwcmd)
         # and our VIAF agent for identifying PBW contributors
-        viafcmd = "(a:Resource:%s {identifier:'Virtual Internet Authority File', prefix:'https://viaf.org/viaf/', " \
+        viafcmd = "(a:%s {identifier:'Virtual Internet Authority File', prefix:'https://viaf.org/viaf/', " \
                   "constant:TRUE}) RETURN a" % self.entitylabels.get('E39')
-        self.viaf_agent = self.fetch_uuid_from_query(viafcmd)
+        self.viaf_agent = self._fetch_uuid_from_query(viafcmd)
 
-        # Some of these factoid types have their own controlled vocabularies. Extract them here and
-        # simplify the broader term.
-        self.cv = dict()
-        if sqlsession is not None:
-            self.cv['Gender'] = _init_typology(self.get_label('C11'), None, ['Female', 'Male', 'Eunuch'])
-            self.cv['Ethnicity'] = _init_typology(self.get_label('E74'), 'Ethnic Group',
-                                                  [x.ethName for x in sqlsession.query(pbw.Ethnicity).all()])
-            self.cv['Religion'] = _init_typology(self.get_label('C24'), None,
-                                                 [x.religionName for x in sqlsession.query(pbw.Religion).all()])
-            self.cv['Language'] = _init_typology(self.get_label('C29'), 'Language Skill',
-                                                 [x.languageName for x in sqlsession.query(pbw.LanguageSkill).all()])
+        # Some of these factoid types have their own controlled vocabularies.
+        # Set up our structure for retaining these; we will define them when we encounter them
+        # through the accessor functions.
+        self.cv = {
+            'Gender': dict(),
+            'Ethnicity': dict(),
+            'Religion': dict(),
+            'Language': dict(),
+            'SocietyRole': dict(),
+            'Dignity': dict(),
+            'Kinship': dict()
+        }
+        # Special-case 'slave' and ordained/consecrated roles out of 'occupations'
+        self.legal_designations = ['Slave', 'Monk', 'Nun', 'Nun (?)', 'Bishops', 'Monk (Latin)', 'Patriarch',
+                                   'Servant of Christ', 'Servant of God', 'Hieromonk', 'Servant of the Lord']
 
-            # Special-case 'slave' and ordained/consecrated roles out of 'occupations'
-            self.legal_designations = ['Slave', 'Monk', 'Nun', 'Nun (?)', 'Bishops', 'Monk (Latin)', 'Patriarch',
-                                       'Servant of Christ', 'Servant of God', 'Hieromonk', 'Servant of the Lord']
-            # Occupations are C7 Occupations, subclass of Social Quality
-            self.cv['SocietyRole'] = _init_typology(self.get_label('C7'), None,
-                                                    [x.occupationName for x in sqlsession.query(pbw.Occupation).all()
-                                                     if x.occupationName not in self.legal_designations])
-            # Legal designations are C12 Roles
-            self.cv['SocietyRole'].update(_init_typology(self.get_label('C12'), 'Legal Status',
-                                                         self.legal_designations))
-
-            # Dignities in PBW tend to be specific to institutions / areas;
-            # make an initial selection by breaking on the 'of'
-            all_dignities = dict()
-            for x in sqlsession.query(pbw.DignityOffice).all():
-                if ' of the ' in x.stdName:  # Don't split (yet) titles that probably don't refer to places
-                    dignity = [x.stdName]
-                else:
-                    dignity = x.stdName.split(' of ')
-                all_dignities[x.stdName] = dignity[0]
-            stripped_dignities = _init_typology(self.get_label('C12'), 'Legal Status',
-                                                list(set(all_dignities.values())))
-            # Associate the more general titles with the original PBW strings
-            self.cv['Dignity'] = dict()
-            for dstring, dstripped in all_dignities.items():
-                self.cv['Dignity'][dstring] = stripped_dignities[dstripped]
-
-            # Kinship is expressed as typed predicates as opposed to E55 Types.
-            # Make the generic predicate as a one-off. This is a hack to keep from breaking
-            # get_predicate later
-            with self.graphdriver.session() as session:
-                session.run('MERGE (k:Resource:%s) RETURN k' % self.get_label('P107'))
-            kinnodes = {}
-            for x in sqlsession.query(pbw.KinshipType).all():
-                kt = x.gspecRelat
-                cypherq = "(kt:Resource:%s {`crm__P107.1_kind_of_member`:\"%s\", constant:TRUE}) " \
-                          "RETURN kt" % (self.get_label('P107'), kt)
-                kinnodes[kt] = self.fetch_uuid_from_query(cypherq)
-            self.cv['Kinship'] = kinnodes
+        # Make this generic predicate as a one-off. This is a hack to keep from breaking
+        # get_predicate later
+        with self.graphdriver.session() as session:
+            session.run('MERGE (k:Resource:%s {constant:TRUE}) RETURN k' % self.get_label('P107'))
     # END OF __init__
     # Lookup functions
 
@@ -499,17 +420,70 @@ class PBWstarConstants:
             if p in specific_properties:
                 restriction = ' WHERE n.%s IS NULL' % specific_properties[p]
             predq = "(n:Resource:%s {constant:TRUE})%s RETURN n" % (fqname, restriction)
-            npred = self.fetch_uuid_from_query(predq)
+            npred = self._fetch_uuid_from_query(predq)
             self.prednodes[p] = npred
         return self.prednodes[p]
+
+    # Accessors / creators for our controlled vocabularies
+    def _find_or_create_cv_entry(self, category, nodeclass, label, superlabel=None):
+        if label in self.cv[category]:
+            return self.cv[category][label]
+        # We have to create the node, possibly attaching it to a superclass
+        nq = "(cventry:%s {constant:TRUE, value:\"%s\"})" % (nodeclass, label)
+        if superlabel is not None:
+            nq += "-[:%s]->(super:%s {constant:TRUE, value:\"%s\"})" % (
+                self.get_label('P2'), self.get_label('E55'), superlabel)
+        nq += " RETURN cventry"
+        uuid = self._fetch_uuid_from_query(nq)
+        self.cv[category][label] = uuid
+
+    def get_gender(self, gender):
+        return self._find_or_create_cv_entry('Gender', self.get_label('C11'), gender)
+
+    def get_religion(self, rel):
+        return self._find_or_create_cv_entry('Religion', self.get_label('C24'), rel)
+
+    def get_ethnicity(self, ethlabel):
+        return self._find_or_create_cv_entry('Ethnicity', self.get_label('E74'), ethlabel, 'Ethnic Group')
+
+    def get_language(self, lang):
+        return self._find_or_create_cv_entry('Language', self.get_label('C29'), lang, 'Language Skill')
+
+    def get_societyrole(self, srlabel):
+        if srlabel in self.legal_designations:
+            return self._find_or_create_cv_entry('SocietyRole', self.get_label('C12'), srlabel, 'Legal Status')
+        else:
+            return self._find_or_create_cv_entry('SocietyRole', self.get_label('C7'), srlabel)
+
+    def get_dignity(self, dignity):
+        # Dignities in PBW tend to be specific to institutions / areas;
+        # make an initial selection by breaking on the 'of'
+        diglabel = [dignity]
+        if ' of the ' not in dignity:  # Don't split (yet) titles that probably don't refer to places
+            diglabel = dignity.split(' of ')
+        dig_uuid = self._find_or_create_cv_entry('Dignity', self.get_label('C12'), diglabel[0], 'Legal Status')
+        # Make sure that the UUID also appears under the original label
+        self.cv['Dignity'][dignity] = dig_uuid
+        return dig_uuid
+
+    def get_kinship(self, kinlabel):
+        if kinlabel in self.cv['Kinship']:
+            return self.cv['Kinship'][kinlabel]
+        # Kinship nodes are typed predicates
+        cypherq = "(kt:Resource:%s {`crm__P107.1_kind_of_member`:\"%s\", constant:TRUE}) RETURN kt" % (
+            self.get_label('P107'), kinlabel)
+        uuid = self._fetch_uuid_from_query(cypherq)
+        self.cv['Kinship'][kinlabel] = uuid
+        return uuid
 
     def inrange(self, floruit):
         """Return true if the given floruit tag falls within RELEVEN's range"""
         return floruit in self.allowed
 
-    def fetch_uuid_from_query(self, q):
+    def _fetch_uuid_from_query(self, q):
         """Helper function to create one node if it doesn't already exist and return the UUID that gets
-        auto-generated upon commit."""
+        auto-generated upon commit. The query should be missing its first command word, and end in a
+        return statement that returns the node whose UUID is wanted."""
         with self.graphdriver.session() as session:
             uuid = session.run("MATCH %s.uuid AS theid" % q).single()
             if uuid is None:
