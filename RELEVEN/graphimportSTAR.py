@@ -1,6 +1,7 @@
 import pbw
 import RELEVEN.PBWstarConstants
 import config
+import dateparse
 import re
 from datetime import datetime, timezone
 from sqlalchemy import create_engine
@@ -23,12 +24,12 @@ def collect_person_records():
                 if constants.inrange(x.floruit) and len(x.factoids) > 0]
     # Add the corner cases that we want to include: two emperors and a hegoumenos early in his career
     for name, code in [('Konstantinos', 8), ('Romanos', 3), ('Neophytos', 107)]:
-        relevant.append(constants.sqlsession.query(pbw.Person).filter_by(name=name, mdbCode=code))
+        relevant.append(constants.sqlsession.query(pbw.Person).filter_by(name=name, mdbCode=code).scalar())
     print("Found %d relevant people" % len(relevant))
     # return relevant
     # Debugging / testing: restrict the list of relevant people
-    debugnames = ['Herve', 'Ioannes', 'Konstantinos', 'Anna']
-    debugcodes = [62, 68, 101, 102]
+    debugnames = ['Anna', 'Apospharios', 'Balaleca', 'Herve', 'Ioannes', 'Konstantinos', 'Liparites']
+    debugcodes = [62, 68, 101, 102, 110]
     return [x for x in relevant if x.name in debugnames and x.mdbCode in debugcodes]
 
 
@@ -105,7 +106,8 @@ def gender_handler(agent, sqlperson, graphperson):
         genderassertion = "MATCH (p), (s), (pbw), (sp41) " \
                           "WHERE p.uuid = '%s' AND s.uuid = '%s' AND pbw.uuid = '%s' AND sp41.uuid = '%s' " % \
                           (graphperson, constants.cv['Gender'][pbw_sex], agent, constants.get_predicate('P41'))
-        genderassertion += "MERGE (sp42:%s%s) " % (constants.get_label('P42'), assertion_props)
+        # Have to add the Resource tag here manually, since we are making a custom predicate node
+        genderassertion += "MERGE (sp42:Resource:%s%s) " % (constants.get_label('P42'), assertion_props)
         genderassertion += "WITH p, s, pbw, sp41, sp42 "
         genderassertion += _create_assertion_query(orig, 'ga:%s' % constants.get_label('E17'),
                                                    'sp41', 'p', 'pbw', None, 'a1')
@@ -511,27 +513,26 @@ def death_handler(sourcenode, agent, factoid, graphperson):
             factoid.factoidKey, factoid.engDesc))
         return
 
-    # TODO parse this later into a real date range
     deathdate = factoid.deathRecord.sourceDate
     if deathdate == '':
         deathdate = None
     deathassertion = "MATCH (p), (agent), (source), (devent), (p100), (p3), (p4) " \
                      "WHERE p.uuid = '%s' AND agent.uuid = '%s' AND source.uuid = '%s' AND devent.uuid = '%s' " \
-                     "AND p100.uuid = '%s' AND p3.uuid = '%s' AND p4.uuid = '%s' " \
+                     "AND p100.uuid = '%s' AND p4.uuid = '%s' " \
                      % (graphperson, agent, sourcenode, deathevent, constants.get_predicate('P100'),
-                        constants.get_predicate('P3'), constants.get_predicate('P4'))
-    deathassertion += "MERGE (desc:%s {content:\"%s\"}) " % \
-                      (constants.get_label('E62'), escape_text(factoid.replace_referents()))
+                        constants.get_predicate('P4'))
     if deathdate is not None:
+        # Just record the string; many of them don't resolve to a fixed date
         deathassertion += "MERGE (datedesc:%s {content:\"%s\"}) " % (constants.get_label('E52'), deathdate)
-    deathassertion += "WITH p, agent, source, devent, p100, p3, p4, desc%s " % (', datedesc' if deathdate else '')
+    deathassertion += "WITH p, agent, source, devent, p100, p4%s " % (', datedesc' if deathdate else '')
+    # Create an assertion that the death happened
     deathassertion += _create_assertion_query(orig, 'devent', 'p100', 'p', 'agent', 'source')
-    # Create an assertion about how the death is described
-    deathassertion += _create_assertion_query(orig, 'devent', 'p3', 'desc', 'agent', 'source', 'a1')
     # Create an assertion about when the death happened.
     if deathdate is not None:
         deathassertion += _create_assertion_query(orig, 'devent', 'p4', 'datedesc', 'agent', 'source', 'a2')
-    deathassertion += "RETURN a, a1%s" % (", a2" if deathdate else '')
+    # Set the death description on the assertion as a P3 note. This should be idempotent...
+    deathassertion += "SET devent.%s = \"%s\" " % (constants.get_label('P3'), escape_text(factoid.replace_referents()))
+    deathassertion += "RETURN a%s" % (", a2" if deathdate else '')
 
     # print(deathassertion)
     with constants.graphdriver.session() as session:
@@ -562,9 +563,26 @@ def ethnicity_handler(sourcenode, agent, factoid, graphperson):
             session.run(gassertion.replace('COMMAND', 'CREATE'))
 
 
+# Helper to create the assertions for our various social designation groups
+def _find_or_create_social_designation(sourcenode, agent, factoid, graphperson, des, label, whopred, whichpred):
+    # (grouping:label) [:whopred] person
+    # (grouping) [:whichpred] rnode
+    orig = "factoid/%d" % factoid.factoidKey
+    gassertion = "MATCH (p), (agent), (source), (lnode), (lwho), (lwhich) " \
+                 "WHERE p.uuid = '%s' AND agent.uuid = '%s' AND source.uuid = '%s' AND lnode.uuid = '%s' " \
+                 "AND lwho.uuid = '%s' AND lwhich.uuid = '%s' " \
+                 % (graphperson, agent, sourcenode, des, whopred, whichpred)
+    gassertion += _create_assertion_query(orig, 'r:%s' % label, 'rwho', 'p', 'agent', 'source')
+    gassertion += _create_assertion_query(orig, 'r', 'rwhich', 'rel', 'agent', 'source', 'a1')
+    gassertion += "RETURN a"
+    with constants.graphdriver.session() as session:
+        result = session.run(gassertion.replace('COMMAND', 'MATCH')).single()
+        if result is None:
+            session.run(gassertion.replace('COMMAND', 'CREATE'))
+
+
 def religion_handler(sourcenode, agent, factoid, graphperson):
     """Assign a group membership for the given religious confession to the person"""
-    orig = "factoid/%d" % factoid.factoidKey
     if factoid.religion is None:
         warn("Empty religion factoid found: id %d" % factoid.factoidKey)
         return
@@ -575,39 +593,25 @@ def religion_handler(sourcenode, agent, factoid, graphperson):
     relid = constants.cv['Religion'].get(rlabel)
     # (r:C23 Religious identity) [rwho:P36 pertains to] person
     # (r:C23 Religious identity) [rwhich:P35 is defined by] rnode
-    rassertion = "MATCH (p), (agent), (source), (rel), (rwhich), (rwho) " \
-                 "WHERE p.uuid = '%s' AND agent.uuid = '%s' AND source.uuid = '%s' AND rel.uuid = '%s' " \
-                 "AND rwhich.uuid = '%s' AND rwho.uuid = '%s' " \
-                 % (graphperson, agent, sourcenode, relid,
-                    constants.get_predicate('SP35'), constants.get_predicate('SP36'))
-    rassertion += _create_assertion_query(orig, 'r:%s' % constants.get_label('C23'), 'rwho', 'p', 'agent', 'source')
-    rassertion += _create_assertion_query(orig, 'r', 'rwhich', 'rel', 'agent', 'source', 'a1')
-    rassertion += "RETURN a"
-    with constants.graphdriver.session() as session:
-        result = session.run(rassertion.replace('COMMAND', 'MATCH')).single()
-        if result is None:
-            session.run(rassertion.replace('COMMAND', 'CREATE'))
+    _find_or_create_social_designation(sourcenode, agent, factoid, graphperson, relid, constants.get_label('C23'),
+                                       constants.get_label('SP36'), constants.get_label('SP35'))
 
 
 def societyrole_handler(sourcenode, agent, factoid, graphperson):
-    orig = "factoid/%d" % factoid.factoidKey
     if factoid.occupation is None:
         return
     roleid = constants.cv['SocietyRole'].get(factoid.occupation)
+    roletype = constants.get_label('C1')
+    whopred = constants.get_label('SP13')
+    whichpred = constants.get_label('SP14')
+    if factoid.occupation in constants.legal_designations:
+        # We need to treat it as a legal role instead of an occupation
+        roletype = constants.get_label('C13')
+        whopred = constants.get_label('SP26')
+        whichpred = constants.get_label('SP33')
     # (r:C1 Social Quality of an Actor) [rwho:P13 pertains to] person
     # (r:C1) [rwhich:P14 is defined by] rnode
-    rassertion = "MATCH (p), (agent), (source), (role), (rwhich), (rwho) " \
-                 "WHERE p.uuid = '%s' AND agent.uuid = '%s' AND source.uuid = '%s' AND role.uuid = '%s' " \
-                 "AND rwhich.uuid = '%s' AND rwho.uuid = '%s' " \
-                 % (graphperson, agent, sourcenode, roleid,
-                    constants.get_predicate('SP14'), constants.get_predicate('SP13'))
-    rassertion += _create_assertion_query(orig, 'r:%s' % constants.get_label('C1'), 'rwho', 'p', 'agent', 'source')
-    rassertion += _create_assertion_query(orig, 'r', 'rwhich', 'role', 'agent', 'source', 'a1')
-    rassertion += "RETURN a"
-    with constants.graphdriver.session() as session:
-        result = session.run(rassertion.replace('COMMAND', 'MATCH')).single()
-        if result is None:
-            session.run(rassertion.replace('COMMAND', 'CREATE'))
+    _find_or_create_social_designation(sourcenode, agent, factoid, graphperson, roleid, roletype, whopred, whichpred)
 
 
 def dignity_handler(sourcenode, agent, factoid, graphperson):
@@ -615,28 +619,20 @@ def dignity_handler(sourcenode, agent, factoid, graphperson):
     if factoid.dignityOffice is None:
         return
     dignity_id = constants.cv['Dignity'].get(factoid.dignityOffice.stdName)
+    # We treat dignities as legal roles
     # (r:C13 Social Role Embodiment) [dwho:P26 is embodied by] person
     # (r:C13) [dwhich:P33 is embodiment of] dignity
-    rassertion = "MATCH (p), (agent), (source), (dignity), (dwhich), (dwho) " \
-                 "WHERE p.uuid = '%s' AND agent.uuid = '%s' AND source.uuid = '%s' AND dignity.uuid = '%s' " \
-                 "AND dwhich.uuid = '%s' AND dwho.uuid = '%s' " \
-                 % (graphperson, agent, sourcenode, dignity_id,
-                    constants.get_predicate('SP33'), constants.get_predicate('SP26'))
-    rassertion += _create_assertion_query(orig, 'emb:%s' % constants.get_label('C13'), 'dwho', 'p', 'agent', 'source')
-    rassertion += _create_assertion_query(orig, 'emb', 'dwhich', 'dignity', 'agent', 'source', 'a1')
-    rassertion += "RETURN a"
-    with constants.graphdriver.session() as session:
-        result = session.run(rassertion.replace('COMMAND', 'MATCH')).single()
-        if result is None:
-            session.run(rassertion.replace('COMMAND', 'CREATE'))
+    _find_or_create_social_designation(sourcenode, agent, factoid, graphperson, dignity_id, constants.get_label('C13'),
+                                       constants.get_label('SP26'), constants.get_label('SP33'))
 
 
-def language_handler(sourcenode, agent, factoid, graphperson):
+def languageskill_handler(sourcenode, agent, factoid, graphperson):
     """Assign a language skill to the person"""
     orig = "factoid/%d" % factoid.factoidKey
     if factoid.languageSkill is None:
         return
     lkhid = constants.cv['Language'].get(factoid.languageSkill)
+    # This doesn't chain quite the same way as the others
     # person [rwho:P38 has skill] (r:C21 Skill)
     # (r:C21 Skill) [rwhich:P37 concerns] (l:C29 Know-How)
     lassertion = "MATCH (p), (agent), (source), (lkh), (lwhich), (lwho) " \
@@ -651,31 +647,6 @@ def language_handler(sourcenode, agent, factoid, graphperson):
         result = session.run(lassertion.replace('COMMAND', 'MATCH')).single()
         if result is None:
             session.run(lassertion.replace('COMMAND', 'CREATE'))
-
-
-# def description_handler(sourcenode, agent, factoid, graphperson):
-#     # Get the descriptions and the relevant languages
-#     orig = "factoid/%d" % factoid.factoidKey
-#     langdesc = {'en': escape_text(factoid.replace_referents())}
-#     langkey = _get_source_lang(factoid)
-#     if langkey is not None:
-#         langdesc[langkey] = escape_text(factoid.origLDesc)
-#     descattributes = []
-#     for k, v in langdesc.items():
-#         descattributes.append('%s: \"%s\"' % (k, v))
-#     # Make the query
-#     descassertion = "MATCH (p), (agent), (source), (pred) " \
-#                     "WHERE p.uuid = '%s' AND agent.uuid = '%s' AND source.uuid = '%s' AND pred.uuid = '%s' " % \
-#                     (graphperson, agent, sourcenode, constants.get_predicate('P3'))
-#     # TODO get rid of E62
-#     descassertion += 'MERGE (desc:%s {%s}) ' % (constants.get_label('E62'), ','.join(descattributes))
-#     descassertion += "WITH p, pred, desc, agent, source "
-#     descassertion += _create_assertion_query(orig, 'p', 'pred', 'desc', 'agent', 'source')
-#     descassertion += 'RETURN a'
-#     with constants.graphdriver.session() as session:
-#         result = session.run(descassertion.replace('COMMAND', 'MATCH')).single()
-#         if result is None:
-#             session.run(descassertion.replace('COMMAND', 'CREATE'))
 
 
 def _find_or_create_kinship(graphperson, graphkin):
@@ -704,6 +675,7 @@ def kinship_handler(sourcenode, agent, factoid, graphperson):
     # two assertions, one for each person's membership of the group. The main person
     # has the specific predicate in their assertion; the secondary person has the
     # generic predicate.
+    # TODO deal with kin who are Anonymi or Anonymae
     orig = "factoid/%d" % factoid.factoidKey
     if factoid.kinshipType is None:
         warn("Empty kinship factoid found: id %d" % factoid.factoidKey)
@@ -736,7 +708,7 @@ def possession_handler(sourcenode, agent, factoid, graphperson):
     orig = "factoid/%d" % factoid.factoidKey
     possession_attributes = {constants.get_label('P1'): escape_text(factoid.engDesc)}
     if factoid.possession is not None and factoid.possession != '':
-        possession_attributes[constants.get_label('P3')] = escape_text(factoid.possession)
+        possession_attributes[constants.get_label('P3')] = escape_text(factoid.replace_referents())
     possession_attrs = ", ".join(["%s: '%s'" % (k, v) for k, v in possession_attributes.items()])
     posassertion = "MATCH (p), (agent), (source), (pred) " \
                    "WHERE p.uuid = '%s' AND agent.uuid = '%s' AND source.uuid = '%s' AND pred.uuid = '%s' " % \

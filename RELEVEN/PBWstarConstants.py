@@ -182,16 +182,16 @@ class PBWstarConstants:
         }
 
         self.entitylabels = {
-            'C1': 'Resource:`sdh-so__C1_Social_Quality_of_an_Actor`',
-            'C5': 'Resource:`sdh-so__C5_Membership`',
-            'C7': 'Resource:`sdh-so__C7_Occupation`',
-            'C11': 'Resource:`sdh-so__C11_Gender`',
-            'C12': 'Resource:`sdh-so__C12_Actors_Social_Role`',
-            'C13': 'Resource:`sdh-so__C13_Social_Role_Embodiment`',
-            'C21': 'Resource:sdh__C21_Skill',
-            'C23': 'Resource:`sdh-so__C23_Religious_identity`',
-            'C24': 'Resource:`sdh-so__C24_Religion_or_religious_denomination`',
-            'C29': 'Resource:`sdh__C29_Know-How`',
+            'C1': 'Resource:sdhss__C1',  # Social Quality of an Actor
+            'C5': 'Resource:sdhss__C5',  # Membership
+            'C7': 'Resource:sdhss__C7',  # Occupation
+            'C11': 'Resource:sdhss__C11',  # Gender
+            'C12': 'Resource:sdhss__C12',  # Social Role
+            'C13': 'Resource:sdhss__C13',  # Social Role Embodiment
+            'C21': 'Resource:sdhss__C21',  # Skill
+            'C23': 'Resource:sdhss__C23',  # Religious Identity
+            'C24': 'Resource:sdhss__C24',  # Religion or Religious Denomination
+            'C29': 'Resource:sdhss__C29',  # Know-How
             'E13': 'Resource:crm__E13_Attribute_Assignment',
             'E15': 'Resource:crm__E15_Identifier_Assignment',
             'E17': 'Resource:crm__E17_Type_Assignment',
@@ -210,10 +210,10 @@ class PBWstarConstants:
             'E69': 'Resource:crm__E69_Death',
             'E73': 'Resource:crm__E73_Information_Object',
             'E74': 'Resource:crm__E74_Group',
-            'F1': 'Resource:lrmoo__F1_Work',
-            'F2': 'Resource:lrmoo__F2_Expression',
-            'F27': 'Resource:lrmoo__F27_Work_Creation',
-            'F28': 'Resource:lrmoo__F28_Expression_Creation'
+            'F1': 'Resource:lrmoo__F1',  # Work
+            'F2': 'Resource:lrmoo__F2',  # Expression
+            'F27': 'Resource:lrmoo__F27',  # Work Creation
+            'F28': 'Resource:lrmoo__F28'  # Expression Creation
         }
 
         self.predicates = {
@@ -238,19 +238,19 @@ class PBWstarConstants:
             'P148': 'crm__P148_has_component',
             'P165': 'crm__P165_incorporates',
             'P177': 'crm__P177_assigned_property_type',
-            'R3': 'lrmoo__R3_is_realised_in',
-            'R5': 'lrmoo__R5_has_component',
-            'R16': 'lrmoo__R16_created',
-            'R17': 'lrmoo__R17_created',
-            'R76': 'lrmoo__R76_is_derivative_of',
-            'SP13': '`sdh-so__P13_pertains_to`',
-            'SP14': '`sdh-so__P14_is_defined_by`',
-            'SP26': '`sdh-so__P26_is_embodiment_by`',
-            'SP33': '`sdh-so__P33_is_embodiment_of`',
-            'SP35': '`sdh-so__P35_is_defined_by`',
-            'SP36': '`sdh-so__P36_pertains_to`',
-            'SP37': '`sdh-so__P37_concerns`',
-            'SP38': 'sdh__P38_has_skill'
+            'R3': 'lrmoo__R3',  # is realised in
+            'R5': 'lrmoo__R5',  # has component
+            'R16': 'lrmoo__R16',  # created [work]
+            'R17': 'lrmoo__R17',  # created [expression]
+            'R76': 'lrmoo__R76',  # is derivative of
+            'SP13': 'sdhss__P13',  # pertains to [person, social quality]
+            'SP14': 'sdhss__P14',  # has social quality
+            'SP26': 'sdhss__P26',  # is embodiment by [person, social role]
+            'SP33': 'sdhss__P33',  # is embodiment of [social role]
+            'SP35': 'sdhss__P35',  # is defined by [person, religious identity]
+            'SP36': 'sdhss__P36',  # pertains to [religious identity]
+            'SP37': 'sdhss__P37',  # concerns [know-how]
+            'SP38': 'sdhss__P38'  # has skill
         }
 
         self.prednodes = dict()
@@ -381,11 +381,9 @@ class PBWstarConstants:
                     gsession.run(qcreate)
 
             # Now that everything is created, retrieve the nodes for their UUIDs
-            typenode = "MATCH (inst:%s {constant:TRUE})" % crmclass
-            if supertype is None:
-                qfetch = typenode
-            else:
-                qfetch = "MATCH %s %s<-[:%s]-(super)" % (supernode, typenode, self.get_label('P2'))
+            qfetch = "MATCH (inst:%s {constant:TRUE})" % crmclass
+            if supertype is not None:
+                qfetch += "-[:%s]->%s" % (self.get_label('P2'), supernode)
             qfetch += " RETURN inst"
             # print(qfetch)
             with self.graphdriver.session() as gsession:
@@ -419,27 +417,38 @@ class PBWstarConstants:
             self.cv['Language'] = _init_typology(self.get_label('C29'), 'Language Skill',
                                                  [x.languageName for x in sqlsession.query(pbw.LanguageSkill).all()])
 
-            # Special-case 'slave' and possibly other items out of the occupation list
-            sc_occupation = ['Slave']
+            # Special-case 'slave' and ordained/consecrated roles out of 'occupations'
+            self.legal_designations = ['Slave', 'Monk', 'Nun', 'Nun (?)', 'Bishops', 'Monk (Latin)', 'Patriarch',
+                                       'Servant of Christ', 'Servant of God', 'Hieromonk', 'Servant of the Lord']
+            # Occupations are C7 Occupations, subclass of Social Quality
             self.cv['SocietyRole'] = _init_typology(self.get_label('C7'), None,
                                                     [x.occupationName for x in sqlsession.query(pbw.Occupation).all()
-                                                     if x.occupationName not in sc_occupation])
-            for sc in sc_occupation:
-                cypherq = '(s:%s {value:"%s"}) RETURN s' % (self.get_label('C12'), sc)
-                self.cv['SocietyRole'][sc] = self.fetch_uuid_from_query(cypherq)
+                                                     if x.occupationName not in self.legal_designations])
+            # Legal designations are C12 Roles
+            self.cv['SocietyRole'].update(_init_typology(self.get_label('C12'), 'Legal Status',
+                                                         self.legal_designations))
 
             # Dignities in PBW tend to be specific to institutions / areas;
             # make an initial selection by breaking on the 'of'
-            all_dignities = set()
+            all_dignities = dict()
             for x in sqlsession.query(pbw.DignityOffice).all():
                 if ' of the ' in x.stdName:  # Don't split (yet) titles that probably don't refer to places
                     dignity = [x.stdName]
                 else:
                     dignity = x.stdName.split(' of ')
-                all_dignities.add(dignity[0])
-            self.cv['Dignity'] = _init_typology(self.get_label('C12'), 'Dignity or Office', list(all_dignities))
+                all_dignities[x.stdName] = dignity[0]
+            stripped_dignities = _init_typology(self.get_label('C12'), 'Legal Status',
+                                                list(set(all_dignities.values())))
+            # Associate the more general titles with the original PBW strings
+            self.cv['Dignity'] = dict()
+            for dstring, dstripped in all_dignities.items():
+                self.cv['Dignity'][dstring] = stripped_dignities[dstripped]
 
             # Kinship is expressed as typed predicates as opposed to E55 Types.
+            # Make the generic predicate as a one-off. This is a hack to keep from breaking
+            # get_predicate later
+            with self.graphdriver.session() as session:
+                session.run('MERGE (k:Resource:%s) RETURN k' % self.get_label('P107'))
             kinnodes = {}
             for x in sqlsession.query(pbw.KinshipType).all():
                 kt = x.gspecRelat
