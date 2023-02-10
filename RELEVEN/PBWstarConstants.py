@@ -1,4 +1,3 @@
-import pbw
 # This package contains a bunch of information curated from the PBW website about authority, authorship
 # and so forth. It is a huge laundry list of data and some initialiser and accessor functions for it; the
 # class requires a graph driver in order to do the initialisation.
@@ -7,34 +6,35 @@ import pbw
 class PBWstarConstants:
     """A class to deal with all of our constants, where the data is nicely encapsulated"""
 
-    def __init__(self, sqlsession, graphdriver):
-        self.sqlsession = sqlsession
+    def __init__(self, graphdriver):
         self.graphdriver = graphdriver
 
         # These are the modern scholars who put the source information into PBW records
-        mj = {'identifier': 'Michael Jeffreys', 'viaf': '73866641'}
+        mj = {'identifier': 'Jeffreys, Michael J.', 'viaf': '73866641'}
         # We need Michael and Tara on the outside
         self.mj = mj
-        tp = {'identifier': 'Tassos Papacostas', 'viaf': '316793603'}
-        ta = {'identifier': 'Tara Andrews', 'viaf': '316505144'}
+        tp = {'identifier': 'Papacostas, Tassos', 'viaf': '316793603'}
+        ta = {'identifier': 'Andrews, Tara Lee', 'viaf': '316505144'}
         self.ta = ta
-        jr = {'identifier': 'Judith Ryder', 'viaf': '51999624'}
-        mw = {'identifier': 'Mary Whitby', 'viaf': '34477027'}
-        wa = {'identifier': 'Wahid Amin', 'viaf': '213149617100303751518'}
-        bs = {'identifier': 'Bruna Soravia', 'viaf': '69252167'}
-        hm = {'identifier': 'Harry Munt', 'viaf': '78568758'}
-        lo = {'identifier': 'Letizia Osti', 'viaf': '236145542536996640148'}
-        cr = {'identifier': 'Charlotte Roueché', 'viaf': '44335536'}
-        ok = {'identifier': 'Olga Karagiorgiou', 'viaf': '253347413'}
+        jr = {'identifier': 'Ryder, Judith R.', 'viaf': '51999624'}
+        mw = {'identifier': 'Whitby, Mary', 'viaf': '34477027'}
+        wa = {'identifier': 'Amin, Wahid M.', 'viaf': '213149617100303751518'}
+        bs = {'identifier': 'Soravia, Bruna', 'viaf': '69252167'}
+        hm = {'identifier': 'Munt, Harry', 'viaf': '78568758'}
+        lo = {'identifier': 'Osti, Letizia', 'viaf': '236145542536996640148'}
+        cr = {'identifier': 'Roueché, Charlotte', 'viaf': '44335536'}
+        ok = {'identifier': 'Karágiṓrgou, ́Olga', 'viaf': '253347413'}
 
         self.sourcelist = {
             'Albert of Aachen': {'author': ['Albert', 26101], 'factoid': 432193, 'authority': [mj],
                                  'work': 'Historia Ierosolimitana',
-                                 'expression': 'Susan B. Edgington, Historia Ierosolimitana, '
-                                               'History of the Journey to Jerusalem, Oxford 2007'},
+                                 'expression': 'Historia Ierosolimitana, History of the Journey to Jerusalem, '
+                                               'Oxford 2007',
+                                 'editor': [{'identifier': 'Edgington, Susan B.', 'viaf': '93497875'}]},
             'Alexios Stoudites': {'author': ['Alexios', 11], 'authority': [tp],
-                                  'expression': 'G. Ficker, Erlasse des Patriarchen von Konstantinopel Alexios '
-                                                'Studites, Kiel 1911'},
+                                  'expression': 'Erlasse des Patriarchen von Konstantinopel Alexios Studites, '
+                                                'Kiel 1911',
+                                  'editor': [{'identifier': 'Ficker, Gerhard', 'viaf': '37668465'}]},
             'Anna Komnene': {'author': ['Anna', 62], 'factoid': 437887, 'work': 'Alexias', 'authority': [mj],
                              'expression': 'D.R. Reinsch and A. Kambylis, Annae Comnenae Alexias, '
                                            'Corpus fontium historiae Byzantinae 40/1, Berlin – New York 2001'},
@@ -48,8 +48,9 @@ class PBWstarConstants:
             'Boilas': {'author': ['Eustathios', 105], 'factoid': 226498, 'authority': [tp]},
             'Bryennios': {'author': ['Nikephoros', 117], 'factoid': 237218, 'authority': [tp],
                           'work': 'Hyle Historias',
-                          'expresssion': 'P. Gautier, Nicéphore Bryennios: Histoire. Introduction, texte, '
-                                         'traduction et notes, Brussels 1975'},
+                          'expresssion': 'Nicéphore Bryennios: Histoire. Introduction, texte, traduction et notes, '
+                                         'Brussels 1975',
+                          'editor': [{'identifier': 'Gautier, Paul', 'viaf': '231073465'}]},
             'Cheynet, Antioche et Tarse': {'authority': [ok]},
             'Christophoros of Mitylene': {'author': ['Christophoros', 13102], 'authority': [mj]},  # opera
             'Christos Philanthropos, note': {'authority': [mj]},
@@ -71,8 +72,9 @@ class PBWstarConstants:
             'Eustathios Romaios': {'author': ['Eustathios', 61], 'factoid': 374066, 'authority': [mj]},
             'Eustathios: Capture of Thessalonike': {'author': ['Eustathios', 20147], 'factoid': 451468,
                                                     'authority': [mj], 'work': 'De Thessalonica a Latinis capta',
-                                                    'expression': 'S. Kyriakides, La espugnazione di Tessalonica, '
-                                                                  'Palermo 1961'},
+                                                    'expression': 'La espugnazione di Tessalonica, Palermo 1961',
+                                                    'editor': [{'identifier': 'Kyriakidēs, Stilpōn Paraskeua',
+                                                                'viaf': '69687416'}]},
             'Fulcher of Chartres': {'author': ['Fulcher', 101], 'factoid': 442407, 'authority': [mj]},
             'Geonames': {'authority': [cr]},
             # http://apps.brepolis.net.uaccess.univie.ac.at/lexiema/test/Default2.aspx
@@ -151,7 +153,10 @@ class PBWstarConstants:
             'Sakkos (1170)': {'authority': [mj]},
             'Seibt – Zarnitz': {'authority': [ok]},
             'Semeioma on Leon of Chalcedon': {'author': ['Alexios', 1], 'factoid': 444854, 'authority': [jr]},
-            'Skylitzes': {'author': ['Ioannes', 110], 'factoid': 223966, 'authority': [tp]},
+            'Skylitzes': {'author': ['Ioannes', 110], 'factoid': 223966, 'authority': [tp],
+                          'work': 'Synopsis historikon',
+                          'expression': 'Ioannis Scylitzae Synopsis Historiarum, Corpus fontium historiae Byzantinae 5, Berlin – New York 1973',
+                          'editor': [{'identifier': 'Thurn, Hans', 'viaf': '9970194'}]},
             'Skylitzes Continuatus': {'author': ['Anonymus', 102], 'authority': [tp]},  # placeholder person from PBW
             'Sode, Berlin': {'authority': [ok]},
             'Speck, Berlin': {'authority': [ok]},
@@ -342,16 +347,7 @@ class PBWstarConstants:
         self.star_source = self.predicates['P17']
         self.star_auth = self.predicates['P14']
 
-        # Get the list of factoid types
-        if sqlsession is None:
-            self.factoidTypes = []
-        else:
-            self.factoidTypes = [x.typeName for x in sqlsession.query(pbw.FactoidType).all()
-                                 if x.typeName != '(Unspecified)']
-        # Get the classes of info that are directly in the person record
-        self.directPersonRecords = ['Gender', 'Disambiguation', 'Identifier']
-
-        # Initialise constants held in the SQL database and get their UUIDs.
+        # Initialise our group agents and the data structures we need to start
         print("Setting up PBW constants...")
         # Make our anonymous agent PBW for the un-sourced information
         pbwcmd = "COMMAND (a:%s {descname:'Prosopography of the Byzantine World', " \

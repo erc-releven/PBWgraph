@@ -8,8 +8,9 @@ from sqlalchemy.orm import sessionmaker
 from neo4j import GraphDatabase
 from warnings import warn
 
-# Global variable for our constants object
+# Global variable for our constants object and our SQL session
 constants = None
+mysqlsession = None
 
 
 def escape_text(t):
@@ -19,17 +20,17 @@ def escape_text(t):
 
 def collect_person_records():
     """Get a list of people whose floruit matches our needs"""
-    # relevant = [x for x in constants.sqlsession.query(pbw.Person).all()
+    # relevant = [x for x in mysqlsession.query(pbw.Person).all()
     #             if constants.inrange(x.floruit) and len(x.factoids) > 0]
     # # Add the corner cases that we want to include: two emperors and a hegoumenos early in his career
     # for name, code in [('Konstantinos', 8), ('Romanos', 3), ('Neophytos', 107)]:
-    #     relevant.append(constants.sqlsession.query(pbw.Person).filter_by(name=name, mdbCode=code).scalar())
+    #     relevant.append(mysqlsession.query(pbw.Person).filter_by(name=name, mdbCode=code).scalar())
     # print("Found %d relevant people" % len(relevant))
     # return relevant
     # Debugging / testing: restrict the list of relevant people
     debugnames = ['Anna', 'Apospharios', 'Balaleca', 'Herve', 'Ioannes', 'Konstantinos', 'Liparites']
     debugcodes = [62, 64, 68, 101, 102, 110]
-    return constants.sqlsession.query(pbw.Person).filter(
+    return mysqlsession.query(pbw.Person).filter(
         and_(pbw.Person.name.in_(debugnames), pbw.Person.mdbCode.in_(debugcodes))
     ).all()
 
@@ -176,13 +177,11 @@ def _find_or_create_event(person, eventclass, predicate):
         return result['event'].get('uuid')
 
 
-def get_source_and_agent(session, factoid):
+def get_source_and_agent(factoid):
     """Returns a node that represents the source for this factoid. Creates the network of nodes and
     relationships to describe that source, if necessary. The source will either be a physical E22 Human-Made Object
-    (the boulloterion) or an E31 Document (the written primary source)."""
+    (the boulloterion) or an F2 Expression (the written primary source)."""
     # Is this a 'seals' source without a boulloterion? If so warn and return None
-    author = None
-    orig = "factoid/%d" % factoid.factoidKey
     if constants.authorities(factoid.source) is None:
         if factoid.source != 'Seals' or factoid.boulloterion is None:
             warn("No boulloterion found for seal-sourced factoid %d" % factoid.factoidKey
@@ -190,68 +189,72 @@ def get_source_and_agent(session, factoid):
                  else "Source %s of factoid %d not known" % (factoid.source, factoid.factoidKey))
             return None, None
     if factoid.boulloterion is not None:
-        # This factoid is taken from a seal inscription. Let's pull that out into CRM objects.
-        # If the boulloterion has no associated publications, we shouldn't use it.
-        if len(factoid.boulloterion.publication) == 0:
-            warn("No published source found for boulloterion %d" % factoid.boulloterion.boulloterionKey)
-            return None, None
-        # First find who did the analysis
-        alist = dict()  # It would be a set if we could put dicts in sets
-        for pub in factoid.boulloterion.publication:
-            # If the publication isn't in the authority list, Michael analysed it
-            if pub.bibSource is not None:
-                auths = constants.authorities(pub.bibSource.shortName) or [constants.mj]
-                for a in auths:
-                    alist[a['identifier']] = a
-        agent = get_authority_node(session, list(alist.values()))
-        # Then get the node that points to the boulloterion's sources
-        srclist = get_boulloterion_sourcelist(session, factoid.boulloterion)
-        if srclist is not None:
-            q = "MATCH (pred), (agent), (srclist) WHERE pred.uuid = '%s' AND agent.uuid = '%s' " \
-                "AND srclist.uuid = '%s' " \
-                % (constants.get_predicate('P128'), agent, srclist)
-        else:
-            q = "MATCH (pred), (agent) WHERE pred.uuid = '%s' AND agent.uuid = '%s' " \
-                % (constants.get_predicate('P128'), agent)
-        # boulloterion is an E22 Human-Made Object
-        q += "MERGE (boul:%s {reference:%s}) " % (constants.get_label('E22'), factoid.boulloterion.boulloterionKey)
-        # which is asserted by the agent to P128 carry an E34 Inscription (we can even record the inscription)
-        q += "MERGE (src:%s {text:\"%s\"}) " \
-             % (constants.get_label('E34'), factoid.boulloterion.origLText)
-        q += "WITH boul, pred, src, agent%s " % (", srclist" if srclist else "")
-        q += _create_assertion_query(orig, "boul", "pred", "src", "agent", "srclist" if srclist else None)
-        # MAYBE LATER: which is asserted by MJ to P108 have produced various E22 Human-Made Objects (the seals)
-        # - which seals are asserted by the collection authors (with pub source) to also carry the inscriptions?
+        agentnode = get_boulloterion_authority(factoid.boulloterion)
+        sourcenode = get_boulloterion_inscription(factoid.boulloterion, agentnode)
+        return sourcenode, agentnode
     else:
         # This factoid is taken from a document.
-        # Do we have a known author for this text?
-        workinfo = constants.source(factoid.source)
-        authorlist = workinfo.get('author', [])
-        author = get_author_node(session, authorlist.copy())
-        # If not, we use the PBW scholar as the authority.
-        agent = get_authority_node(session, workinfo.get('authority'))
-        # If there is no PBW scholar known for this source, we use the generic PBW agent.
-        if agent is None:
-            agent = constants.pbw_agent
-        # Now we find an F2 Expression (of the whole work), its author (if any), and the PBW scholar who analyzed it
-        source = get_source_work_expression(session, factoid, workinfo, author)
-        q = "MATCH (expr), (agent), (p165) WHERE work.uuid = '%s' AND agent.uuid = '%s' AND p165.uuid = '%s' " % (
-            source, agent, constants.get_predicate('P165'))
-        q += "MERGE (src:%s {reference:'%s', text:'%s'}) " % \
-             (constants.get_label('F2'), escape_text(factoid.sourceRef), escape_text(factoid.origLDesc))
-        q += "WITH work, p165, src, agent "
-        # The agent (whoever worked on the source) asserts that the expression is from the given work.
-        q += _create_assertion_query(orig, "work", "p165", "src", "agent", None)
-    q += "RETURN src"
-    source_result = session.run(q.replace('COMMAND', 'MATCH')).single()
-    if source_result is None:
-        # To run it right, run it twice
-        session.run(q.replace('COMMAND', 'CREATE'))
-        source_result = session.run(q.replace('COMMAND', 'MATCH')).single()
-    return source_result['src'].get('uuid'), author if author else agent
+        agentnode = get_text_authority(factoid.source)
+        sourcenode = get_text_sourceref(factoid)
+        return sourcenode, agentnode
 
 
-def get_boulloterion_sourcelist(session, boulloterion):
+def get_boulloterion_authority(boulloterion):
+    """Return the PBW editor(s) responsible for the factoids arising from a boulloterion."""
+    alist = dict()  # It would be a set if we could put dicts in sets
+    for pub in boulloterion.publication:
+        # If the publication isn't in the authority list, Michael analysed it
+        if pub.bibSource is not None:
+            auths = constants.authorities(pub.bibSource.shortName) or [constants.mj]
+            for a in auths:
+                alist[a['identifier']] = a
+    return get_authority_node(list(alist.values()))
+
+
+def get_boulloterion_inscription(boulloterion, pbweditor):
+    # This factoid is taken from a seal inscription. Let's pull that out into CRM objects.
+    # If the boulloterion has no associated publications, we shouldn't use it.
+    orig = 'boulloterion/%d' % boulloterion.boulloterionKey
+    if len(boulloterion.publication) == 0:
+        warn("No published source found for boulloterion %d" % boulloterion.boulloterionKey)
+        return None
+    # First see if the boulloterion exists already. If it does, we have already set up the rest of the assertions.
+    # boulloterion is an E22 Human-Made Object
+    boul_node = "boulloterion:%s {reference:%s}" % (constants.get_label('E22'), boulloterion.boulloterionKey)
+    # which is asserted by the PBW editor to have P128 carried an E34 Inscription
+    insc_node = "inscription:%s {text:\"%s\"}" % (constants.get_label('E34'), boulloterion.origLText)
+    qm = _create_assertion_query(orig, boul_node, constants.get_label('P128'), insc_node, 'agent', None)
+    qm += " RETURN inscription.uuid as iid"
+    qm = qm.replace('COMMAND', 'MATCH')
+    with constants.graphdriver.session() as session:
+        result = session.run(qm).single()
+        if result is not None:
+            return result['iid']
+
+    # The boulloterion / inscription apparently do not exist; we have to add them along with
+    # associated inscriptions.
+    # Step 1: get the node that points to the boulloterion's sources, if we have any
+    srclist = get_boulloterion_sourcelist(boulloterion)
+    if srclist is not None:
+        qc = "MATCH (pred), (agent), (srclist) WHERE pred.uuid = '%s' AND agent.uuid = '%s' " \
+            "AND srclist.uuid = '%s' " % (constants.get_predicate('P128'), pbweditor, srclist)
+    else:
+        qc = "MATCH (pred), (agent) WHERE pred.uuid = '%s' AND agent.uuid = '%s' " \
+            % (constants.get_predicate('P128'), pbweditor)
+    # Step 2: create the object nodes
+    qc += "CREATE (%s) CREATE (%s) " % (boul_node, insc_node)
+    qc += "WITH boulloterion, pred, inscription, agent%s " % (", srclist" if srclist else "")
+    qc += _create_assertion_query(orig, "boul", "pred", "src", "agent", "srclist" if srclist else None)
+    # TODO Step 3: add the seal objects and record MJ assertions that these came from the boulloterion
+    qc += "RETURN inscription"
+    with constants.graphdriver.session() as session:
+        session.run(qc)  # create
+        result = session.run(qm).single()  # match
+        # Yes, this will barf if result is None
+        return result['iid']
+
+
+def get_boulloterion_sourcelist(boulloterion):
     """A helper function to create the list of publications where the seals allegedly produced by a
     given boulloterion were published. Returns either a single F2 Expression (if there was a single
     publication) or an E73 Information Object that represents a collection of Expressions."""
@@ -284,85 +287,149 @@ def get_boulloterion_sourcelist(session, boulloterion):
         # We simply return the one node we created
         retvar = "src0"
     q += "RETURN %s" % retvar
-    ret = session.run(q).single()
-    if ret is None:
-        # The plural sources exist, but the source group doesn't. Create it
-        i = 0
-        matchparts = []
-        createparts = ["(srcgrp:%s)" % e73]
-        for pub in boulloterion.publication:
-            matchparts.append("(src%d:%s {identifier:'%s', reference:'%s'}) " % (
-                i, f2, pub.bibSource.shortName, pub.publicationRef))
-            createparts.append("(srcgrp)-[:%s]->(src%d)" % (p165, i))
-            i += 1
-        qc = "MATCH " + ", ".join(matchparts) + " "
-        qc += "CREATE " + ", ".join(createparts) + " "
-        qc += "RETURN srcgrp"
-        ret = session.run(qc).single()
-    if 'uuid' not in ret[retvar]:
-        # We have to go fishing for the thing again; we reuse the MATCH / MERGE statements.
+    with constants.graphdriver.session() as session:
         ret = session.run(q).single()
-    return ret[retvar].get('uuid')
+        if ret is None:
+            # The plural sources exist, but the source group doesn't. Create it
+            i = 0
+            matchparts = []
+            createparts = ["(srcgrp:%s)" % e73]
+            for pub in boulloterion.publication:
+                matchparts.append("(src%d:%s {identifier:'%s', reference:'%s'}) " % (
+                    i, f2, pub.bibSource.shortName, pub.publicationRef))
+                createparts.append("(srcgrp)-[:%s]->(src%d)" % (p165, i))
+                i += 1
+            qc = "MATCH " + ", ".join(matchparts) + " "
+            qc += "CREATE " + ", ".join(createparts) + " "
+            qc += "RETURN srcgrp"
+            ret = session.run(qc).single()
+        if 'uuid' not in ret[retvar]:
+            # We have to go fishing for the thing again; we reuse the MATCH / MERGE statements.
+            ret = session.run(q).single()
+        return ret[retvar].get('uuid')
 
 
-def get_source_work_expression(session, factoid, workinfo, author):
+def get_text_authority(fsource):
+    """Return the authority (either a text author or someone else, e.g. a PBW editor) for the
+    source behind this factoid."""
+    # Do we have a known author for this text?
+    authorlist = constants.author(fsource.source) or []
+    author = get_author_node(authorlist.copy())
+    # If not, we use the PBW scholar as the authority.
+    agent = get_authority_node(constants.authorities(fsource.source))
+    # If there is no PBW scholar known for this source, we use the generic PBW agent.
+    if agent is None:
+        agent = constants.pbw_agent
+    return author or agent
+
+
+def get_text_sourceref(factoid):
+    """Return an F2 Expression of the source reference for this factoid, ensuring that the correct
+    assertions for the authorship of this source exist."""
+    # Get (possibly creating) the expression of the entire source
+    wholesource = get_source_work_expression(factoid)
+    # In this context, the agent is the PBW editor for this source.
+    agent = get_authority_node(constants.authorities(factoid.source))
+    # First see whether this source reference already exists
+    srcref_node = "sourceref:%s {reference:'%s', text:'%s'}" % (
+        constants.get_label('F2'), escape_text(factoid.sourceRef), escape_text(factoid.origLDesc))
+    qm = "MATCH expr WHERE expr.uuid = '%s' " % wholesource
+    qm += _create_assertion_query(None, 'expr', constants.get_label('P165'), srcref_node, 'agent', None)
+    qm += " RETURN sourceref.uuid as sid"
+    qm = qm.replace('COMMAND', 'MATCH')
+    with constants.graphdriver.session() as session:
+        result = session.run(qm).single()
+        if result is not None:
+            return result['sid']
+
+    # In this case, we have to create the assertion.
+    qc = "MATCH (expr), (agent), (p165) WHERE work.uuid = '%s' AND agent.uuid = '%s' AND p165.uuid = '%s' " % (
+        wholesource, agent, constants.get_predicate('P165'))
+    qc += "COMMAND (%s) " % srcref_node
+    qc += "WITH work, p165, sourceref, agent "
+    # The agent (whoever worked on the source) asserts that the expression is from the given work.
+    qc += _create_assertion_query(None, "work", "p165", "src", "agent", None)
+    qc += "RETURN sourceref"
+    # To run it right, run it twice
+    session.run(qc.replace('COMMAND', 'CREATE'))
+    result = session.run(qm).single()
+    return result['sid']
+
+
+def get_source_work_expression(factoid):
     # Pass in the factoid, the dictionary describing the work, and the node we have already created
     # for the author of the work, if applicable.
     # Ensure the existence of the work and, if it has a declared author, link the author to it via
     # a CREATION event, asserted by the author.
-    pbw_authority = get_authority_node(workinfo['authority'])
+    workinfo = constants.source(factoid.source)
+    # pbw_authority = get_authority_node(constants.authorities(factoid.source))
+    editors = get_authority_node(workinfo.get('editor', []))
     # The work identifier is the 'work' key, or else the PBW source ID string.
-    workid = workinfo.get('work', factoid.source)
+    workid = workinfo.get('work', factoid.source + "NOT YET SET")
     # The expression identifier is the 'expression' key (a citation to the edition).
-    exprid = workinfo.get('expression', workid)
-    # The PBW authority on this work asserts that the edition belongs to the work.
-    q = "MATCH (pbwauth), (r3) WHERE pbwauth.uuid = %s AND r3.uuid = %s " \
-        % (pbw_authority, constants.get_label('R3'))
-    q += "MERGE (work:%s {%s: \"%s\"}) MERGE (expr:%s {%s: \"%s\"}) " % (
-        constants.get_label('F1'), constants.get_label('P48'), workid,
-        constants.get_label('F2'), constants.get_label('P48'), exprid)
-    q += "WITH pbwauth, r3, work, expr "
-    q += _create_assertion_query(None, 'work', 'p3', 'expr', 'pbwauth', None)
+    exprid = workinfo.get('expression', factoid.source + "NOT YET SET")
+
+    # First see if the work and its expression already exist. We cheat here by setting a 'dbid' on the
+    # expression for easy lookup.
+    expression = "expr:%s {%s: \"%s\", dbid: \"%s\"}" % (
+        constants.get_label('F2'), constants.get_label('P48'), exprid, factoid.source)
+    with constants.graphdriver.session() as session:
+        result = session.run("MATCH (%s) RETURN expr.uuid" % expression).single()
+        if result is not None:
+            return result['expr.uuid']
+
+    # Okay, so we need to make a bunch of assertions. First, the editors assert that the edition
+    # (that is, the expression) belongs to the work; this is based on, well, the edition.
+    q = "MATCH (editors), (r3) WHERE editors.uuid = %s AND r3.uuid = %s " \
+        % (editors, constants.get_label('R3'))
+    q += "MERGE (work:%s {%s: \"%s\"}) MERGE (%s) " % (
+        constants.get_label('F1'), constants.get_label('P48'), workid, expression)
+    q += "WITH editors, r3, work, expr "
+    q += _create_assertion_query(None, 'work', 'p3', 'expr', 'editors', 'expr')
+
+    # Now we need to see if authorship has to be asserted.
+    author = get_author_node(constants.author(factoid.source))
     if author is not None:
-        # Make the assertions that the author authored the work. First get the author node
-        q += "WITH pbwauth, work, expr MATCH (author) WHERE author.uuid = '%s' " % author
-        authorship_authority = 'pbwauth' # until found otherwise
-        authorship_source = None
-        # If we have an authorship factoid, we have a source and authority for these assertions.
+        # Make the assertions that the author authored the work. If we have a factoid,
+        # then the authority for this assertion is the factoid's primary referent.
+        # Otherwise, the authority (for now) is the editor.
+        # If we don't have a specific reference for the claim, we just use the edition (again).
+        aship_authority = editors
+        aship_source = 'expr'
+        aship_srefnode = None
         if 'factoid' in workinfo:
             # Pull in the authorship factoid that describes the authorship of this work
-            afact = constants.sqlsession.query(pbw.Factoid).filter_by(factoidKey=workinfo['factoid'])
+            afact = mysqlsession.query(pbw.Factoid).filter_by(factoidKey=workinfo['factoid']).scalar()
             if afact.source != factoid.source:
-                print("Not dealing with authorship factoid from different work")
-                # Our authority is the PBW editor, and our source ref doesn't exist.
-                # We are currently equivalent to WITH pbwauth, work, expr, author
+                print("HELP: Not dealing with authorship factoid from different work")
             else:
-                # We have to make an F2 expression that is the source reference of the authorship factoid,
-                # which the PBW authority asserts belongs to expr.
-                authorship_authority = 'author'
-                authorship_source = 'srcref'
-                q += "MATCH (p165) WHERE p165.uuid = '%s' " % constants.get_predicate('P165')
-                q += "MERGE (srcref:%s {reference:'%s', text:'%s'}) " % \
-                     (constants.get_label('F2'), escape_text(afact.sourceRef), escape_text(afact.origLDesc))
-                q += "WITH pbwauth, work, expr, author, p165, srcref "
-                # The agent (whoever worked on the source) asserts that the authorship-factoid-source-expression
-                # is from the given work-expression.
-                q += _create_assertion_query(None, "expr", "p165", "srcref", "pbwauth", None, "asrcref")
-                # The srcref can now be used to assert that the author authored the work.
-                q += "WITH pbwauth, work, expr, author, srcref "
-        # Now we know who authored the work, and how we know this, we can make the authorship assertions.
-        q += "MATCH (p14), (r16) WHERE p14.uuid = '%s' AND r16.uuid = '%s' " % (
-                constants.get_predicate('P14'), constants.get_predicate('R16'))
-        q += _create_assertion_query(orig, 'aship:%s' % constants.get_label('F27'), 'r16', 'work',
-                                     authorship_authority, authorship_source, 'a1')
-        q += _create_assertion_query(orig, 'aship', 'p14', 'author', authorship_authority, authorship_source, 'a2')
-    # Phew.
-    q += "RETURN expr"
-    work_result = session.run(q.replace('COMMAND', 'MATCH')).single()
-    if work_result is None:
+                # Find the primary person for the authorship factoid
+                fact_person = afact.main_person()
+                aship_authority = _find_or_create_pbwperson(fact_person.name, fact_person.mdbCode, fact_person.descName)
+                # We have to make a sourceref expression node, connected to this expression, for
+                # the factoid source
+                aship_srefnode = "(srcref:%s {reference:'%s', text:'%s'})" % (
+                    constants.get_label('F2'), escape_text(afact.sourceRef), escape_text(afact.origLDesc))
+                aship_source = 'srcref'
+        # On to the assertion that the author authored the work
+        if aship_authority != author and aship_authority != editors:
+            q += "WITH work, expr "
+            q += "MATCH (reporter) WHERE reporter.uuid = '%s' " % aship_authority
+        else:
+            q += "WITH editors AS reporter, work, expr "
+        q += "MATCH (r16), (p14), (author) WHERE r16.uuid = '%s' AND p14.uuid = '%s' AND author.uuid = '%s' " % (
+            constants.get_predicate('R16'), constants.get_predicate('P14'), author)
+        if aship_srefnode:
+            q += "MERGE %s " % aship_srefnode
+        q += _create_assertion_query(None, 'wc:%s' % constants.get_label('F27'),
+                                     'r16', 'work', 'reporter', aship_source)
+        q += _create_assertion_query(None, 'wc', 'p14', 'author', 'reporter', aship_source)
+        q += "RETURN expr"
+    with constants.graphdriver.session() as session:
         session.run(q.replace('COMMAND', 'CREATE'))
-        work_result = session.run(q.replace('COMMAND', 'MATCH')).single()
-    return work_result['expr'].get('uuid')
+        result = session.run("MATCH (%s) RETURN expr.uuid" % expression).single()
+        # This will barf if the above didn't create anything
+        return result['expr.uuid']
 
 
 def _find_or_create_identified_person(agent, identifier, dname):
@@ -398,7 +465,7 @@ def _find_or_create_viafperson(name, viafid):
     return _find_or_create_identified_person(constants.viaf_agent, viafid, name)
 
 
-def get_author_node(session, authorlist):
+def get_author_node(authorlist):
     """Return the E21 Person node for the author of a text, or a group of authors if authorship was composite"""
     if len(authorlist) == 0:
         return None
@@ -407,16 +474,16 @@ def get_author_node(session, authorlist):
         pname = authorlist.pop(0)
         pcode = authorlist.pop(0)
         # We need to get the SQL record for the author in case they aren't in the DB yet
-        sqlperson = constants.sqlsession.query(pbw.Person).filter_by(name=pname, mdbCode=pcode).scalar()
+        sqlperson = mysqlsession.query(pbw.Person).filter_by(name=pname, mdbCode=pcode).scalar()
         authors.append(_find_or_create_pbwperson(pname, pcode, sqlperson.descName))
     if len(authors) > 1:
         # It is our multi-authored text. Make a group because both authors share authority.
-        return _find_or_create_authority_group(session, authors)
+        return _find_or_create_authority_group(authors)
     else:
         return authors[0]
 
 
-def get_authority_node(session, authoritylist):
+def get_authority_node(authoritylist):
     """Create or find the node for the given authority in our (modern) authority list."""
     if authoritylist is None or len(authoritylist) == 0:
         return None
@@ -428,10 +495,10 @@ def get_authority_node(session, authoritylist):
     scholars = []
     for p in authoritylist:
         scholars.append(_find_or_create_viafperson(p['identifier'], p['viaf']))
-    return _find_or_create_authority_group(session, scholars)
+    return _find_or_create_authority_group(scholars)
 
 
-def _find_or_create_authority_group(session, members):
+def _find_or_create_authority_group(members):
     mc = []
     wc = []
     gc = []
@@ -443,12 +510,13 @@ def _find_or_create_authority_group(session, members):
         i += 1
     q = "MATCH " + ', '.join(mc) + " WHERE " + " AND ".join(wc) + " "
     q += "COMMAND (group:%s), %s RETURN group" % (constants.get_label('E74'), ", ".join(gc))
-    g = session.run(q.replace('COMMAND', 'MATCH')).single()
-    if g is None:
-        # Run it twice to get the UUID assigned
-        session.run(q.replace('COMMAND', 'CREATE'))
+    with constants.graphdriver.session() as session:
         g = session.run(q.replace('COMMAND', 'MATCH')).single()
-    return g['group'].get('uuid')
+        if g is None:
+            # Run it twice to get the UUID assigned
+            session.run(q.replace('COMMAND', 'CREATE'))
+            g = session.run(q.replace('COMMAND', 'MATCH')).single()
+        return g['group'].get('uuid')
 
 
 def _get_source_lang(factoid):
@@ -768,7 +836,7 @@ def record_assertion_factoids():
     r17 = constants.get_label('R17')  # created
     r76 = constants.get_label('R76')  # is derivative of
     with constants.graphdriver.session() as session:
-        tla = get_authority_node(session, [constants.ta])
+        tla = get_authority_node([constants.ta])
         timestamp = datetime.now(timezone.utc).isoformat()
         findnewassertions = "MATCH (tla) WHERE tla.uuid = '%s' " \
                             "CREATE (dbr:%s {timestamp:datetime('%s')})-[:%s {role:'recorder'}]->(tla) " \
@@ -793,6 +861,10 @@ def process_persons():
     """Go through the relevant person records and process them for factoids"""
     processed = 0
     used_sources = set()
+    # Get the classes of info that are directly in the person record
+    direct_person_records = ['Gender', 'Disambiguation', 'Identifier']
+    # Get the list of factoid types in the PBW DB
+    factoid_types = [x.typeName for x in mysqlsession.query(pbw.FactoidType).all() if x.typeName != '(Unspecified)']
     for person in collect_person_records():
         # Skip the anonymous groups for now
         if person.name == 'Anonymi':
@@ -803,7 +875,7 @@ def process_persons():
         graph_person = _find_or_create_pbwperson(person.name, person.mdbCode, person.descName)
 
         # Get the 'factoids' that are directly in the person record
-        for ftype in constants.directPersonRecords:
+        for ftype in direct_person_records:
             ourftype = _smooth_labels(ftype)
             try:
                 method = eval("%s_handler" % ourftype.lower())
@@ -812,7 +884,7 @@ def process_persons():
                 warn("No handler for %s record info; skipping." % ourftype)
 
         # Now get the factoids that are really factoids
-        for ftype in constants.factoidTypes:
+        for ftype in factoid_types:
             ourftype = _smooth_labels(ftype)
             try:
                 method = eval("%s_handler" % ourftype.lower())
@@ -823,8 +895,7 @@ def process_persons():
                     # Get the source, either a text passage or a seal inscription, and the authority
                     # for the factoid. Authority will either be the author of the text, or the PBW
                     # colleague who read the text and ingested the information.
-                    with constants.graphdriver.session() as session:
-                        (source_node, authority_node) = get_source_and_agent(session, f)
+                    (source_node, authority_node) = get_source_and_agent(f)
                     # If the factoid has no source then we skip it
                     if source_node is None:
                         warn("Skipping factoid %d without a traceable source" % f.factoidKey)
@@ -855,7 +926,7 @@ if __name__ == '__main__':
     # Connect to the graph DB
     driver = GraphDatabase.driver(config.graphuri, auth=(config.graphuser, config.graphpw))
     # Make / retrieve the global nodes and constants
-    constants = RELEVEN.PBWstarConstants.PBWstarConstants(mysqlsession, driver)
+    constants = RELEVEN.PBWstarConstants.PBWstarConstants(driver)
     # Process the person records
     process_persons()
     duration = datetime.now() - starttime
