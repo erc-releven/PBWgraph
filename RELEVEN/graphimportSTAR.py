@@ -234,9 +234,9 @@ def get_source_and_agent(session, factoid):
         if agent is None:
             agent = constants.pbw_agent
         # Now we find an F2 Expression (of the whole work), its author (if any), and the PBW scholar who analyzed it
-        work = get_source_work_expression(session, factoid, workinfo, author)
-        q = "MATCH (work), (agent), (p165) WHERE work.uuid = '%s' AND agent.uuid = '%s' AND p165.uuid = '%s' " % (
-            work, agent, constants.get_predicate('P165'))
+        source = get_source_work_expression(session, factoid, workinfo, author)
+        q = "MATCH (expr), (agent), (p165) WHERE work.uuid = '%s' AND agent.uuid = '%s' AND p165.uuid = '%s' " % (
+            source, agent, constants.get_predicate('P165'))
         q += "MERGE (src:%s {reference:'%s', text:'%s'}) " % \
              (constants.get_label('F2'), escape_text(factoid.sourceRef), escape_text(factoid.origLDesc))
         q += "WITH work, p165, src, agent "
@@ -310,25 +310,53 @@ def get_source_work_expression(session, factoid, workinfo, author):
     # for the author of the work, if applicable.
     # Ensure the existence of the work and, if it has a declared author, link the author to it via
     # a CREATION event, asserted by the author.
-    # TODO we need to properly record all works we use, not just those that have known authors
-    if workinfo is None:
-        workinfo = dict()
-    identifier = workinfo.get('work', factoid.source)
-    orig = 'factoid/%d' % workinfo.get('factoid', 0)
-    expression = workinfo.get('expression', identifier)
-    q = "COMMAND (work:%s {identifier:'%s'})-[:%s]->(expr:%s {identifier:'%s'}) " \
-        % (constants.get_label('F1'), escape_text(identifier), constants.get_label('R3'),
-           constants.get_label('F2'), escape_text(expression))
+    pbw_authority = get_authority_node(workinfo['authority'])
+    # The work identifier is the 'work' key, or else the PBW source ID string.
+    workid = workinfo.get('work', factoid.source)
+    # The expression identifier is the 'expression' key (a citation to the edition).
+    exprid = workinfo.get('expression', workid)
+    # The PBW authority on this work asserts that the edition belongs to the work.
+    q = "MATCH (pbwauth), (r3) WHERE pbwauth.uuid = %s AND r3.uuid = %s " \
+        % (pbw_authority, constants.get_label('R3'))
+    q += "MERGE (work:%s {%s: \"%s\"}) MERGE (expr:%s {%s: \"%s\"}) " % (
+        constants.get_label('F1'), constants.get_label('P48'), workid,
+        constants.get_label('F2'), constants.get_label('P48'), exprid)
+    q += "WITH pbwauth, r3, work, expr "
+    q += _create_assertion_query(None, 'work', 'p3', 'expr', 'pbwauth', None)
     if author is not None:
-        # Ensure the existence of the assertions that the author authored the work, and create the
-        # expression of the work for segmentation into source references
-        q += "WITH work, expr "
-        q += "MATCH (author), (p14), (r16) " \
-             "WHERE author.uuid = '%s' AND p14.uuid = '%s' AND r16.uuid = '%s' " % (
-                author, constants.get_predicate('P14'), constants.get_predicate('R16'))
-        # TODO we need to fill out these 'None' sources later with what is in workinfo, but that can get recursive
-        q += _create_assertion_query(orig, 'aship:%s' % constants.get_label('F1'), 'r16', 'work', 'author', None, 'a1')
-        q += _create_assertion_query(orig, 'aship', 'p14', 'author', 'author', None, 'a2')
+        # Make the assertions that the author authored the work. First get the author node
+        q += "WITH pbwauth, work, expr MATCH (author) WHERE author.uuid = '%s' " % author
+        authorship_authority = 'pbwauth' # until found otherwise
+        authorship_source = None
+        # If we have an authorship factoid, we have a source and authority for these assertions.
+        if 'factoid' in workinfo:
+            # Pull in the authorship factoid that describes the authorship of this work
+            afact = constants.sqlsession.query(pbw.Factoid).filter_by(factoidKey=workinfo['factoid'])
+            if afact.source != factoid.source:
+                print("Not dealing with authorship factoid from different work")
+                # Our authority is the PBW editor, and our source ref doesn't exist.
+                # We are currently equivalent to WITH pbwauth, work, expr, author
+            else:
+                # We have to make an F2 expression that is the source reference of the authorship factoid,
+                # which the PBW authority asserts belongs to expr.
+                authorship_authority = 'author'
+                authorship_source = 'srcref'
+                q += "MATCH (p165) WHERE p165.uuid = '%s' " % constants.get_predicate('P165')
+                q += "MERGE (srcref:%s {reference:'%s', text:'%s'}) " % \
+                     (constants.get_label('F2'), escape_text(afact.sourceRef), escape_text(afact.origLDesc))
+                q += "WITH pbwauth, work, expr, author, p165, srcref "
+                # The agent (whoever worked on the source) asserts that the authorship-factoid-source-expression
+                # is from the given work-expression.
+                q += _create_assertion_query(None, "expr", "p165", "srcref", "pbwauth", None, "asrcref")
+                # The srcref can now be used to assert that the author authored the work.
+                q += "WITH pbwauth, work, expr, author, srcref "
+        # Now we know who authored the work, and how we know this, we can make the authorship assertions.
+        q += "MATCH (p14), (r16) WHERE p14.uuid = '%s' AND r16.uuid = '%s' " % (
+                constants.get_predicate('P14'), constants.get_predicate('R16'))
+        q += _create_assertion_query(orig, 'aship:%s' % constants.get_label('F27'), 'r16', 'work',
+                                     authorship_authority, authorship_source, 'a1')
+        q += _create_assertion_query(orig, 'aship', 'p14', 'author', authorship_authority, authorship_source, 'a2')
+    # Phew.
     q += "RETURN expr"
     work_result = session.run(q.replace('COMMAND', 'MATCH')).single()
     if work_result is None:
@@ -677,7 +705,6 @@ def kinship_handler(sourcenode, agent, factoid, graphperson):
     # two assertions, one for each person's membership of the group. The main person
     # has the specific predicate in their assertion; the secondary person has the
     # generic predicate.
-    # TODO deal with kin who are Anonymi or Anonymae
     orig = "factoid/%d" % factoid.factoidKey
     if factoid.kinshipType is None:
         warn("Empty kinship factoid found: id %d" % factoid.factoidKey)
@@ -685,6 +712,9 @@ def kinship_handler(sourcenode, agent, factoid, graphperson):
     predspec = constants.get_kinship(factoid.kinshipType.gspecRelat)
     predgen = constants.get_predicate('P107')
     for kin in factoid.referents():
+        if kin.name == 'Anonymi' or kin.name == 'Anonymae':
+            # We skip kin who are anonymous groups
+            continue
         graphkin = _find_or_create_pbwperson(kin.name, kin.mdbCode, kin.descName)
         if graphkin == graphperson:
             warn("Person %s listed as related to self" % kin)
