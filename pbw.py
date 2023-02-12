@@ -29,7 +29,6 @@ class Bibliography(Base):
 # N.B. there are several identical collection records for each ID! Weird.
 class Collection(Base):
     __tablename__ = 'Collection'
-    suppress = Column(Integer)
     collectionName = Column(Text)
     red = Column(Integer)
     collectionKey = Column(Integer, primary_key=True)
