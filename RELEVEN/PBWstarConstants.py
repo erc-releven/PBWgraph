@@ -35,9 +35,11 @@ class PBWstarConstants:
                                   'expression': 'Erlasse des Patriarchen von Konstantinopel Alexios Studites, '
                                                 'Kiel 1911',
                                   'editor': [{'identifier': 'Ficker, Gerhard', 'viaf': '37668465'}]},
-            'Anna Komnene': {'author': ['Anna', 62], 'factoid': 437887, 'work': 'Alexias', 'authority': [mj],
+            'Anna Komnene': {'author': ['Anna', 62], 'factoid': 396886, 'work': 'Alexias', 'authority': [mj],
                              'expression': 'D.R. Reinsch and A. Kambylis, Annae Comnenae Alexias, '
-                                           'Corpus fontium historiae Byzantinae 40/1, Berlin – New York 2001'},
+                                           'Corpus fontium historiae Byzantinae 40/1, Berlin – New York 2001',
+                             'editor': [{'identifier': 'Reinsch, Diether Roderich', 'viaf': '46774901'},
+                                        {'identifier': 'Kambylis, Athanasios', 'viaf': '51705268'}]},
             'Annales Barenses': {'authority': [mj]},
             'Anonymus Barensis': {'authority': [mj]},
             'Aristakes': {'author': ['Aristakes', 101], 'factoid': 375021, 'authority': [tp, ta]},
@@ -57,7 +59,10 @@ class PBWstarConstants:
             'Chrysobull of 1079': {'author': ['Nikephoros', 3], 'factoid': 224945, 'authority': [tp]},
             'Clement III to Basileios of Calabria': {'author': ['Klemes', 23], 'factoid': 444557, 'authority': [jr]},
             'Codice Diplomatico Barese IV': {'authority': [mw]},
-            'Council of 1147': {'authority': [mj]},
+            'Council of 1147': {'authority': [mj], 'work': 'Council of 1147',
+                                'expression': 'Σύνταγμα τῶν θείων καὶ ἱερῶν κανόνων V, Athens 1852-1859: pp. 307ff.',
+                                'editor': [{'identifier': 'Rállēs, Geṓrgios A.', 'viaf': '10200332'},
+                                           {'identifier': 'Potlēs, Michaēl', 'viaf': '66864785'}]},
             'Council of 1157': {'authority': [mj]},
             'Dionysiou': {'authority': [tp]},
             'Docheiariou': {'authority': [tp]},
@@ -99,7 +104,9 @@ class PBWstarConstants:
             'Kekaumenos': {'author': ['Anonymus', 274], 'factoid': 228104, 'authority': [tp]},
             'Keroularios  ': {'author': ['Michael', 11], 'authority': [jr]},  # opera
             'Kinnamos': {'author': ['Ioannes', 17001], 'factoid': 356015, 'authority': [mj]},
-            'Kleinchroniken': {'authority': [tp]},
+            'Kleinchroniken': {'authority': [tp], 'work': 'Short Chronicles',
+                               'expression': 'Die byzantinischen Kleinchroniken, 3 vols., Vienna 1975-1979',
+                               'editor': [{'identifier': 'Schreiner, Peter', 'viaf': '14789545'}]},
             'Koltsida-Makri': {'authority': [ok]},
             'Kyrillos Phileotes': {'authority': [tp]},
             'Laurent, Corpus V.2': {'authority': [ok]},
@@ -124,7 +131,10 @@ class PBWstarConstants:
             'Nea Mone,': {'authority': [tp]},
             'Nicolas d\'Andida': {'author': ['Nikolaos', 257], 'factoid': 444805, 'authority': [jr]},
             'Nicole, Chartophylax': {'author': ['Alexios', 1], 'factoid': 444947, 'authority': [jr]},
-            'Niketas Choniates, Historia': {'author': ['Niketas', 25001], 'factoid': 435679, 'authority': [mj]},
+            'Niketas Choniates, Historia': {'author': ['Niketas', 25001], 'factoid': 435679, 'authority': [mj],
+                                            'work': 'Historia',
+                                            'expression': 'Nicetae Choniatae Historia, 2 vols. Berlin 1975',
+                                            'editor': [{'identifier': 'Dieten, Jan-Louis van', 'viaf': '61585968'}]},
             'Niketas Stethatos (Darrouzes)': {'author': ['Niketas', 105], 'authority': [jr]},  # opera
             'Niketas Stethatos, On the Holy Spirit': {'author': ['Niketas', 105], 'factoid': 445329, 'authority': [jr]},
             'Nikolaos III to Urban II': {'author': ['Nikolaos', 13], 'factoid': 444667, 'authority': [jr]},
@@ -136,7 +146,11 @@ class PBWstarConstants:
             'Pantokrator Typikon': {'authority': [tp]},
             'Parthenon inscriptions': {'authority': [mj]},
             'Paschal II, Letter to Alexios I': {'author': ['Paschales', 22], 'factoid': 444991, 'authority': [mj]},
-            'Patmos: Acts': {'authority': [tp]},
+            'Patmos: Acts': {'authority': [tp], 'work': 'Patmos: Acts',
+                             'expression': 'Βυζαντινὰ ἔγγραφα τῆς μονῆς Πάτμου 1. Αὐτοκρατορικά, '
+                                           '2. Δημοσίων λειτουργῶν, Athens 1980',
+                             'editor': [{'identifier': 'Vranoúsīs, Léandros I.', 'viaf': '51818933'},
+                                        {'identifier': 'Nystazopoúlou-Pelekídou, María', 'viaf': '44710829'}]},
             'Patmos: Codicil': {'authority': [mw]},
             'Patmos: Testament': {'authority': [mw]},
             'Patmos: Typikon': {'authority': [mw]},
@@ -144,7 +158,8 @@ class PBWstarConstants:
             'Petros of Antioch  ': {'author': ['Petros', 103], 'authority': [tp]},  # multiple
             'Petros of Antioch, ep. 2': {'author': ['Petros', 103], 'factoid': 435035, 'authority': [tp]},
             'Pleiades': {'authority': [cr]},
-            'Prodromos, Historische Gedichte': {'author': ['Theodoros', 25001], 'authority': [mj]},  # opera
+            'Prodromos, Historische Gedichte': {'author': ['Theodoros', 25001], 'authority': [mj],  # opera
+                                                'editor': [{'identifier': 'Hörandner, Wolfram', 'viaf': '46774760'}]},
             'Protaton': {'authority': [tp]},
             'Psellos': {'author': ['Michael', 61], 'authority': [mj, tp]},  # opera
             'Psellos: Chronographia': {'author': ['Michael', 61], 'factoid': 249646, 'authority': [mw]},
@@ -171,7 +186,10 @@ class PBWstarConstants:
             'Theophylact of Ohrid, Speech to Alexios I': {'author': ['Theophylaktos', 105], 'factoid': 444549,
                                                           'authority': [mj]},
             'Theophylaktos of Ohrid, Letters': {'author': ['Theophylaktos', 105], 'authority': [mj]},  # opera
-            'Tornikes, Georgios': {'author': ['Georgios', 25002], 'authority': [mj]},  # opera
+            'Tornikes, Georgios': {'author': ['Georgios', 25002], 'authority': [mj],
+                                   'work': 'Epistulae',
+                                   'expression': 'George et Dèmetrios Tornikès: lettres et discours, Paris 1970',
+                                   'editor': [{'identifier': 'Darrouzès, Jean', 'viaf': '19676388'}]},  # opera
             'Tzetzes, Exegesis of Homer': {'authority': [mj]},
             'Tzetzes, Historiai': {'author': ['Ioannes', 459], 'factoid': 449306, 'authority': [mj]},
             'Tzetzes, Homerica': {'authority': [mj]},
@@ -209,6 +227,7 @@ class PBWstarConstants:
             'E21': 'Resource:crm__E21_Person',
             'E22': 'Resource:`crm__E22_Human-Made_Object`',
             'E31': 'Resource:crm__E31_Document',
+            'E33': 'Resource:crm_E33_Linguistic_Object',
             'E34': 'Resource:crm__E34_Inscription',
             'E39': 'Resource:crm__E39_Actor',
             'E41': 'Resource:crm__E41_Appellation',
@@ -220,6 +239,8 @@ class PBWstarConstants:
             'E69': 'Resource:crm__E69_Death',
             'E73': 'Resource:crm__E73_Information_Object',
             'E74': 'Resource:crm__E74_Group',
+            'E78': 'Resource:crm__E78_Curated_Holding',
+            'E87': 'Resource:crm__E87_Curation_Activity',
             'F1': 'Resource:lrmoo__F1',  # Work
             'F2': 'Resource:lrmoo__F2',  # Expression
             'F27': 'Resource:lrmoo__F27',  # Work Creation
@@ -232,6 +253,7 @@ class PBWstarConstants:
             'P3': 'crm__P3_has_note',
             'P4': 'crm__P4_has_time_span',
             'P14': 'crm__P14_carried_out_by',
+            'P16': 'crm__P16_used_specific_object',
             'P17': 'crm__P17_was_motivated_by',
             'P37': 'crm__P37_assigned',
             'P41': 'crm__P41_classified',
@@ -241,16 +263,20 @@ class PBWstarConstants:
             'P70': 'crm__P70_documents',
             'P94': 'crm__P94_has_created',
             'P100': 'crm__P100_was_death_of',
+            'P102': 'crm__P102_has_title',
             'P107': 'crm__P107_has_current_or_former_member',
+            'P108': 'crm__P108_has_produced',
             'P127': 'crm__P127_has_broader_term',
             'P128': 'crm__P128_carries',
             'P140': 'crm__P140_assigned_attribute_to',
             'P141': 'crm__P141_assigned',
+            'P147': 'crm__P147_curated',
             'P148': 'crm__P148_has_component',
             'P165': 'crm__P165_incorporates',
             'P177': 'crm__P177_assigned_property_type',
             'R3': 'lrmoo__R3',  # is realised in
             'R5': 'lrmoo__R5',  # has component
+            'R15': 'lrmoo__R15',  # has fragment
             'R16': 'lrmoo__R16',  # created [work]
             'R17': 'lrmoo__R17',  # created [expression]
             'R76': 'lrmoo__R76',  # is derivative of
@@ -379,6 +405,14 @@ class PBWstarConstants:
         # get_predicate later
         with self.graphdriver.session() as session:
             session.run('MERGE (k:Resource:%s {constant:TRUE}) RETURN k' % self.get_label('P107'))
+
+        # Make a list of boulloterions that are missing their references, with a link to the publication
+        # that the seals come from or -1 if we should use the seal catalogues as sources
+        self.boulloterion_sources = {
+            3897: (-1, None),
+            4779: (45, 'no. 345'),
+            5740: (-1, None)
+        }
     # END OF __init__
     # Lookup functions
 
