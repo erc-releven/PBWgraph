@@ -42,21 +42,53 @@ class PBWstarConstants:
                                         {'identifier': 'Kambylis, Athanasios', 'viaf': '51705268'}]},
             'Annales Barenses': {'authority': [mj]},
             'Anonymus Barensis': {'authority': [mj]},
-            'Aristakes': {'author': ['Aristakes', 101], 'factoid': 375021, 'authority': [tp, ta]},
+            'Aristakes': {'author': ['Aristakes', 101], 'factoid': 375021, 'authority': [tp, ta],
+                          'work': 'Patmutʿiwn',
+                          'expression': 'Récit des malheurs de la nation arménienne, Brussels 1973',
+                          'editor': [{'identifier': 'Canard, Marius', 'viaf': '41837536'},
+                                     {'identifier': 'Pērpērean, Hayk', 'viaf': '34489376'}]},
             'Attaleiates: Diataxis': {'author': ['Michael', 202], 'factoid': 254236, 'authority': [tp]},
-            'Attaleiates: History': {'author': ['Michael', 202], 'factoid': 235092, 'authority': [tp]},
+            'Attaleiates: History': {'author': ['Michael', 202], 'factoid': 235092, 'authority': [tp],
+                                     'work': 'Attaliatae Historia',
+                                     'expression': 'Michaelis Attaliatae Historia, Corpus scriptorum historiae '
+                                                   'Byzantinae 3, Bonn 1853',
+                                     'editor': [{'identifier': 'Brunet de Presle, Wladimir', 'viaf': '203410427'},
+                                                {'identifier': 'Bekker, Immanuel', 'viaf': '44387193'}]},
+            'Attaleiates: History (Spanish)': {'author': ['Michael', 202], 'factoid': 235092, 'authority': [tp],
+                                               'work': 'Attaliatae Historia',
+                                               'expression': 'Miguel Attaliates Historia, Nueva Roma. Bibliotheca '
+                                                             'Graeca et Latina Aevi Posterioris 15, Madrid 2002',
+                                               'editor': [
+                                                   {'identifier': 'Pérez Martín, Inmaculada', 'viaf': '12526036'}]},
             'Basilakios, Orationes et epistulae': {'author': ['Nikephoros', 17003], 'factoid': 437070, 'authority': []},
             'Basileios of Calabria to Nikolaos III': {'author': ['Basileios', 254], 'authority': [mj]},
-            'Boilas': {'author': ['Eustathios', 105], 'factoid': 226498, 'authority': [tp]},
+            'Boilas': {'author': ['Eustathios', 105], 'factoid': 226498, 'authority': [tp],
+                       'work': 'Testament of Boilas',
+                       'expression': '"Le testament d’Eustathios Boïlas (Avril 1059)", '
+                                     'Cinq études sur le XIe siècle byzantin, Paris (1977) 15-63',
+                       'editor': [{'identifier': 'Lemerle, Paul', 'viaf': '97996834'}]},
             'Bryennios': {'author': ['Nikephoros', 117], 'factoid': 237218, 'authority': [tp],
                           'work': 'Hyle Historias',
                           'expresssion': 'Nicéphore Bryennios: Histoire. Introduction, texte, traduction et notes, '
                                          'Brussels 1975',
                           'editor': [{'identifier': 'Gautier, Paul', 'viaf': '231073465'}]},
             'Cheynet, Antioche et Tarse': {'authority': [ok]},
-            'Christophoros of Mitylene': {'author': ['Christophoros', 13102], 'authority': [mj]},  # opera
-            'Christos Philanthropos, note': {'authority': [mj]},
-            'Chrysobull of 1079': {'author': ['Nikephoros', 3], 'factoid': 224945, 'authority': [tp]},
+            'Christophoros of Mitylene': {'author': ['Christophoros', 13102], 'authority': [mj], 'ref': 'p. 1',
+                                          'work': 'Collected Poems',
+                                          'expression': 'Die Gedichte des Christophoros Mitylenaios, Leipzig 1903',
+                                          'editor': [{'identifier': 'Kurtz, Eduard', 'viaf': '59840374'}]},
+            # opera
+            'Christos Philanthropos, note': {'authority': [mj],
+                                             'expression': '“Commémoraisons des Comnènes dans le typikon liturgique du '
+                                                           'monastère du Christ Philanthrope (ms. Panaghia '
+                                                           'Kamariotissa 29)”, Revue des études Byzantines 63 (2005), '
+                                                           '41-69',
+                                             'editor': [{'identifier': 'Rízou-Kouroúpou, Matoúla', 'viaf': '102334712'},
+                                                        {'identifier': 'Vannier, Jean-François', 'viaf': '219220697'}]},
+            'Chrysobull of 1079': {'author': ['Nikephoros', 3], 'factoid': 224945, 'authority': [tp],
+                                   'expression': '“Un chrysobulle de Nicéphore Botaneiatès à souscription synodale”, '
+                                                 'Byzantion 29 (1959) 29-41',
+                                   'editor': [{'identifier': 'Gouillard, Jean', 'viaf': '88739139'}]},
             'Clement III to Basileios of Calabria': {'author': ['Klemes', 23], 'factoid': 444557, 'authority': [jr]},
             'Codice Diplomatico Barese IV': {'authority': [mw]},
             'Council of 1147': {'authority': [mj], 'work': 'Council of 1147',
@@ -83,7 +115,10 @@ class PBWstarConstants:
             'Fulcher of Chartres': {'author': ['Fulcher', 101], 'factoid': 442407, 'authority': [mj]},
             'Geonames': {'authority': [cr]},
             # http://apps.brepolis.net.uaccess.univie.ac.at/lexiema/test/Default2.aspx
-            'Glykas': {'author': ['Michael', 305], 'authority': [tp]},  # Authority/source is actually Schreiner!
+            'Glykas': {'author': ['Michael', 305], 'authority': [tp],  # Authority/source is actually Schreiner!
+                       'work': 'Annales',
+                       'expression': 'Michaelis Glycae Annales, Corpus scriptorum historiae Byzantinae 21, Bonn 1836',
+                       'editor': [{'identifier': 'Bekker, Immanuel', 'viaf': '44387193'}]},
             'Gregory VII, Epistolae vagantes': {'author': ['Gregorios', 27], 'factoid': 444761, 'authority': [jr]},
             'Gregory VII, in Caspar': {'author': ['Gregorios', 27], 'authority': [jr]},  # opera
             'Hilandar': {'authority': [tp]},
@@ -95,12 +130,24 @@ class PBWstarConstants:
             'Ibn Shaddad': {'authority': [bs, hm]},
             'Ibn al-Athir': {'authority': [wa]},
             'Ioannes Italos': {'author': ['Ioannes', 66], 'authority': [mj]},  # opera
-            'Italikos': {'author': ['Michael', 20130], 'authority': [mj]},  # opera
-            'Italos trial': {'authority': [mj]},
-            'Iveron': {'authority': [tp]},
+            'Italikos': {'author': ['Michael', 20130], 'authority': [mj],
+                         'work': '',
+                         'expression': '',
+                         'editor': [{'identifier': '', 'viaf': ''}, {'identifier': '', 'viaf': ''}]},  # opera
+            'Italos trial': {'authority': [mj],
+                             'work': '',
+                             'expression': '',
+                             'editor': [{'identifier': '', 'viaf': ''}, {'identifier': '', 'viaf': ''}]},
+            'Iveron': {'authority': [tp],
+                       'work': '',
+                       'expression': '',
+                       'editor': [{'identifier': '', 'viaf': ''}, {'identifier': '', 'viaf': ''}]},
             'Jus Graeco-Romanum, III': {'authority': [mj]},
             'Kastamonitou': {'authority': [tp]},
-            'Kecharitomene': {'authority': [mj]},
+            'Kecharitomene': {'authority': [mj],
+                              'work': '',
+                              'expression': '',
+                              'editor': [{'identifier': '', 'viaf': ''}, {'identifier': '', 'viaf': ''}]},
             'Kekaumenos': {'author': ['Anonymus', 274], 'factoid': 228104, 'authority': [tp]},
             'Keroularios  ': {'author': ['Michael', 11], 'authority': [jr]},  # opera
             'Kinnamos': {'author': ['Ioannes', 17001], 'factoid': 356015, 'authority': [mj]},
@@ -112,13 +159,19 @@ class PBWstarConstants:
             'Laurent, Corpus V.2': {'authority': [ok]},
             'Laurent, Corpus V.3': {'authority': [ok]},
             'Lavra': {'authority': [tp]},
-            'Lazaros of Galesion': {'authority': [tp]},
+            'Lazaros of Galesion': {'authority': [tp],
+                                    'work': '',
+                                    'expression': '',
+                                    'editor': [{'identifier': '', 'viaf': ''}, {'identifier': '', 'viaf': ''}]},
             'Leo IX  ': {'author': ['Leon', 29], 'authority': [jr]},  # opera
             'Leon of Chalcedon': {'author': ['Leon', 114], 'factoid': 444848, 'authority': [jr]},
             'Leon of Ohrid (Greek)': {'author': ['Leon', 108], 'factoid': 434954, 'authority': [jr]},
             'Leon of Ohrid (Latin)': {'author': ['Leon', 108, 'Humbert', 101], 'factoid': 434954, 'authority': [jr]},
             'Lupus protospatharius': {'authority': [mj]},
-            'Manasses, Chronicle': {'author': ['Konstantinos', 302], 'factoid': 441043, 'authority': [mj]},
+            'Manasses, Chronicle': {'author': ['Konstantinos', 302], 'factoid': 441043, 'authority': [mj],
+                                    'work': '',
+                                    'expression': '',
+                                    'editor': [{'identifier': '', 'viaf': ''}, {'identifier': '', 'viaf': ''}]},
             'Manasses, Chronicle: Dedication': {'author': ['Konstantinos', 302], 'factoid': 440958, 'authority': [mj]},
             'Manasses, Hodoiporikon': {'authority': [mj]},
             'Manganeios Prodromos': {'author': ['Manganeios', 101], 'authority': [mj]},  # opera
@@ -128,7 +181,10 @@ class PBWstarConstants:
             'Michael the Rhetor, Regel': {'author': ['Michael', 17004], 'factoid': 449588, 'authority': [mj]},
             'Michel, Amalfi': {'author': ['Laycus', 101], 'factoid': 445024, 'authority': [jr]},
             'Nea Mone': {'authority': [tp]},
-            'Nea Mone,': {'authority': [tp]},
+            'Nea Mone,': {'authority': [tp],
+                          'work': '',
+                          'expression': '',
+                          'editor': [{'identifier': '', 'viaf': ''}, {'identifier': '', 'viaf': ''}]},
             'Nicolas d\'Andida': {'author': ['Nikolaos', 257], 'factoid': 444805, 'authority': [jr]},
             'Nicole, Chartophylax': {'author': ['Alexios', 1], 'factoid': 444947, 'authority': [jr]},
             'Niketas Choniates, Historia': {'author': ['Niketas', 25001], 'factoid': 435679, 'authority': [mj],
@@ -146,7 +202,7 @@ class PBWstarConstants:
             'Pantokrator Typikon': {'authority': [tp]},
             'Parthenon inscriptions': {'authority': [mj]},
             'Paschal II, Letter to Alexios I': {'author': ['Paschales', 22], 'factoid': 444991, 'authority': [mj]},
-            'Patmos: Acts': {'authority': [tp], 'work': 'Patmos: Acts',
+            'Patmos: Acts': {'authority': [tp],
                              'expression': 'Βυζαντινὰ ἔγγραφα τῆς μονῆς Πάτμου 1. Αὐτοκρατορικά, '
                                            '2. Δημοσίων λειτουργῶν, Athens 1980',
                              'editor': [{'identifier': 'Vranoúsīs, Léandros I.', 'viaf': '51818933'},
@@ -159,25 +215,47 @@ class PBWstarConstants:
             'Petros of Antioch, ep. 2': {'author': ['Petros', 103], 'factoid': 435035, 'authority': [tp]},
             'Pleiades': {'authority': [cr]},
             'Prodromos, Historische Gedichte': {'author': ['Theodoros', 25001], 'authority': [mj],  # opera
+                                                'expression': '',
                                                 'editor': [{'identifier': 'Hörandner, Wolfram', 'viaf': '46774760'}]},
             'Protaton': {'authority': [tp]},
-            'Psellos': {'author': ['Michael', 61], 'authority': [mj, tp]},  # opera
-            'Psellos: Chronographia': {'author': ['Michael', 61], 'factoid': 249646, 'authority': [mw]},
+            'Psellos': {'author': ['Michael', 61], 'authority': [mj, tp],
+                        'work': '',
+                        'expression': '',
+                        'editor': [{'identifier': '', 'viaf': ''}, {'identifier': '', 'viaf': ''}]},  # opera
+            'Psellos: Chronographia': {'author': ['Michael', 61], 'factoid': 249646, 'authority': [mw],
+                                       'work': '',
+                                       'expression': '',
+                                       'editor': [{'identifier': '', 'viaf': ''}, {'identifier': '', 'viaf': ''}]},
             'Ralph of Caen': {'author': ['Radulf', 112], 'authority': [mj]},  # no explicit factoid
             'Sakkos (1166)': {'authority': [mj]},
             'Sakkos (1170)': {'authority': [mj]},
             'Seibt – Zarnitz': {'authority': [ok]},
-            'Semeioma on Leon of Chalcedon': {'author': ['Alexios', 1], 'factoid': 444854, 'authority': [jr]},
+            'Semeioma on Leon of Chalcedon': {'author': ['Alexios', 1], 'factoid': 444854, 'authority': [jr],
+                                              'work': '',
+                                              'expression': '',
+                                              'editor': [{'identifier': '', 'viaf': ''},
+                                                         {'identifier': '', 'viaf': ''}]},
             'Skylitzes': {'author': ['Ioannes', 110], 'factoid': 223966, 'authority': [tp],
                           'work': 'Synopsis historikon',
-                          'expression': 'Ioannis Scylitzae Synopsis Historiarum, Corpus fontium historiae Byzantinae 5, Berlin – New York 1973',
+                          'expression': 'Ioannis Scylitzae Synopsis Historiarum, Corpus fontium historiae '
+                                        'Byzantinae 5, Berlin – New York 1973',
                           'editor': [{'identifier': 'Thurn, Hans', 'viaf': '9970194'}]},
-            'Skylitzes Continuatus': {'author': ['Anonymus', 102], 'authority': [tp]},  # placeholder person from PBW
+            'Skylitzes Continuatus': {'author': ['Anonymus', 102], 'authority': [tp],
+                                      'work': 'Skylitzes continuatus',
+                                      'expression': 'Ἡ συνέχεια τῆς Χρονογραφίας τοῦ Ἰωάννου Σκυλίτση '
+                                                    '(Ioannes Skylitzes Continuatus), Ἑταιρεία Μακεδονικῶν Σπουδῶν, '
+                                                    'Ιδρυμα Μελετῶν Χερσονήσου τοῦ Αἵμου 105, '
+                                                    'Thessalonike (1968) 103-186',
+                                      'editor': [{'identifier': 'Tsolákīs, Eúdoxos Th.', 'viaf': '63909505'}]},
+            # placeholder person from PBW
             'Sode, Berlin': {'authority': [ok]},
             'Speck, Berlin': {'authority': [ok]},
             'Stavrakos': {'authority': [ok]},
             'Synod of 1072': {'authority': [mj]},
-            'Synod of 1094': {'authority': [tp]},
+            'Synod of 1094': {'authority': [tp],
+                              'work': '',
+                              'expression': '',
+                              'editor': [{'identifier': '', 'viaf': ''}, {'identifier': '', 'viaf': ''}]},
             'Synodal edict (1054)': {'authority': [jr]},
             'Synodal protocol (1089)': {'authority': [jr]},
             'Synopsis Chronike': {'authority': []},
@@ -185,7 +263,11 @@ class PBWstarConstants:
             'Thebes: Confraternity': {'authority': [mj]},
             'Theophylact of Ohrid, Speech to Alexios I': {'author': ['Theophylaktos', 105], 'factoid': 444549,
                                                           'authority': [mj]},
-            'Theophylaktos of Ohrid, Letters': {'author': ['Theophylaktos', 105], 'authority': [mj]},  # opera
+            'Theophylaktos of Ohrid, Letters': {'author': ['Theophylaktos', 105], 'authority': [mj],
+                                                'work': '',
+                                                'expression': '',
+                                                'editor': [{'identifier': '', 'viaf': ''},
+                                                           {'identifier': '', 'viaf': ''}]},  # opera
             'Tornikes, Georgios': {'author': ['Georgios', 25002], 'authority': [mj],
                                    'work': 'Epistulae',
                                    'expression': 'George et Dèmetrios Tornikès: lettres et discours, Paris 1970',
@@ -193,7 +275,10 @@ class PBWstarConstants:
             'Tzetzes, Exegesis of Homer': {'authority': [mj]},
             'Tzetzes, Historiai': {'author': ['Ioannes', 459], 'factoid': 449306, 'authority': [mj]},
             'Tzetzes, Homerica': {'authority': [mj]},
-            'Tzetzes, Letters': {'author': ['Ioannes', 459], 'authority': [mj]},  # opera
+            'Tzetzes, Letters': {'author': ['Ioannes', 459], 'authority': [mj],
+                                 'work': '',
+                                 'expression': '',
+                                 'editor': [{'identifier': '', 'viaf': ''}, {'identifier': '', 'viaf': ''}]},  # opera
             'Tzetzes, Posthomerica': {'authority': [mj]},
             'Usama': {'author': ['Usama', 101], 'authority': [lo, hm]},  # no explicit factoid
             'Vatopedi': {'authority': [tp]},
@@ -206,7 +291,10 @@ class PBWstarConstants:
             'Yahya al-Antaki': {'authority': [tp, lo, hm]},
             'Zacos II': {'authority': [ok]},
             'Zetounion': {'author': ['Nikolaos', 13], 'factoid': 445037, 'authority': [jr]},
-            'Zonaras': {'author': ['Ioannes', 6007], 'authority': [mw]}  # no explicit factoid
+            'Zonaras': {'author': ['Ioannes', 6007], 'authority': [mw],
+                        'work': '',
+                        'expression': '',
+                        'editor': [{'identifier': '', 'viaf': ''}, {'identifier': '', 'viaf': ''}]}
         }
 
         self.entitylabels = {
