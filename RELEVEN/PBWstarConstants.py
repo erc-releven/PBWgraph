@@ -1,3 +1,4 @@
+import re
 # This package contains a bunch of information curated from the PBW website about authority, authorship
 # and so forth. It is a huge laundry list of data and some initialiser and accessor functions for it; the
 # class requires a graph driver in order to do the initialisation.
@@ -24,6 +25,20 @@ class PBWstarConstants:
         lo = {'identifier': 'Osti, Letizia', 'viaf': '236145542536996640148'}
         cr = {'identifier': 'Roueché, Charlotte', 'viaf': '44335536'}
         ok = {'identifier': 'Karágiṓrgou, ́Olga', 'viaf': '253347413'}
+
+        self.aggregate_sources = {
+            # Some of our sources are actually multiple works. Here is the key to disambiguate them: either
+            # a list of starting strings or a map of regexp -> starting string.
+            'Eustathios Romaios': {r'Peira': 'Peira',
+                                   r'Ralles-Potles V, \d{2}\D': 'RPA',
+                                   r'Ralles-Potles V, \d{3}\D': 'RPB',
+                                   r'Schminck': 'Schminck'},
+            'Nea Mone,': ['Gedeon', 'Miklosich-Müller'],
+            'Psellos': {r'Eirene': 'Eirene',
+                        r'Letters \(K - D\) (\d+)': 'K-D ##',
+                        r'Letters \(Sathas\) (\d+)': 'Sathas ##',
+                        r'Robert': 'Robert'}
+        }
 
         self.sourcelist = {
             'Albert of Aachen': {'author': ['Albert', 26101], 'factoid': 432193, 'authority': [mj],
@@ -69,8 +84,8 @@ class PBWstarConstants:
                        'editor': [{'identifier': 'Lemerle, Paul', 'viaf': '97996834'}]},
             'Bryennios': {'author': ['Nikephoros', 117], 'factoid': 237218, 'authority': [tp],
                           'work': 'Hyle Historias',
-                          'expresssion': 'Nicéphore Bryennios: Histoire. Introduction, texte, traduction et notes, '
-                                         'Brussels 1975',
+                          'expression': 'Nicéphore Bryennios: Histoire. Introduction, texte, traduction et notes, '
+                                        'Brussels 1975',
                           'editor': [{'identifier': 'Gautier, Paul', 'viaf': '231073465'}]},
             'Cheynet, Antioche et Tarse': {'authority': [ok]},
             'Christophoros of Mitylene': {'author': ['Christophoros', 13102], 'authority': [mj], 'ref': 'p. 1',
@@ -106,7 +121,30 @@ class PBWstarConstants:
             'Eleousa: Acts': {'authority': [tp]},
             'Eleousa: Typikon': {'authority': [mw]},
             'Esphigmenou': {'authority': [tp]},
-            'Eustathios Romaios': {'author': ['Eustathios', 61], 'factoid': 374066, 'authority': [mj]},
+            'Eustathios Romaios Peira': {'author': ['Eustathios', 61, 'Anonymus', 12144], 'factoid': 374065,
+                                         'authority': [mj], 'work': 'Peira',
+                                         'expression': '“Πεῖρα Εὐσταθίου τοῦ Ῥωμαίου”, Jus Graecoromanum vol.4, '
+                                                       'Athens 1931',
+                                         'editor': [{'identifier': 'Zepos, Panagiōtēs', 'viaf': '111939078'}]},
+            'Eustathios Romaios RPA': {'author': ['Eustathios', 61], 'factoid': 374066, 'authority': [mj],
+                                       'work': 'Peri disexadelphōn / '
+                                               'Hypomnēma peri duō exadelphōn labontōn duo exadelphas',
+                                       'expression': 'Σύνταγμα τῶν θείων καὶ ἱερῶν κανόνων, vol. 5, '
+                                                     'Athens 1855, 32-36',
+                                       'editor': [{'identifier': 'Rállēs, Geṓrgios A.', 'viaf': '10200332'},
+                                                  {'identifier': 'Potlēs, Michaēl', 'viaf': '66864785'}]},
+            'Eustathios Romaios RPB': {'author': ['Eustathios', 61], 'factoid': 374066, 'authority': [mj],
+                                       'work': 'Peri disexadelphōn / '
+                                               'Hypomnēma peri duō exadelphōn labontōn duo exadelphas',
+                                       'expression': 'Σύνταγμα τῶν θείων καὶ ἱερῶν κανόνων, vol. 5, '
+                                                     'Athens 1855, 341-353',
+                                       'editor': [{'identifier': 'Rállēs, Geṓrgios A.', 'viaf': '10200332'},
+                                                  {'identifier': 'Potlēs, Michaēl', 'viaf': '66864785'}]},
+            'Eustathios Romaios Schminck': {'author': ['Eustathios', 61], 'factoid': 374066, 'authority': [mj],
+                                            'work': '',
+                                            'expression': '“Vier eherechtliche Entscheidungen aus dem 11. Jahrhundert”,'
+                                                          ' Fontes Minores 3 (1979) 221-279',
+                                            'editor': [{'identifier': 'Schminck, Andreas', 'viaf': '62165959'}]},
             'Eustathios: Capture of Thessalonike': {'author': ['Eustathios', 20147], 'factoid': 451468,
                                                     'authority': [mj], 'work': 'De Thessalonica a Latinis capta',
                                                     'expression': 'La espugnazione di Tessalonica, Palermo 1961',
@@ -131,26 +169,32 @@ class PBWstarConstants:
             'Ibn al-Athir': {'authority': [wa]},
             'Ioannes Italos': {'author': ['Ioannes', 66], 'authority': [mj]},  # opera
             'Italikos': {'author': ['Michael', 20130], 'authority': [mj],
-                         'work': '',
-                         'expression': '',
-                         'editor': [{'identifier': '', 'viaf': ''}, {'identifier': '', 'viaf': ''}]},  # opera
+                         'work': 'Letters and discourses',
+                         'expression': 'Michel Italikos. Lettres et discours, Archives de l\'Orient Chrétien 14, '
+                                       'Paris 1972',
+                         'editor': [{'identifier': 'Gautier, Paul', 'viaf': '231073465'}]},  # opera
             'Italos trial': {'authority': [mj],
                              'work': '',
-                             'expression': '',
-                             'editor': [{'identifier': '', 'viaf': ''}, {'identifier': '', 'viaf': ''}]},
+                             'expression': '“Le proces officiel de Jean l’Italien: les actes et leurs sous-entendus,” '
+                                           'Travaux et Memoires 9 (1985), 133-69',
+                             'editor': [{'identifier': 'Gouillard, Jean', 'viaf': '88739139'}]},
             'Iveron': {'authority': [tp],
                        'work': '',
                        'expression': '',
                        'editor': [{'identifier': '', 'viaf': ''}, {'identifier': '', 'viaf': ''}]},
             'Jus Graeco-Romanum, III': {'authority': [mj]},
             'Kastamonitou': {'authority': [tp]},
-            'Kecharitomene': {'authority': [mj],
-                              'work': '',
-                              'expression': '',
-                              'editor': [{'identifier': '', 'viaf': ''}, {'identifier': '', 'viaf': ''}]},
+            'Kecharitomene': {'authority': [mj], 'author': ['Eirene', 61],
+                              'work': 'Kecharitomene typikon',
+                              'expression': '"Le typikon de la Théotokos Kécharitôménè", Revue des études byzantines, '
+                                            '43 (1985), 5-165',
+                              'editor': [{'identifier': 'Gautier, Paul', 'viaf': '231073465'}]},
             'Kekaumenos': {'author': ['Anonymus', 274], 'factoid': 228104, 'authority': [tp]},
             'Keroularios  ': {'author': ['Michael', 11], 'authority': [jr]},  # opera
-            'Kinnamos': {'author': ['Ioannes', 17001], 'factoid': 356015, 'authority': [mj]},
+            'Kinnamos': {'author': ['Ioannes', 17001], 'factoid': 356015, 'authority': [mj],
+                         'work': 'Epitome',
+                         'expression': 'Ioannis Cinnami Epitome, Corpus scriptorum historiae Byzantinae 10, Bonn 1836',
+                         'editor': [{'identifier': 'Meineke, August', 'viaf': '69736744'}]},
             'Kleinchroniken': {'authority': [tp], 'work': 'Short Chronicles',
                                'expression': 'Die byzantinischen Kleinchroniken, 3 vols., Vienna 1975-1979',
                                'editor': [{'identifier': 'Schreiner, Peter', 'viaf': '14789545'}]},
@@ -159,10 +203,11 @@ class PBWstarConstants:
             'Laurent, Corpus V.2': {'authority': [ok]},
             'Laurent, Corpus V.3': {'authority': [ok]},
             'Lavra': {'authority': [tp]},
-            'Lazaros of Galesion': {'authority': [tp],
-                                    'work': '',
-                                    'expression': '',
-                                    'editor': [{'identifier': '', 'viaf': ''}, {'identifier': '', 'viaf': ''}]},
+            'Lazaros of Galesion': {'authority': [tp], 'author': ['Gregorios', 135], 'factoid': 229931,
+                                    'work': 'Vita of Lazaros of Galesion',
+                                    'expression': '“Vita S. Lazari auctore Gregorio monacho”, Acta Sanctorum Novembris '
+                                                  '3, Société des Bollandistes, Brussels (1910) 508-606',
+                                    'editor': [{'identifier': 'Delehaye, Hippolyte', 'viaf': '71427301'}]},
             'Leo IX  ': {'author': ['Leon', 29], 'authority': [jr]},  # opera
             'Leon of Chalcedon': {'author': ['Leon', 114], 'factoid': 444848, 'authority': [jr]},
             'Leon of Ohrid (Greek)': {'author': ['Leon', 108], 'factoid': 434954, 'authority': [jr]},
@@ -174,17 +219,22 @@ class PBWstarConstants:
                                     'editor': [{'identifier': '', 'viaf': ''}, {'identifier': '', 'viaf': ''}]},
             'Manasses, Chronicle: Dedication': {'author': ['Konstantinos', 302], 'factoid': 440958, 'authority': [mj]},
             'Manasses, Hodoiporikon': {'authority': [mj]},
-            'Manganeios Prodromos': {'author': ['Manganeios', 101], 'authority': [mj]},  # opera
             'Matthew of Edessa': {'authority': [ta]},
             'Mauropous: Letters': {'author': ['Ioannes', 289], 'authority': [tp]},  # opera
             'Mauropous: Orations': {'author': ['Ioannes', 289], 'authority': [tp]},  # opera
             'Michael the Rhetor, Regel': {'author': ['Michael', 17004], 'factoid': 449588, 'authority': [mj]},
             'Michel, Amalfi': {'author': ['Laycus', 101], 'factoid': 445024, 'authority': [jr]},
-            'Nea Mone': {'authority': [tp]},
-            'Nea Mone,': {'authority': [tp],
-                          'work': '',
-                          'expression': '',
-                          'editor': [{'identifier': '', 'viaf': ''}, {'identifier': '', 'viaf': ''}]},
+            'Nea Mone, Gedeon': {'dbid': 'Nea Mone,', 'authority': [tp],
+                                 'work': '',
+                                 'expression': '“Βυζαντινὰ χρυσόβουλλα καὶ πιττάκια”, Ἐκκλησιαστικὴ Ἀλήθεια 4 (1883-84)'
+                                               ' 403-406, 411-413, 428-431, 444-447',
+                                 'editor': [{'identifier': 'Gedeōn, Manouēl Iō.', 'viaf': '64758841'}]},
+            'Nea Mone, Miklosich-Müller': {'dbid': 'Nea Mone,', 'authority': [tp],
+                                           'work': '',
+                                           'expression': 'Acta et diplomata graeca medii aevi sacra et profana, '
+                                                         'vol. 5, Vienna (1890) 1-10',
+                                           'editor': [{'identifier': 'Miklošič, Franc', 'viaf': '78772873'},
+                                                      {'identifier': 'Müller, Joseph', 'viaf': '57396472'}]},
             'Nicolas d\'Andida': {'author': ['Nikolaos', 257], 'factoid': 444805, 'authority': [jr]},
             'Nicole, Chartophylax': {'author': ['Alexios', 1], 'factoid': 444947, 'authority': [jr]},
             'Niketas Choniates, Historia': {'author': ['Niketas', 25001], 'factoid': 435679, 'authority': [mj],
@@ -215,26 +265,57 @@ class PBWstarConstants:
             'Petros of Antioch, ep. 2': {'author': ['Petros', 103], 'factoid': 435035, 'authority': [tp]},
             'Pleiades': {'authority': [cr]},
             'Prodromos, Historische Gedichte': {'author': ['Theodoros', 25001], 'authority': [mj],  # opera
-                                                'expression': '',
                                                 'editor': [{'identifier': 'Hörandner, Wolfram', 'viaf': '46774760'}]},
             'Protaton': {'authority': [tp]},
-            'Psellos': {'author': ['Michael', 61], 'authority': [mj, tp],
-                        'work': '',
-                        'expression': '',
-                        'editor': [{'identifier': '', 'viaf': ''}, {'identifier': '', 'viaf': ''}]},  # opera
+            'Psellos Eirene': {'author': ['Michael', 61], 'authority': [mj], 'factoid': 380098,
+                               'work': 'Ἐπιτάφιος εἰς Εἰρήνην καισάρισσαν',
+                               'expression': 'Michaelis Pselli Scripta minora magnam partem adhuc inedita I, '
+                                             'Milan 1936, 155-189',
+                               'editor': [{'identifier': 'Kurtz, Eduard', 'viaf': '59840374'},
+                                          {'identifier': 'Drexl, Franz', 'viaf': '35433472'}]},
+            'Psellos K-D 232': {'author': ['Michael', 61], 'authority': [mj], 'factoid': 380515,
+                                'work': 'K-D 232',
+                                'expression': 'Michaelis Pselli Scripta minora magnam partem adhuc inedita I, '
+                                              'Milan 1936',
+                                'editor': [{'identifier': 'Kurtz, Eduard', 'viaf': '59840374'},
+                                           {'identifier': 'Drexl, Franz', 'viaf': '35433472'}]},  # opera
+            'Psellos Sathas 72': {'author': ['Michael', 61], 'authority': [mj], 'factoid': 380172,
+                                  'work': 'Sathas 72',
+                                  'expression': 'Μεσαιωνικὴ Βιβλιοθήκη 5. Μιχαὴλ Ψελλοῦ ἱστορικοὶ λόγοι, '
+                                                'ἐπιστολαὶ καὶ ἄλλα ἀνέκδοτα, Paris (1876) 219-523',
+                                  'editor': [{'identifier': 'Sáthas, Konstantínos N.', 'viaf': '51823381'}]},  # opera
+            'Psellos Sathas 83': {'author': ['Michael', 61], 'authority': [mj], 'factoid': 380184,
+                                  'work': 'Sathas 83',
+                                  'expression': 'Μεσαιωνικὴ Βιβλιοθήκη 5. Μιχαὴλ Ψελλοῦ ἱστορικοὶ λόγοι, '
+                                                'ἐπιστολαὶ καὶ ἄλλα ἀνέκδοτα, Paris (1876) 219-523',
+                                  'editor': [{'identifier': 'Sáthas, Konstantínos N.', 'viaf': '51823381'}]},  # opera
+            'Psellos Sathas 151': {'author': ['Michael', 61], 'authority': [mj], 'factoid': 380249,
+                                   'work': 'Sathas 151',
+                                   'expression': 'Μεσαιωνικὴ Βιβλιοθήκη 5. Μιχαὴλ Ψελλοῦ ἱστορικοὶ λόγοι, '
+                                                 'ἐπιστολαὶ καὶ ἄλλα ἀνέκδοτα, Paris (1876) 219-523',
+                                   'editor': [{'identifier': 'Sáthas, Konstantínos N.', 'viaf': '51823381'}]},  # opera
+            'Psellos Robert': {'author': ['Michael', 61], 'authority': [mj], 'factoid': 380056,
+                               'work': 'Χρυσόβουλλον τοῦ αύτοῦ σταλὲν πρὸς τὸν ῾Ρόμβερτον '
+                                       'παρὰ τοῦ βασιλέως κυροῦ Μιχαὴλ τοῦ Δούκα',
+                               'expression': 'Michael Psellus, Orationes forenses et acta, '
+                                             'Stuttgart – Leipzig 1994, 169-175',
+                               'editor': [{'identifier': 'Dennis, George T.', 'viaf': '17240388'}]},
             'Psellos: Chronographia': {'author': ['Michael', 61], 'factoid': 249646, 'authority': [mw],
-                                       'work': '',
-                                       'expression': '',
-                                       'editor': [{'identifier': '', 'viaf': ''}, {'identifier': '', 'viaf': ''}]},
+                                       'work': 'Chronographia',
+                                       'expression': 'Michel Psellos, Chronographie, 2 vols., Paris 1967',
+                                       'editor': [{'identifier': 'Renauld, Émile', 'viaf': '88747868'}]},
             'Ralph of Caen': {'author': ['Radulf', 112], 'authority': [mj]},  # no explicit factoid
             'Sakkos (1166)': {'authority': [mj]},
             'Sakkos (1170)': {'authority': [mj]},
+            'Seals': {},  # This is a placeholder dummy entry
             'Seibt – Zarnitz': {'authority': [ok]},
             'Semeioma on Leon of Chalcedon': {'author': ['Alexios', 1], 'factoid': 444854, 'authority': [jr],
-                                              'work': '',
-                                              'expression': '',
-                                              'editor': [{'identifier': '', 'viaf': ''},
-                                                         {'identifier': '', 'viaf': ''}]},
+                                              'work': 'Semeioma on Leon of Chalcedon',
+                                              'expression': '“Documents inédits tirés de la bibliothèque de Patmos. '
+                                                            'Décret d’Alexis Comnène portant déposition de Léon, '
+                                                            'métropolitain de Chalcédoine”, '
+                                                            'Bulletin de Correspondance Hellénique 2 (1878), 102-128',
+                                              'editor': [{'identifier': 'Sakkeliōn, Iōannēs', 'viaf': '20048582'}]},
             'Skylitzes': {'author': ['Ioannes', 110], 'factoid': 223966, 'authority': [tp],
                           'work': 'Synopsis historikon',
                           'expression': 'Ioannis Scylitzae Synopsis Historiarum, Corpus fontium historiae '
@@ -254,8 +335,9 @@ class PBWstarConstants:
             'Synod of 1072': {'authority': [mj]},
             'Synod of 1094': {'authority': [tp],
                               'work': '',
-                              'expression': '',
-                              'editor': [{'identifier': '', 'viaf': ''}, {'identifier': '', 'viaf': ''}]},
+                              'expression': '“Le synode des Blachernes (fin 1094). Étude prosopographique”, '
+                                            'Revue des études byzantines 29 (1971) 213-284',
+                              'editor': [{'identifier': 'Gautier, Paul', 'viaf': '231073465'}]},
             'Synodal edict (1054)': {'authority': [jr]},
             'Synodal protocol (1089)': {'authority': [jr]},
             'Synopsis Chronike': {'authority': []},
@@ -275,10 +357,7 @@ class PBWstarConstants:
             'Tzetzes, Exegesis of Homer': {'authority': [mj]},
             'Tzetzes, Historiai': {'author': ['Ioannes', 459], 'factoid': 449306, 'authority': [mj]},
             'Tzetzes, Homerica': {'authority': [mj]},
-            'Tzetzes, Letters': {'author': ['Ioannes', 459], 'authority': [mj],
-                                 'work': '',
-                                 'expression': '',
-                                 'editor': [{'identifier': '', 'viaf': ''}, {'identifier': '', 'viaf': ''}]},  # opera
+            'Tzetzes, Letters': {'author': ['Ioannes', 459], 'authority': [mj]},  # opera
             'Tzetzes, Posthomerica': {'authority': [mj]},
             'Usama': {'author': ['Usama', 101], 'authority': [lo, hm]},  # no explicit factoid
             'Vatopedi': {'authority': [tp]},
@@ -292,9 +371,10 @@ class PBWstarConstants:
             'Zacos II': {'authority': [ok]},
             'Zetounion': {'author': ['Nikolaos', 13], 'factoid': 445037, 'authority': [jr]},
             'Zonaras': {'author': ['Ioannes', 6007], 'authority': [mw],
-                        'work': '',
-                        'expression': '',
-                        'editor': [{'identifier': '', 'viaf': ''}, {'identifier': '', 'viaf': ''}]}
+                        'work': 'Epitome historiōn',
+                        'expression': 'Ioannis Zonarae Epitome Historiarum libri XIII-XVIII, '
+                                      'Corpus scriptorum historiae Byzantinae 49, Leipzig 1897',
+                        'editor': [{'identifier': 'Büttner-Wobst, Theodor', 'viaf': '56683038'}]}
         }
 
         self.entitylabels = {
@@ -504,9 +584,27 @@ class PBWstarConstants:
     # END OF __init__
     # Lookup functions
 
-    def source(self, a):
+    def source(self, factoid):
         """Return all the information we have for the given source ID"""
-        return self.sourcelist.get(a, None)
+        a = factoid.source
+        if a in self.aggregate_sources:
+            # We have to look at the source ref to figure out which version of the source we are using
+            aggregates = self.aggregate_sources[a]
+            if isinstance(aggregates, dict):
+                for rexp, sstr in aggregates.items():
+                    result = re.match(rexp, factoid.sourceRef)
+                    if result:
+                        if len(result.groups()):
+                            a = "%s %s" % (factoid.source, sstr.replace('##', result.group(1)))
+                        else:
+                            a = "%s %s" % (factoid.source, sstr)
+                        break
+            else:
+                for sstr in aggregates:
+                    if factoid.sourceRef.startswith(sstr):
+                        a = "%s %s" % (factoid.source, sstr)
+                        break
+        return a
 
     def author(self, a):
         """Return the PBW person identifier for the given source author."""
@@ -523,6 +621,26 @@ class PBWstarConstants:
         if srecord is None:
             return None
         return srecord.get('authority', None)
+
+    def sourceref(self, factoid):
+        """Return the source reference, modified to account for our aggregate sources."""
+        a = factoid.source
+        aref = factoid.sourceRef
+        if a in self.aggregate_sources:
+            # We have to look at the source ref to figure out which version of the source we are using
+            aggregates = self.aggregate_sources[a]
+            if isinstance(aggregates, dict):
+                for rexp, sstr in aggregates.items():
+                    result = re.match(rexp, aref)
+                    if result is not None:
+                        aref = aref.replace(result.group(0), '')
+            else:
+                for rexp in aggregates:
+                    aref = aref.replace(rexp, '')
+        return aref
+
+
+
 
     def get_label(self, lbl):
         """Return the fully-qualified entity or predicate label given the short name.

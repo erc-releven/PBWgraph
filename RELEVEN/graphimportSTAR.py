@@ -192,7 +192,8 @@ def get_source_and_agent(factoid):
     relationships to describe that source, if necessary. The source will either be a physical E22 Human-Made Object
     (the boulloterion) or an F2 Expression (the written primary source)."""
     # Is this a 'seals' source without a boulloterion? If so warn and return None
-    if constants.authorities(factoid.source) is None:
+    sourcekey = constants.source(factoid)
+    if constants.authorities(sourcekey) is None:
         if factoid.source != 'Seals' or factoid.boulloterion is None:
             warn("No boulloterion found for seal-sourced factoid %d" % factoid.factoidKey
                  if factoid.source == 'Seals'
@@ -204,7 +205,7 @@ def get_source_and_agent(factoid):
         return sourcenode, agentnode
     else:
         # This factoid is taken from a document.
-        agentnode = get_text_authority(factoid.source)
+        agentnode = get_text_authority(sourcekey)
         sourcenode = get_text_sourceref(factoid)
         return sourcenode, agentnode
 
@@ -265,7 +266,7 @@ def get_boulloterion(boulloterion, pbweditor):
             q += _create_assertion_query(
                 orig, "cur%d" % i, 'p16', "seal%d" % i, 'pbweditor', None, 'cs%d' % i)
             q += _create_assertion_query(
-                orig, 'cur%d' % i, 'P147', 'coll%d' % i, 'pbweditor', None, 'cc%d' % i)
+                orig, 'cur%d' % i, 'p147', 'coll%d' % i, 'pbweditor', None, 'cc%d' % i)
             q += _create_assertion_query(orig, 'boul', 'p108', 'seal%d' % i, 'pbweditor', None, 'bs%d' % i)
         # Finally, assert based on the sources that the boulloterion carries the inscription
         q += _create_assertion_query(orig, 'boul', 'p128', 'inscription', 'pbweditor', 'src' if source_node else None)
@@ -383,10 +384,11 @@ def get_text_sourceref(factoid):
     if wholesource is None:
         return None
     # In this context, the agent is the PBW editor for this source.
-    agent = get_authority_node(constants.authorities(factoid.source))
+    sourcekey = constants.source(factoid)
+    agent = get_authority_node(constants.authorities(sourcekey))
     # First see whether this source reference already exists
     srcref_node = "(sourceref:%s {reference:'%s', text:'%s'})" % (
-        constants.get_label('E33'), escape_text(factoid.sourceRef), escape_text(factoid.origLDesc))
+        constants.get_label('E33'), escape_text(constants.sourceref(factoid)), escape_text(factoid.origLDesc))
     qm = _matchid('expr', wholesource)
     qm += "MATCH %s " % srcref_node
     qm += _create_assertion_query(None, 'expr', constants.get_label('R15'), 'sourceref', 'agent', None)
@@ -419,8 +421,9 @@ def get_source_work_expression(factoid):
     # Ensure the existence of the work and, if it has a declared author, link the author to it via
     # a CREATION event, asserted by the author.
 
-    workinfo = constants.source(factoid.source)
-    # pbw_authority = get_authority_node(constants.authorities(factoid.source))
+    sourcekey = constants.source(factoid)
+    workinfo = constants.sourcelist[sourcekey]
+    # pbw_authority = get_authority_node(constants.authorities(sourcekey))
     editors = get_authority_node(workinfo.get('editor'))
     # The work identifier is the 'work' key, or else the PBW source ID string.
     workid = workinfo.get('work')
@@ -435,7 +438,7 @@ def get_source_work_expression(factoid):
     # First see if the expression already exists. We cheat here by setting a 'dbid' on the
     # expression for easy lookup.
     expression = "(expr:%s {%s: \"%s\", dbid: \"%s\"})" % (
-        constants.get_label('F2'), constants.get_label('P48'), exprid, factoid.source)
+        constants.get_label('F2'), constants.get_label('P48'), escape_text(exprid), factoid.source)
     mquery = "MATCH %s RETURN expr.uuid" % expression
     with constants.graphdriver.session() as session:
         result = session.run(mquery).single()
@@ -464,7 +467,7 @@ def get_source_work_expression(factoid):
         q += _create_assertion_query(None, 'work', 'r3', 'expr', 'editors', 'expr')
 
         # Now we need to see if authorship has to be asserted.
-        author = get_author_node(constants.author(factoid.source))
+        author = get_author_node(constants.author(sourcekey))
         if author is not None:
             # Make the assertions that the author authored the work. If we have a factoid,
             # then the authority for this assertion is the factoid's primary referent.
@@ -592,7 +595,9 @@ def _find_or_create_authority_group(members):
         q += _matchid(lvar, m)
         gc.append("(group)-[:%s]->(m%d)" % (constants.get_label('P107'), i))
         i += 1
-    q += "COMMAND (group:%s), %s RETURN group" % (constants.get_label('E74'), ", ".join(gc))
+    # Since this is a group with symmetrical membership, we have to add a 'DISTINCT' in order to avoid getting
+    # mirrored orders of the group
+    q += "COMMAND (group:%s), %s RETURN DISTINCT group" % (constants.get_label('E74'), ", ".join(gc))
     with constants.graphdriver.session() as session:
         g = session.run(q.replace('COMMAND', 'MATCH')).single()
         if g is None:
@@ -817,7 +822,7 @@ def languageskill_handler(sourcenode, agent, factoid, graphperson):
     if factoid.languageSkill is None:
         return
     lkhid = constants.get_language(factoid.languageSkill)
-    # This doesn't chain quite the same way as the others
+    # This doesn't chain quite the same way as the others do
     # person [rwho:P38 has skill] (r:C21 Skill)
     # (r:C21 Skill) [rwhich:P37 concerns] (l:C29 Know-How)
     lassertion = _matchid('p', graphperson)
@@ -985,7 +990,10 @@ def process_persons():
                 fprocessed = 0
                 for f in person.main_factoids(ftype):
                     # Note which sources we actually use, so we know what to record
-                    used_sources.add(f.source)
+                    if f.source == 'Psellos':
+                        used_sources.add("%s %s" % (f.source, f.sourceRef))
+                    else:
+                        used_sources.add(f.source)
                     # Get the source, either a text passage or a seal inscription, and the authority
                     # for the factoid. Authority will either be the author of the text, or the PBW
                     # colleague who read the text and ingested the information.
