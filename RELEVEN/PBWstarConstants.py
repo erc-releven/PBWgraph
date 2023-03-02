@@ -395,7 +395,7 @@ class PBWstarConstants:
             'E21': 'Resource:crm__E21_Person',
             'E22': 'Resource:`crm__E22_Human-Made_Object`',
             'E31': 'Resource:crm__E31_Document',
-            'E33': 'Resource:crm_E33_Linguistic_Object',
+            'E33': 'Resource:crm__E33_Linguistic_Object',
             'E34': 'Resource:crm__E34_Inscription',
             'E39': 'Resource:crm__E39_Actor',
             'E41': 'Resource:crm__E41_Appellation',
@@ -409,10 +409,10 @@ class PBWstarConstants:
             'E74': 'Resource:crm__E74_Group',
             'E78': 'Resource:crm__E78_Curated_Holding',
             'E87': 'Resource:crm__E87_Curation_Activity',
-            'F1': 'Resource:lrmoo__F1',  # Work
-            'F2': 'Resource:lrmoo__F2',  # Expression
+            'F1': 'Resource:lrmoo__F1',    # Work
+            'F2': 'Resource:lrmoo__F2',    # Expression
             'F27': 'Resource:lrmoo__F27',  # Work Creation
-            'F28': 'Resource:lrmoo__F28'  # Expression Creation
+            'F28': 'Resource:lrmoo__F28'   # Expression Creation
         }
 
         self.predicates = {
@@ -442,12 +442,12 @@ class PBWstarConstants:
             'P148': 'crm__P148_has_component',
             'P165': 'crm__P165_incorporates',
             'P177': 'crm__P177_assigned_property_type',
-            'R3': 'lrmoo__R3',  # is realised in
-            'R5': 'lrmoo__R5',  # has component
-            'R15': 'lrmoo__R15',  # has fragment
-            'R16': 'lrmoo__R16',  # created [work]
-            'R17': 'lrmoo__R17',  # created [expression]
-            'R76': 'lrmoo__R76',  # is derivative of
+            'R3': 'lrmoo__R3',     # is realised in
+            'R5': 'lrmoo__R5',     # has component
+            'R15': 'lrmoo__R15',   # has fragment
+            'R16': 'lrmoo__R16',   # created [work]
+            'R17': 'lrmoo__R17',   # created [expression]
+            'R76': 'lrmoo__R76',   # is derivative of
             'SP13': 'sdhss__P13',  # pertains to [person, social quality]
             'SP14': 'sdhss__P14',  # has social quality
             'SP26': 'sdhss__P26',  # is embodiment by [person, social role]
@@ -455,7 +455,7 @@ class PBWstarConstants:
             'SP35': 'sdhss__P35',  # is defined by [person, religious identity]
             'SP36': 'sdhss__P36',  # pertains to [religious identity]
             'SP37': 'sdhss__P37',  # concerns [know-how]
-            'SP38': 'sdhss__P38'  # has skill
+            'SP38': 'sdhss__P38'   # has skill
         }
 
         self.prednodes = dict()
@@ -612,6 +612,12 @@ class PBWstarConstants:
         if srecord is None:
             return None
         return srecord.get('author', None)
+
+    def editor(self, a):
+        srecord = self.sourcelist.get(a, None)
+        if srecord is None:
+            return None
+        return srecord.get('editor', None)
 
     def authorities(self, a):
         """Return the name(s) of the scholar(s) responsible for ingesting the info from the given source

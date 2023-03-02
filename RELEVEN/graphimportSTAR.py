@@ -28,7 +28,7 @@ def collect_person_records():
     # print("Found %d relevant people" % len(relevant))
     # return relevant
     # Debugging / testing: restrict the list of relevant people
-    debugnames = ['Anna', 'Apospharios', 'Balaleca', 'Herve', 'Ioannes', 'Konstantinos', 'Liparites']
+    debugnames = ['Anna', 'Apospharios', 'Balaleca', 'Gagik', 'Herve', 'Ioannes', 'Konstantinos', 'Liparites']
     debugcodes = [62, 64, 68, 101, 102, 110]
     return mysqlsession.query(pbw.Person).filter(
         and_(pbw.Person.name.in_(debugnames), pbw.Person.mdbCode.in_(debugcodes))
@@ -170,11 +170,11 @@ def disambiguation_handler(sqlperson, graphperson):
 
 def _find_or_create_event(person, eventclass, predicate):
     """Helper function to find the relevant event for event-based factoids"""
-    query = _matchid('p', person)
+    query = _matchid('pers', person)
     query += _matchid('pred', predicate)
-    query += "MATCH (a:%s)-[:%s]->(event:%s), " % (constants.get_label('E13'), constants.star_subject, eventclass)
-    query += "(a)-[:%s]->(pred), " % constants.star_predicate
-    query += "(a)-[:%s]->(pers) " % constants.star_object
+    query += "MATCH (a:%s)-[:%s]->(event:%s) " % (constants.get_label('E13'), constants.star_subject, eventclass)
+    query += "MATCH (a)-[:%s]->(pred) " % constants.star_predicate
+    query += "MATCH (a)-[:%s]->(pers) " % constants.star_object
     query += "RETURN DISTINCT event"  # There may well be multiple assertions about this event
     with constants.graphdriver.session() as session:
         result = session.run(query).single()
@@ -194,10 +194,10 @@ def get_source_and_agent(factoid):
     # Is this a 'seals' source without a boulloterion? If so warn and return None
     sourcekey = constants.source(factoid)
     if constants.authorities(sourcekey) is None:
-        if factoid.source != 'Seals' or factoid.boulloterion is None:
+        if sourcekey != 'Seals' or factoid.boulloterion is None:
             warn("No boulloterion found for seal-sourced factoid %d" % factoid.factoidKey
-                 if factoid.source == 'Seals'
-                 else "Source %s of factoid %d not known" % (factoid.source, factoid.factoidKey))
+                 if sourcekey == 'Seals'
+                 else "Source %s of factoid %d not known" % (sourcekey, factoid.factoidKey))
             return None, None
     if factoid.boulloterion is not None:
         agentnode = get_boulloterion_authority(factoid.boulloterion)
@@ -363,17 +363,24 @@ def get_boulloterion_sourcelist(boulloterion):
 
 
 def get_text_authority(fsource):
-    """Return the authority (either a text author or someone else, e.g. a PBW editor) for the
+    """Return the authority (either a text author or someone else, e.g. the editor of the print edition) for the
     source behind this factoid."""
     # Do we have a known author for this text?
-    authorlist = constants.author(fsource) or []
-    author = get_author_node(authorlist.copy())
-    # If not, we use the PBW scholar as the authority.
+    author = get_author_node(constants.author(fsource))
+    # If not, we use the editor(s) as the authority.
+    editor = get_authority_node(constants.editor(fsource))
+    # And if that doesn't exist, we use the PBW authority.
     agent = get_authority_node(constants.authorities(fsource))
     # If there is no PBW scholar known for this source, we use the generic PBW agent.
     if agent is None:
         agent = constants.pbw_agent
-    return author or agent
+    if author:
+        return author
+    print("No author given for source %s; using edition editor" % fsource)
+    if editor:
+        return editor
+    print("...no editor either! Using PBW authority")
+    return agent
 
 
 def get_text_sourceref(factoid):
@@ -432,13 +439,13 @@ def get_source_work_expression(factoid):
 
     # Check that we have the information on this source
     if editors is None or exprid is None:
-        print("Cannot ingest factoid with source %s until work/edition info is specified" % factoid.source)
+        print("Cannot ingest factoid with source %s until work/edition info is specified" % sourcekey)
         return None
 
-    # First see if the expression already exists. We cheat here by setting a 'dbid' on the
+    # First see if the expression already exists. We cheat here by setting a 'pbwid' on the
     # expression for easy lookup.
-    expression = "(expr:%s {%s: \"%s\", dbid: \"%s\"})" % (
-        constants.get_label('F2'), constants.get_label('P48'), escape_text(exprid), factoid.source)
+    expression = "(expr:%s {%s: \"%s\", pbwid: \"%s\"})" % (
+        constants.get_label('F2'), constants.get_label('P48'), escape_text(exprid), constants.source(factoid))
     mquery = "MATCH %s RETURN expr.uuid" % expression
     with constants.graphdriver.session() as session:
         result = session.run(mquery).single()
@@ -479,9 +486,10 @@ def get_source_work_expression(factoid):
             if 'factoid' in workinfo:
                 # Pull in the authorship factoid that describes the authorship of this work
                 afact = mysqlsession.query(pbw.Factoid).filter_by(factoidKey=workinfo['factoid']).scalar()
-                if afact.source != factoid.source:
+                asourcekey = constants.source(afact)
+                if asourcekey != sourcekey:
                     print("HELP: Not dealing with %s authorship factoid from different work %s" % (
-                        factoid.source, afact.source))
+                        sourcekey, asourcekey))
                 else:
                     # Find the primary person for the authorship factoid
                     fact_person = afact.main_person()
@@ -558,9 +566,10 @@ def get_author_node(authorlist):
     if authorlist is None or len(authorlist) == 0:
         return None
     authors = []
-    while len(authorlist) > 0:
-        pname = authorlist.pop(0)
-        pcode = authorlist.pop(0)
+    mutable_list = authorlist.copy()
+    while len(mutable_list) > 0:
+        pname = mutable_list.pop(0)
+        pcode = mutable_list.pop(0)
         # We need to get the SQL record for the author in case they aren't in the DB yet
         sqlperson = mysqlsession.query(pbw.Person).filter_by(name=pname, mdbCode=pcode).scalar()
         authors.append(_find_or_create_pbwperson(pname, pcode, sqlperson.descName))
@@ -719,15 +728,15 @@ def death_handler(sourcenode, agent, factoid, graphperson):
     # Create an assertion about when the death happened.
     if deathdate is not None:
         deathassertion += _create_assertion_query(orig, 'devent', 'p4', 'datedesc', 'agent', 'source', 'a2')
-    # Set the death description on the assertion as a P3 note. This should be idempotent...
-    deathassertion += "SET a.%s = \"%s\" " % (constants.get_label('P3'), escape_text(factoid.replace_referents()))
+    # Match or set the death description on the assertion as a P3 note.
+    deathassertion += "ANOTE a.%s = \"%s\" " % (constants.get_label('P3'), escape_text(factoid.replace_referents()))
     deathassertion += "RETURN a%s" % (", a2" if deathdate else '')
 
     # print(deathassertion)
     with constants.graphdriver.session() as session:
-        result = session.run(deathassertion.replace('COMMAND', 'MATCH')).single()
+        result = session.run(deathassertion.replace('COMMAND', 'MATCH').replace('ANOTE', 'WHERE')).single()
         if result is None:
-            session.run(deathassertion.replace('COMMAND', 'CREATE'))
+            session.run(deathassertion.replace('COMMAND', 'CREATE').replace('ANOTE', 'SET'))
 
 
 def ethnicity_handler(sourcenode, agent, factoid, graphperson):
@@ -903,10 +912,12 @@ def possession_handler(sourcenode, agent, factoid, graphperson):
     the possessions). For now, we assume that a possession with an identical description is, in fact,
     the same possession."""
     orig = "factoid/%d" % factoid.factoidKey
-    possession_attributes = {constants.get_label('P1'): escape_text(factoid.engDesc)}
+    # Give the possession its description, which comes out of the factoid's engDesc
+    possession_attrs = "%s: '%s'" % (constants.get_label('P1'), escape_text(factoid.replace_referents()))
+    # Give the assertion a note, if such note exists in the poorly-named PossessionFactoid.possessionName field
+    assertion_attrs = ''
     if factoid.possession is not None and factoid.possession != '':
-        possession_attributes[constants.get_label('P3')] = escape_text(factoid.replace_referents())
-    possession_attrs = ", ".join(["%s: '%s'" % (k, v) for k, v in possession_attributes.items()])
+        assertion_attrs = "ANOTE a.%s = '%s'" % (constants.get_label('P3'), escape_text(factoid.possession))
     posassertion = _matchid('p', graphperson)
     posassertion += _matchid('agent', agent)
     posassertion += _matchid('source', sourcenode)
@@ -914,11 +925,11 @@ def possession_handler(sourcenode, agent, factoid, graphperson):
     posassertion += "MERGE (poss:%s {%s}) " % (constants.get_label('E18'), possession_attrs)
     posassertion += "WITH p, agent, source, pred, poss "
     posassertion += _create_assertion_query(orig, 'poss', 'pred', 'p', 'agent', 'source')
-    posassertion += "RETURN a"
+    posassertion += "%s RETURN a" % assertion_attrs
     with constants.graphdriver.session() as session:
-        result = session.run(posassertion.replace('COMMAND', 'MATCH')).single()
+        result = session.run(posassertion.replace('COMMAND', 'MATCH').replace('ANOTE', 'WHERE')).single()
         if result is None:
-            session.run(posassertion.replace('COMMAND', 'CREATE'))
+            session.run(posassertion.replace('COMMAND', 'CREATE').replace('ANOTE', 'SET'))
 
 
 def record_assertion_factoids():
