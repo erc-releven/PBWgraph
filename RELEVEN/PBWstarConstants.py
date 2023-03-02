@@ -378,9 +378,11 @@ class PBWstarConstants:
         }
 
         self.entitylabels = {
-            'C1': 'Resource:sdhss__C1',  # Social Quality of an Actor
-            'C5': 'Resource:sdhss__C5',  # Membership
-            'C7': 'Resource:sdhss__C7',  # Occupation
+            'C1': 'Resource:sdhss__C1',    # Social Quality of an Actor (Embodiment)
+            'C3': 'Resource:sdhss__C3',    # Social Relationship
+            'C4': 'Resource:sdhss__C4',    # Social Relationship Type
+            'C5': 'Resource:sdhss__C5',    # Membership
+            'C7': 'Resource:sdhss__C7',    # Occupation
             'C11': 'Resource:sdhss__C11',  # Gender
             'C12': 'Resource:sdhss__C12',  # Social Role
             'C13': 'Resource:sdhss__C13',  # Social Role Embodiment
@@ -388,6 +390,7 @@ class PBWstarConstants:
             'C23': 'Resource:sdhss__C23',  # Religious Identity
             'C24': 'Resource:sdhss__C24',  # Religion or Religious Denomination
             'C29': 'Resource:sdhss__C29',  # Know-How
+            'C99': 'Resource:r11__C99',    # Kinship
             'E13': 'Resource:crm__E13_Attribute_Assignment',
             'E15': 'Resource:crm__E15_Identifier_Assignment',
             'E17': 'Resource:crm__E17_Type_Assignment',
@@ -450,6 +453,9 @@ class PBWstarConstants:
             'R76': 'lrmoo__R76',   # is derivative of
             'SP13': 'sdhss__P13',  # pertains to [person, social quality]
             'SP14': 'sdhss__P14',  # has social quality
+            'SP16': 'sdhss__P16',  # has relationship type
+            'SP17': 'sdhss__P17',  # has relationship source
+            'SP18': 'sdhss__P18',  # has relationship target
             'SP26': 'sdhss__P26',  # is embodiment by [person, social role]
             'SP33': 'sdhss__P33',  # is embodiment of [social role]
             'SP35': 'sdhss__P35',  # is defined by [person, religious identity]
@@ -569,11 +575,6 @@ class PBWstarConstants:
         self.legal_designations = ['Slave', 'Monk', 'Nun', 'Nun (?)', 'Bishops', 'Monk (Latin)', 'Patriarch',
                                    'Servant of Christ', 'Servant of God', 'Hieromonk', 'Servant of the Lord']
 
-        # Make this generic predicate as a one-off. This is a hack to keep from breaking
-        # get_predicate later
-        with self.graphdriver.session() as session:
-            session.run('MERGE (k:Resource:%s {constant:TRUE}) RETURN k' % self.get_label('P107'))
-
         # Make a list of boulloterions that are missing their references, with a link to the publication
         # that the seals come from or -1 if we should use the seal catalogues as sources
         self.boulloterion_sources = {
@@ -659,15 +660,9 @@ class PBWstarConstants:
     def get_predicate(self, p):
         """Return the reified predicate UUID for the given short name. This will throw
         an exception if no predicate with this key is defined."""
-        # Deal with the fact that some predicates (currently only for kinship) have specific
-        # instances, and here we always want to return the general instance
-        specific_properties = {'P107': '`crm__P107.1_kind_of_member`'}
         if p not in self.prednodes:
             fqname = self.predicates[p]
-            restriction = ''
-            if p in specific_properties:
-                restriction = ' WHERE n.%s IS NULL' % specific_properties[p]
-            predq = "COMMAND (n:Resource:%s {constant:TRUE})%s RETURN n" % (fqname, restriction)
+            predq = "COMMAND (n:Resource:%s {constant:TRUE}) RETURN n" % fqname
             npred = self._fetch_uuid_from_query(predq)
             self.prednodes[p] = npred
         return self.prednodes[p]
@@ -701,6 +696,9 @@ class PBWstarConstants:
     def get_language(self, lang):
         return self._find_or_create_cv_entry('Language', self.get_label('C29'), lang, 'Language Skill')
 
+    def get_kinship(self, kinlabel):
+        return self._find_or_create_cv_entry('Kinship', self.get_label('C4'), kinlabel, 'Kinship')
+
     def get_societyrole(self, srlabel):
         if srlabel in self.legal_designations:
             return self._find_or_create_cv_entry('SocietyRole', self.get_label('C12'), srlabel, 'Legal Status')
@@ -717,16 +715,6 @@ class PBWstarConstants:
         # Make sure that the UUID also appears under the original label
         self.cv['Dignity'][dignity] = dig_uuid
         return dig_uuid
-
-    def get_kinship(self, kinlabel):
-        if kinlabel in self.cv['Kinship']:
-            return self.cv['Kinship'][kinlabel]
-        # Kinship nodes are typed predicates
-        cypherq = "COMMAND (kt:Resource:%s {`crm__P107.1_kind_of_member`:\"%s\", constant:TRUE}) RETURN kt" % (
-            self.get_label('P107'), kinlabel)
-        uuid = self._fetch_uuid_from_query(cypherq)
-        self.cv['Kinship'][kinlabel] = uuid
-        return uuid
 
     def inrange(self, floruit):
         """Return true if the given floruit tag falls within RELEVEN's range"""

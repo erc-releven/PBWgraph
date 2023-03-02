@@ -850,38 +850,42 @@ def languageskill_handler(sourcenode, agent, factoid, graphperson):
 
 
 def _find_or_create_kinship(graphperson, graphkin):
-    # See if there is an existing kinship group between the person and their kin according to the
-    # source in question. If not, return a new (not yet connected) E74 Kinship group node.
+    # See if there is an existing kinship group of any sort with the person as source and their
+    # kin as target. If not, return a new (not yet connected) C3 Social Relationship node.
     e13 = constants.get_label('E13')
-    e74 = constants.get_label('E74')
-    p140 = constants.get_label('P140')
-    p141 = constants.get_label('P141')
+    c3 = constants.get_label('C3')
+    sp17 = constants.get_label('SP17')
+    sp18 = constants.get_label('SP18')
     kinquery = _matchid('p', graphperson)
     kinquery += _matchid('kin', graphkin)
-    kinquery += "MATCH (p)<-[:%s]-(a1:%s)-[:%s]->(kg:%s)<-[:%s]-(a2)-[:%s]->(kin) " \
-                "RETURN DISTINCT kg" % (p141, e13, p140, e74, p140, p141)
+    # There might be many assertions about this group by now, so we return distinct because there should
+    # still only be one kinship group
+    kinquery += "MATCH (p)<-[:%s]-(a1:%s)-[:%s]->(kg:%s)<-[:%s]-(a2:%s)-[:%s]->(kin)," \
+                "(a1)-[:%s]->(prim:%s), (a2)-[:%s]->(sec:%s) " \
+                "RETURN DISTINCT kg" % (constants.star_object, e13, constants.star_subject, c3, constants.star_subject,
+                                        e13, constants.star_object,
+                                        constants.star_predicate, sp17, constants.star_predicate, sp18)
     with constants.graphdriver.session() as session:
         result = session.run(kinquery).single()
         if result is None:
             # If the kinship pair hasn't been referenced yet, then create a new empty kinship and return it
             # for use in the assertions below.
-            session.run("CREATE (kg:%s {justcreated:true}) RETURN kg" % e74)
-            result = session.run("MATCH (kg:%s {justcreated:true}) REMOVE kg.justcreated RETURN kg" % e74).single()
+            session.run("CREATE (kg:%s {justcreated:true}) RETURN kg" % c3)
+            result = session.run("MATCH (kg:%s {justcreated:true}) REMOVE kg.justcreated RETURN kg" % c3).single()
         return result['kg'].get('uuid')
 
 
 def kinship_handler(sourcenode, agent, factoid, graphperson):
-    # Kinships are modeled as two-person groups connected with P107 and with .1 types
-    # as property attributes as per the CRM spec. A kinship has to be modeled thus as
-    # two assertions, one for each person's membership of the group. The main person
-    # has the specific predicate in their assertion; the secondary person has the
-    # generic predicate.
+    # These are social relationships as opposed to social roles, so they need a partner.
+    # (rel:C3 Social Relationship) [pt:P16 has type] (kt:C4 Kinship type)
+    # (rel) [src:P17 has source] (p:E21 person)
+    # (rel) [trg:P18 has target] (p:E21 kin)
     orig = "factoid/%d" % factoid.factoidKey
     if factoid.kinshipType is None:
         warn("Empty kinship factoid found: id %d" % factoid.factoidKey)
         return
-    predspec = constants.get_kinship(factoid.kinshipType.gspecRelat)
-    predgen = constants.get_predicate('P107')
+    ktype = constants.get_kinship(factoid.kinshipType.gspecRelat)
+
     for kin in factoid.referents():
         if kin.name == 'Anonymi' or kin.name == 'Anonymae':
             # We skip kin who are anonymous groups
@@ -896,11 +900,17 @@ def kinship_handler(sourcenode, agent, factoid, graphperson):
         kinassertion += _matchid('source', sourcenode)
         kinassertion += _matchid('kin', graphkin)
         kinassertion += _matchid('kg', kgroup)
-        kinassertion += _matchid('pspec', predspec)
-        kinassertion += _matchid('pgen', predgen)
-        kinassertion += _create_assertion_query(orig, 'kg', 'pspec', 'p', 'agent', 'source', 'a1')
-        kinassertion += _create_assertion_query(orig, 'kg', 'pgen', 'kin', 'agent', 'source', 'a2')
-        kinassertion += "RETURN a1, a2"
+        kinassertion += _matchid('ktype', ktype)
+        kinassertion += _matchid('p16', constants.get_predicate('SP16'))
+        kinassertion += _matchid('p17', constants.get_predicate('SP17'))
+        kinassertion += _matchid('p18', constants.get_predicate('SP18'))
+        # The relationship has type ktype
+        kinassertion += _create_assertion_query(orig, 'kg', 'p16', 'ktype', 'agent', 'source', 'a1')
+        # The relationship has our person as a source
+        kinassertion += _create_assertion_query(orig, 'kg', 'p17', 'p', 'agent', 'source', 'a2')
+        # The relationship has the kinperson as a target
+        kinassertion += _create_assertion_query(orig, 'kg', 'p18', 'kin', 'agent', 'source', 'a3')
+        kinassertion += "RETURN a1, a2, a3"
         with constants.graphdriver.session() as session:
             result = session.run(kinassertion.replace('COMMAND', 'MATCH')).single()
             if result is None:
