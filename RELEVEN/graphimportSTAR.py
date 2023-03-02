@@ -228,8 +228,9 @@ def get_boulloterion(boulloterion, pbweditor):
     orig = 'boulloterion/%d' % boulloterion.boulloterionKey
     # boulloterion is an E22 Human-Made Object, with an identifier assigned by PBW
     keystr = "%d" % boulloterion.boulloterionKey
+    btitle = "Boulloterion for %s" % boulloterion.title
     boul_node = _find_or_create_identified_entity(
-        constants.get_label('E22'), constants.pbw_agent, keystr, boulloterion.title)
+        constants.get_label('E22'), constants.pbw_agent, keystr, btitle)
     # Does it have any E13 assertions yet?
     testq = "MATCH (boul)<-[:%s]-(a:%s) WHERE boul.uuid = '%s' RETURN a" % (
         constants.star_subject, constants.get_label('E13'), boul_node)
@@ -528,8 +529,9 @@ def get_source_work_expression(factoid):
 
 
 def _find_or_create_identified_entity(etype, agent, identifier, dname):
-    """Return an E21 Person, labeled with the name and code via an E14 Identifier Assignment carried out
-    by the given agent (so far either PBW or VIAF.)"""
+    """Return an identified entity. This can be a E22 Human-Made Object, an E21 Person, an E39 Agent,
+    or an E74 Group depending on context. It is labeled with the identifier via an E14 Identifier Assignment
+    carried outby the given agent, with dname going into a custom 'descname' property."""
     # We can't merge with comma statements, so we have to do it with successive one-liners.
     if etype == constants.get_label('E22'):
         url = 'https://pbw2016.kdl.kcl.ac.uk/boulloterion/%s' % identifier
@@ -983,6 +985,9 @@ def process_persons():
     """Go through the relevant person records and process them for factoids"""
     processed = 0
     used_sources = set()
+    boulloteria = set()
+    seals = 0
+
     # Get the classes of info that are directly in the person record
     direct_person_records = ['Gender', 'Disambiguation', 'Identifier']
     # Get the list of factoid types in the PBW DB
@@ -1017,6 +1022,11 @@ def process_persons():
                         used_sources.add("%s %s" % (f.source, f.sourceRef))
                     else:
                         used_sources.add(f.source)
+                    # Note if we use a boulloterion, and if so how many seals it has
+                    if f.boulloterion is not None:
+                        if f.boulloterion.boulloterionKey not in boulloteria:
+                            seals += len(f.boulloterion.seals)
+                        boulloteria.add(f.boulloterion.boulloterionKey)
                     # Get the source, either a text passage or a seal inscription, and the authority
                     # for the factoid. Authority will either be the author of the text, or the PBW
                     # colleague who read the text and ingested the information.
@@ -1039,6 +1049,7 @@ def process_persons():
     record_assertion_factoids()
     print("Processed %d person records." % processed)
     print("Used the following sources: %s" % sorted(used_sources))
+    print("Used the following boulloterion IDs with a total of %d seals: %s" % (seals, sorted(boulloteria)))
 
 
 # If we are running as main, execute the script

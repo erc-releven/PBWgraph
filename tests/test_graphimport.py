@@ -10,7 +10,7 @@ class GraphImportTests(unittest.TestCase):
     constants = None
     # Data keys are gender, identifier (appellation), second-name appellation, alternate-name appellation,
     # death, ethnicity, religion, societyrole, legalrole, language, kinship, possession
-    testpeople = {
+    td_people = {
         'Anna 62': {'gender': ['Female'], 'identifier': 'Ἄννα Κομνηνή',
                     'secondname': {'Κομνηνοῦ': 2},
                     'death': {'count': 1, 'dated': 0},
@@ -138,6 +138,18 @@ class GraphImportTests(unittest.TestCase):
         'Liparites 101': {'gender': ['Male'], 'identifier': 'τοῦ Λιπαρίτου قاريط ملك الابخاز',
                           'ethnicity': {'Georgian': 2}, 'legalrole': {'Lord of part of the Iberians': 1}}
     }
+    td_sources = ['Anna Komnene', 'Aristakes', 'Attaleiates: History', 'Boilas', 'Bryennios',
+                    'Christophoros of Mitylene', 'Christos Philanthropos, note', 'Chrysobull of 1079',
+                    'Council of 1147', 'Eustathios: Capture of Thessalonike', 'Glykas', 'Italikos', 'Italos trial',
+                    'Iveron', 'Kecharitomene', 'Kinnamos', 'Kleinchroniken', 'Lazaros of Galesion',
+                    'Manasses, Chronicle', 'Nea Mone,', 'Niketas Choniates, Historia', 'Patmos: Acts',
+                    'Psellos Eirene', 'Psellos KD 232', 'Psellos Sathas 151', 'Psellos Sathas 72', 'Psellos Sathas) 83',
+                    'Psellos Robert', 'Psellos: Chronographia', 'Semeioma on Leon of Chalcedon', 'Skylitzes',
+                    'Skylitzes Continuatus', 'Synod of 1094', 'Theophylaktos of Ohrid, Letters', 'Tornikes, Georgios',
+                    'Zonaras']
+
+    td_boulloterions = {112, 114, 271, 272, 283, 2216, 2217, 2218, 2566, 2567, 2625, 2799, 2991, 2992, 2993, 2996,
+                          3000, 3001, 3002, 3003, 3004, 4143, 4941, 5253, 6463, 6798}
 
     def setUp(self):
         self.graphdriver = GraphDatabase.driver(config.graphuri, auth=(config.graphuser, config.graphpw))
@@ -148,18 +160,18 @@ class GraphImportTests(unittest.TestCase):
             'WHERE id.value IN %s AND agent.descname = "Prosopography of the Byzantine World" ' \
             'RETURN id.value, person.uuid' % (c.get_label('E42'), c.get_label('P37'), c.get_label('E15'),
                                               c.get_label('P140'), c.get_label('E21'), c.get_label('P14'),
-                                              c.get_label('E39'), list(self.testpeople.keys()))
+                                              c.get_label('E39'), list(self.td_people.keys()))
         with self.graphdriver.session() as session:
             result = session.run(q)
             self.assertIsNotNone(result)
             for record in result:
-                self.testpeople[record['id.value']]['uuid'] = record['person.uuid']
+                self.td_people[record['id.value']]['uuid'] = record['person.uuid']
 
     # TODO add extra assertions for the eunuchs and K62
     def test_gender(self):
         """Test that each person has the gender assignments we expect"""
         c = self.constants
-        for person, pinfo in self.testpeople.items():
+        for person, pinfo in self.td_people.items():
             q = "MATCH (p:%s)<-[:%s]-(a1:%s)-[:%s]->(ga:%s)<-[:%s]-(a2:%s)-[:%s]->(gender:%s) " \
                 "WHERE p.uuid = '%s' RETURN p.descname, gender.value" \
                 % (c.get_label('E21'), c.star_object, c.get_label('E13'), c.star_subject, c.get_label('E17'),
@@ -174,7 +186,7 @@ class GraphImportTests(unittest.TestCase):
     def test_identifier(self):
         """Test that each person has the main appellation given in the PBW database"""
         c = self.constants
-        for person, pinfo in self.testpeople.items():
+        for person, pinfo in self.td_people.items():
             # We want the appellation that was assigned by the generic PBW agent, not any of
             # the sourced ones
             pbwagent = '%s {descname: "Prosopography of the Byzantine World"}' % c.get_label('E39')
@@ -200,7 +212,7 @@ class GraphImportTests(unittest.TestCase):
     def test_appellation(self):
         """Test that each person has the second or alternative names assigned, as sourced assertions"""
         c = self.constants
-        for person, pinfo in self.testpeople.items():
+        for person, pinfo in self.td_people.items():
             names = dict()
             if 'secondname' in pinfo:
                 names.update(pinfo['secondname'])
@@ -234,7 +246,7 @@ class GraphImportTests(unittest.TestCase):
                 self.assertIsNone(deathevents.get(p))
                 deathevents[p] = de
 
-        for person, pinfo in self.testpeople.items():
+        for person, pinfo in self.td_people.items():
             # Check if the person should have a death event.
             devent = deathevents.get(pinfo['uuid'])
             if 'death' not in pinfo:
@@ -269,7 +281,7 @@ class GraphImportTests(unittest.TestCase):
     def test_ethnicity(self):
         """Test that the ethnicity was created correctly for our people with listed ethnicities"""
         c = self.constants
-        for person, pinfo in self.testpeople.items():
+        for person, pinfo in self.td_people.items():
             # Find those with a declared ethnicity. This means a membership in a group of the given type.
             if 'ethnicity' in pinfo:
                 eths = pinfo['ethnicity']
@@ -290,7 +302,7 @@ class GraphImportTests(unittest.TestCase):
     def test_religion(self):
         """Test that our one religious affiliation was created correctly"""
         c = self.constants
-        for person, pinfo in self.testpeople.items():
+        for person, pinfo in self.td_people.items():
             # Check that the religious assertions were created, and that they have the correct authority.
             if 'religion' in pinfo:
                 rels = pinfo['religion']
@@ -310,7 +322,7 @@ class GraphImportTests(unittest.TestCase):
     def test_occupation(self):
         """Test that occupations / non-legal designations are set correctly"""
         c = self.constants
-        for person, pinfo in self.testpeople.items():
+        for person, pinfo in self.td_people.items():
             # Check that the occupation assertions were created
             if 'occupation' in pinfo:
                 occs = pinfo['occupation']
@@ -326,7 +338,7 @@ class GraphImportTests(unittest.TestCase):
     def test_legalrole(self):
         """Test that legal designations are set correctly"""
         c = self.constants
-        for person, pinfo in self.testpeople.items():
+        for person, pinfo in self.td_people.items():
             # Check that the occupation assertions were created
             if 'legalrole' in pinfo:
                 occs = pinfo['legalrole']
@@ -342,7 +354,7 @@ class GraphImportTests(unittest.TestCase):
     def test_languageskill(self):
         """Test that our Georgian monk has his language skill set correctly"""
         c = self.constants
-        for person, pinfo in self.testpeople.items():
+        for person, pinfo in self.td_people.items():
             # Find those with a language skill set
             if 'language' in pinfo:
                 q = "MATCH (p:%s)<-[:%s]-(a:%s)-[:%s]->(skill:%s)<-[:%s]-(a2:%s)-[:%s]->(kh:%s)-[:%s]-(type:%s) " \
@@ -361,7 +373,7 @@ class GraphImportTests(unittest.TestCase):
     def test_kinship(self):
         """Test the kinship assertions for one of our well-connected people"""
         c = self.constants
-        for person, pinfo in self.testpeople.items():
+        for person, pinfo in self.td_people.items():
             if 'kinship' in pinfo:
                 q = "MATCH (p:%s {uuid: '%s'})<-[:%s]-(a:%s)-[:%s]->" \
                     "(kg:%s)<-[:%s]-(a2:%s)-[:%s]->(kin:%s), " \
@@ -393,7 +405,7 @@ class GraphImportTests(unittest.TestCase):
         """Check possession assertions. Test the sources and authors/authorities while we are at it."""
         c = self.constants
         a = c.get_label('E13')
-        for person, pinfo in self.testpeople.items():
+        for person, pinfo in self.td_people.items():
             # Find those who possess something. All the possessions are documented in written sources
             # whose authors are also in PBW; exploit this to test that the written sources were set up correctly.
             if 'possession' in pinfo:
@@ -445,13 +457,55 @@ class GraphImportTests(unittest.TestCase):
                                      "Test %s has the right number of possessions" % person)
 
     def test_boulloterions(self):
-        pass
+        """For each boulloterion, check that it exists only once and has only one inscription."""
+        c = self.constants
+        found = set()
+        bq = "MATCH (boul:%s)<-[:%s]-(idass:%s)-[:%s]->(ident:%s), " \
+             "(boul)<-[:%s]-(a:%s)-[:%s]->(inscr:%s) RETURN DISTINCT boul, ident, inscr" % (
+            c.get_label('E22'), c.star_subject, c.get_label('E15'), c.get_label('P37'), c.get_label('E42'),
+            c.star_subject, c.get_label('E13'), c.star_object, c.get_label('E34')
+        )
+        with self.graphdriver.session() as session:
+            result = session.run(bq)
+            for row in result:
+                # The boulloterion should have a descname that starts with 'Boulloterion'
+                self.assertTrue(row['boul'].get('descname', '').startswith('Boulloterion'))
+                # Its identity should be a PBW URL with some boulloterion ID
+                pbwid = row['ident'].get('url')
+                boulid = int(pbwid.replace('https://pbw2016.kdl.kcl.ac.uk/boulloterion/', ''))
+                # We should be expecting this boulloterion
+                self.assertIn(boulid, self.td_boulloterions, "Boulloterion %d should exist" % boulid)
+                # but we should not have seen it yet
+                self.assertNotIn(boulid, found, "Boulloterion %d should not be duplicated" % boulid)
+                found.add(boulid)
+        self.assertSetEqual(self.td_boulloterions, found)
 
     def test_source_works(self):
+        """For each work, check that it exists (only once) and that the assertions that stem from it
+        also have the authority we would expect."""
         pass
 
     def test_db_entry(self):
-        pass
+        """All the assertions in the database should be attached to DB records, linked to the single entry
+        that created them."""
+        e13 = self.constants.get_label('E13') # the assertion(s)
+        p70 = self.constants.get_label('P70') # the documents predicate
+        f2 = self.constants.get_label('F2')   # the DB record per assertion
+        r17 = self.constants.get_label('R17') # linking the record to its creation
+        f28 = self.constants.get_label('F28') # the data creation record
+        p14 = self.constants.get_label('P14') # carried out by...
+        e21 = self.constants.get_label('E21') # ...me.
+        totalq = "MATCH (a:%s) RETURN count(a) as numass" % e13
+        linkedq = "MATCH (a:%s)<-[:%s]-(record:%s)<-[:%s]-(dbevent:%s)-[:%s]->(me:%s) " \
+                  "RETURN count(a) as numass, count(record) as numrec, dbevent, me" % (
+            e13, p70, f2, r17, f28, p14, e21)
+        with self.graphdriver.session() as session:
+            total = session.run(totalq).single()['numass']
+            linked = session.run(linkedq).single(strict=True)
+            self.assertEqual(total, linked['numass'])
+            self.assertEqual(total, linked['numrec'])
+            self.assertIsNotNone(linked['dbevent'].get('timestamp'))
+            self.assertEqual('Andrews, Tara Lee', linked['me'].get('descname'))
 
     def tearDown(self):
         self.graphdriver.close()
