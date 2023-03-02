@@ -256,8 +256,10 @@ def get_boulloterion(boulloterion, pbweditor):
             # The curated holding
             q += "MERGE (coll%d:%s {%s:\"%s\"}) " % (
                 i, constants.get_label('E78'), constants.get_label('P1'), coll)
+            # The seal. Make a unique ID from collectionKey.boulloterionKey
+            seal_id = "%d.%d.%d" % (seal.collectionKey, seal.boulloterionKey, seal.collectionRef)
             q += "MERGE (seal%d:%s {%s:\"%s\"}) " % (
-                i, constants.get_label('E22'), constants.get_label('P48'), seal.collectionRef)
+                i, constants.get_label('E22'), constants.get_label('P48'), seal_id)
             # The curation activity; one per curated holding
             q += "MERGE (cur%d:%s {%s:\"%s\"}) " % (
                 i, constants.get_label('E87'), constants.get_label('P1'), coll)
