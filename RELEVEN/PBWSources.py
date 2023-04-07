@@ -2,6 +2,7 @@ import csv
 import pbw
 import config
 import re
+from collections import OrderedDict
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from warnings import warn
@@ -112,30 +113,75 @@ def ingest(csvfile):
     return sourcelist
 
 
+def page_to_num(refstring, prefix, ranges, prefix_in_refstring=False, dotted=False):
+    """Given a refstring, the common prefix, and a dictionary of items and their page ranges,
+    return which item the refstring is pointing to."""
+    # Get the number we are comparing
+    matchstring = refstring
+    if prefix_in_refstring:
+        matchstring = refstring.replace(prefix, '')
+    if dotted:
+        matcher = re.match(r'\s*(\d+)\.(\d+)', matchstring)
+    else:
+        matcher = re.match(r'^\s*(d+)', matchstring)
+    if matcher:
+        x = int(matcher.group(1))
+    else:
+        raise(f"Unable to find number to compare in {refstring}")
+    for n, r in ranges.items():
+        if x in range(*r):
+            return f"{prefix} {n}"
+
+
+
+def parse_psellos_ref(refstring):
+    # All the static strings
+    for val in ['Actum 2', 'Against Ophrydas', 'Andronikos', 'Apologetikos', 'De omnifari doctrina', 'Eirene',
+                'Epiphanios', 'Hypomnema', 'Kategoria', 'Keroularios', 'Leichoudes', 'Malik-shah', 'Mother',
+                'Nikolaos of Horaia Pege', 'Niketas Maïstor', 'Philosophica minora I', 'Robert', 'Styliane',
+                'Xiphilinos']:
+        if refstring.startswith(val):
+            return f'Psellos, {val}'
+
+    # All the pre-numbered strings
+    for pattern in [r'(Orationes panegyricae [IVX]+)', r'(Poema \d+)\.', ]:
+        m = re.match(pattern, refstring)
+        if m:
+            return f'Psellos, {m.group(1)}'
+    # Monodies
+    if refstring.startswith('Monodies (Gautier)'):
+        return "Psellos, %s" % page_to_num(refstring, 'Monodies (Gautier)', {
+            1: (98, 104), 2: (107, 112), 3: (115, 126), 4: (128, 132), 5: (135, 143), 6: (145, 151)
+        })
+    # Oratoria minora
+    if refstring.startswith('Oratoria minora'):
+        return page_to_num(refstring, 'Psellos, Oratoria minora', OrderedDict({
+            r'[1-3]\.': 1,
+            r'4\.9\d': 1,
+            r'4\.10\d\.': 1,
+            r'[4-6]\.': 2,
+        }), True)
+
+    # Letters
+    m = re.match(r'Letters \(([\w -]+)\) (\d+)', refstring)
+    if m:
+        return f'Psellos, {m.group(1)} {m.group(2)}'
+
+
+
 def get_source_info(sourcelist, pbw_id, pbw_ref):
     aggregate_sources = {
         # Some of our sources are actually multiple works. Here is the key to disambiguate them: either
         # a list of starting strings or a map of regexp -> starting string.
         'Alexios Stoudites': ['Eleutherios', 'Ralles-Potles', 'VV', ''],
-        'Docheiariou': {r'53': 'Docheiariou 1',
-                        r'58\.[23]\d': 'Docheiariou 2b',
-                        r'58\.1\d': 'Docheiariou 2a',
-                        r'58\.[2-9]\D': 'Docheiariou 2a',
-                        r'58\.1\D': 'Docheiariou 2',
-                        r'59\.40': 'Docheiariou 2'},
-        'Documents d\'ecclesiologie ': {r'1': 'Documents 4',
-                                        r'20[0-6]': 'Documents 4',
-                                        r'208': 'Documents 5',
-                                        r'21': 'Documents 5',
-                                        r'230': 'Documents 5',
-                                        r'238': 'Documents 6',
-                                        r'250': 'Documents 7'},
+        'Docheiariou': lambda s: page_to_num(s, 'Docheiariou', OrderedDict(
+            {r'53': '1', r'58\.[23]\d': '2b', r'58\.1\d': '2a', r'58\.[2-9]\D': '2a', r'58\.1\D': '2',
+             r'59\.40': '2'})),
+        'Documents d\'ecclesiologie ': lambda s: page_to_num(s, 'Documents', OrderedDict(
+            {r'1': 4, r'20[0-6]': 4, r'208': 5, r'21': 5, r'230': 5, r'238': 6, r'250': 7})),
         'Eleousa: Acts': {r'2[5-7]': 'Eleousa: Acts'},
-        'Esphigmenou': {r'4[23]': 'Esphigmenou 1',
-                        r'4[56]': 'Esphigmenou 2',
-                        r'4[89]': 'Esphigmenou 3',
-                        r'5[2-4]': 'Esphigmenou 4',
-                        r'5[78]': 'Esphigmenou 5'},
+        'Esphigmenou': lambda s: page_to_num(s, 'Esphigmenou', {
+            r'4[23]': 1, r'4[56]': 2, r'4[89]': 3, r'5[2-4]': 4, r'5[78]': 5}),
         'Eustathios Romaios': {r'Peira': 'Eustathios Romaios Peira',
                                r'Ralles-Potles V, \d{2}\D': 'Eustathios Romaios RPA',
                                r'Ralles-Potles V, \d{3}\D': 'Eustathios Romaios RPB',
@@ -150,21 +196,9 @@ def get_source_info(sourcelist, pbw_id, pbw_ref):
         'Nea Mone,': {r'Gedeon': 'Nea Mone, Gedeon',
                       r'Miklosich-Müller 5.(\d)': r'Nea Mone, Miklosich-Müller \1'},
         'Panteleemon': {},
-        'Protaton': {r'225.[23]\d': 'Protaton 8a',
-                     r'22[4-9]': 'Protaton 8',
-                     r'23[0-2]': 'Protaton 8',
-                     r'23[6-8]': 'Protaton 9'},
-        'Psellos': {r'(Actum 2|Against Ophrydas|Andronikos|Apologetikos|De omnifari doctrina|Eirene|Epiphanios|'
-                    r'Hypomnema|Kategoria|Keroularios|Leichoudes|Malik-shah|Mother|Nikolaos of Horaia Pege|'
-                    r'Niketas Maïstor|Philosophica minora I|Robert|Styliane|Xiphilinos)': r'Psellos, \1',
-                    r'Letters \(([\w -]+)\) (\d+)': r'\1 \2',
-                    r'Robert': 'Robert',
-                    r'(Orationes panegyricae [IVX]+)': r'Psellos, \1',
-                    r'Oratoria minora [1-3]\.': 'Psellos, Oratoria minora 1',
-                    r'Oratoria minora 4.9\d': 'Psellos, Oratoria minora 1',
-                    r'Oratoria minora 4.10\d\.': 'Psellos, Oratoria minora 1',
-                    r'Oratoria minora [4-6]\.': 'Psellos, Oratoria minora 2'
-                    r''},
+        'Protaton': lambda s: page_to_num(s, 'Protaton', OrderedDict(
+            {r'225.[23]\d': '8a', r'22[4-9]': 8, r'23[0-2]': 8, r'23[6-8]': 9})),
+        'Psellos': parse_psellos_ref,  # yeah, it needs its own
         'Vatopedi': {},
         'Xenophontos': {},
         'Xeropotamou': {}
