@@ -1,25 +1,21 @@
 import csv
-import pbw
-import config
 import re
-from collections import OrderedDict
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 from warnings import warn
 
 
-def add_if_exists(dict, key, datum):
+# Static functions for the import
+def add_if_exists(d, key, datum):
     if datum is not None and not (re.match(r'^\s*$', datum) or datum == 'n/a'):
-        dict[key] = datum
+        d[key] = datum
 
 
-def add_one_or_more(dict, key, datum):
+def add_one_or_more(d, key, datum):
     if datum is None or re.match(r'^\s*$', datum) or datum == 'n/a':
         return
-    dict[key] = re.split(r';\s*', datum)
+    d[key] = re.split(r';\s*', datum)
 
 
-def add_editors(dict, source_id, editor_names, editor_viafs):
+def add_editors(d, source_id, editor_names, editor_viafs):
     """Add the editors of the source edition as a list of {identifier: 'name', viaf: 'viafcode'}"""
     namelist = re.split(r';\s*', editor_names)
     viaflist = re.split(r';\s*', editor_viafs)
@@ -28,29 +24,15 @@ def add_editors(dict, source_id, editor_names, editor_viafs):
         raise ImportError(f"Editor list mismatch on line {source_id}")
     for i, name in enumerate(namelist):
         editors.append({'identifier': name, 'viaf': viaflist[i]})
-    dict['editor'] = editors
+    d['editor'] = editors
 
 
-def add_pbw_authorities(dict, authority_string):
-    # These are the modern scholars who put the source information into PBW records
-    pbw_authorities = dict()
-    pbw_authorities['mj'] = {'identifier': 'Jeffreys, Michael J.', 'viaf': '73866641'}
-    pbw_authorities['tp'] = {'identifier': 'Papacostas, Tassos', 'viaf': '316793603'}
-    pbw_authorities['ta'] = {'identifier': 'Andrews, Tara Lee', 'viaf': '316505144'}
-    pbw_authorities['jr'] = {'identifier': 'Ryder, Judith R.', 'viaf': '51999624'}
-    pbw_authorities['mw'] = {'identifier': 'Whitby, Mary', 'viaf': '34477027'}
-    pbw_authorities['wa'] = {'identifier': 'Amin, Wahid M.', 'viaf': '213149617100303751518'}
-    pbw_authorities['bs'] = {'identifier': 'Soravia, Bruna', 'viaf': '69252167'}
-    pbw_authorities['hm'] = {'identifier': 'Munt, Harry', 'viaf': '78568758'}
-    pbw_authorities['lo'] = {'identifier': 'Osti, Letizia', 'viaf': '236145542536996640148'}
-    pbw_authorities['cr'] = {'identifier': 'Roueché, Charlotte', 'viaf': '44335536'}
-    pbw_authorities['ok'] = {'identifier': 'Karágiṓrgou, ́Olga', 'viaf': '253347413'}
-
+def add_pbw_authorities(d, authority_string, pbw_authorities):
     pbwauths = re.split(r';\s*', authority_string)
-    dict['authority'] = [pbw_authorities[x] for x in pbwauths]
+    d['authority'] = [pbw_authorities[x] for x in pbwauths]
 
 
-def add_authors(dict, source_id, author_string):
+def add_authors(d, source_id, author_string):
     """Add any PBW authors in the form [name1, code1, name2, code2, ...]"""
     authorlist = re.split(r';\s*', author_string)
     authors = []
@@ -61,80 +43,75 @@ def add_authors(dict, source_id, author_string):
     if len(authors) == 0:
         warn(f"Author {author_string} not created for source {source_id}")
     else:
-        dict['author'] = authors
+        d['author'] = authors
 
 
-def add_provenance(session, dict, source_id, prov_string):
+def add_provenance(d, source_id, prov_string):
     """We have to check whether it is a factoid number, or the text of a factoid, or something else entirely"""
     # Do we have the factoid ID?
     factoid_id = re.match(r'factoid (\d+)', prov_string)
     if factoid_id is not None:
-        dict['factoid'] = factoid_id.group(1)
-        return
-    # Can we match the provenance string to a factoid?
-    factoid_search = re.sub(r'[A-Z]\w+ \d+', '%', prov_string)
-    matched = session.query(pbw.Factoid).filter(pbw.Factoid.engDesc.like(factoid_search)).all()
-    if len(matched) > 1:
-        # See if we can find the exact match
-        warn(f"Looking for exact factoid description match for source {source_id}")
-        for f in matched:
-            engDesc = f.replace_referents().replace('<', '').replace('>', '')
-            if engDesc == prov_string:
-                warn(f"...matched factoid {f.factoidKey}")
-                dict['factoid'] = f.factoidKey
-    elif len(matched):
-        dict['factoid'] = matched[0].factoidKey
+        d['factoid'] = factoid_id.group(1)
     else:
         # This didn't match a factoid. Put it in as a provenance
-        dict['provenance'] = prov_string
+        warn(f"No factoid key found for provenance of source {source_id}")
+        d['provenance'] = prov_string
 
 
-def ingest(csvfile):
-    """Given a CSV file of sources in the expected format, turn it into a data structure recognisable
-    by PBWStarConstants"""
-    sourcelist = dict()
-
-    engine = create_engine('mysql+pymysql://' + config.dbstring)
-    smaker = sessionmaker(bind=engine)
-    session = smaker()
-
-    with open(csvfile, encoding='utf-8', newline='') as fh:
-        reader = csv.DictReader(fh, delimiter=';')
-        for row in reader:
-            source_id = row['PBW Source ID']
-            source_data = dict()
-            add_authors(source_data, source_id, row['Author(ity)'])
-            add_provenance(session, source_data, source_id, row['Evidence of authorship'])
-            add_pbw_authorities(source_data, row['PBW editor'])
-            add_if_exists(source_data, 'work', row['Source canonical name'])
-            add_if_exists(source_data, 'expression', row['Source edition used'])
-            add_if_exists(source_data, 'url', row['Edition URL'])
-            sourcelist[source_id] = source_data
-    return sourcelist
+def make_refrange(refrange):
+    match_set = set()
+    for m in re.split(r',\s*', refrange):
+        mprefix = None
+        mparts = m.split('.')
+        if len(mparts) > 1:
+            mprefix = '.'.join(mparts[:-1])
+        mspan = [int(x) for x in mparts[-1].split('-')]
+        mrange = range(mspan[0], mspan[-1]+1)
+        if mprefix:
+            match_set.update([f"{mprefix}.{x}" for x in mrange])
+        else:
+            match_set.update(mrange)
+    return match_set
 
 
-def page_to_num(refstring, prefix, ranges, prefix_in_refstring=False, dotted=False):
+# Functions to lambdafy for the page range parsing
+
+def ref_substring(refstring, prefix, possible):
+    for p in possible:
+        source_id = ' '.join([prefix, possible]).rstrip()
+        if refstring.startswith(p):
+            return source_id
+    return None
+
+
+def page_to_key(refstring, prefix, sourcelist, strip=None):
     """Given a refstring, the common prefix, and a dictionary of items and their page ranges,
     return which item the refstring is pointing to."""
-    # Get the number we are comparing
+    # Get the list of ranges from the source list
+    ranges = {sourcelist[x].get('range'): x for x in sourcelist.keys()
+              if x.startswith(prefix) and 'range' in sourcelist[x]}
+    # Strip off the beginning of the ref string if necessary
     matchstring = refstring
-    if prefix_in_refstring:
-        matchstring = refstring.replace(prefix, '')
-    if dotted:
-        matcher = re.match(r'\s*(\d+)\.(\d+)', matchstring)
-    else:
-        matcher = re.match(r'^\s*(d+)', matchstring)
-    if matcher:
-        x = int(matcher.group(1))
-    else:
-        raise(f"Unable to find number to compare in {refstring}")
-    for n, r in ranges.items():
-        if x in range(*r):
-            return f"{prefix} {n}"
+    if strip:
+        matchstring = refstring.replace(strip, '').lstrip()
+    for r, k in ranges.items():
+        if matchstring.startswith(r):
+            return k
 
 
+def appended_string(refstring, prefix, sourcelist, strip=None):
+    components = [x for x in sourcelist.keys() if x.startswith(prefix)]
+    for key in components:
+        mstr = key.replace(prefix, '').lstrip()
+        matchstring = refstring
+        if strip:
+            matchstring = refstring.replace(strip, '').lstrip()
+        if matchstring.startswith(mstr):
+            return key
 
-def parse_psellos_ref(refstring):
+
+# Some of the sources are special
+def parse_psellos_ref(refstring, sourcelist):
     # All the static strings
     for val in ['Actum 2', 'Against Ophrydas', 'Andronikos', 'Apologetikos', 'De omnifari doctrina', 'Eirene',
                 'Epiphanios', 'Hypomnema', 'Kategoria', 'Keroularios', 'Leichoudes', 'Malik-shah', 'Mother',
@@ -150,75 +127,128 @@ def parse_psellos_ref(refstring):
             return f'Psellos, {m.group(1)}'
     # Monodies
     if refstring.startswith('Monodies (Gautier)'):
-        return "Psellos, %s" % page_to_num(refstring, 'Monodies (Gautier)', {
-            1: (98, 104), 2: (107, 112), 3: (115, 126), 4: (128, 132), 5: (135, 143), 6: (145, 151)
-        })
+        return page_to_key(refstring, 'Psellos, Monodies (Gautier)', sourcelist, strip='Monodies (Gautier)')
     # Oratoria minora
     if refstring.startswith('Oratoria minora'):
-        return page_to_num(refstring, 'Psellos, Oratoria minora', OrderedDict({
-            r'[1-3]\.': 1,
-            r'4\.9\d': 1,
-            r'4\.10\d\.': 1,
-            r'[4-6]\.': 2,
-        }), True)
+        return page_to_key(refstring, 'Psellos, Oratoria minora', sourcelist, strip='Oratoria minora')
 
     # Letters
     m = re.match(r'Letters \(([\w -]+)\) (\d+)', refstring)
     if m:
-        return f'Psellos, {m.group(1)} {m.group(2)}'
+        return f'Psellos {m.group(1)} {m.group(2)}'
+    return None
 
 
+def parse_romaios(refstring):
+    (tocheck, pages) = refstring.split(', ', 1)
+    answer = 'Eustathios Romaios '
+    for p in ['Peira', 'Schminck']:
+        if tocheck.startswith(p):
+            return answer + p
+    if tocheck == 'Ralles-Potles V':
+        return answer + ('RPB' if re.match(r'\d{3}', pages) else 'RPA')
+    return None
 
-def get_source_info(sourcelist, pbw_id, pbw_ref):
-    aggregate_sources = {
-        # Some of our sources are actually multiple works. Here is the key to disambiguate them: either
-        # a list of starting strings or a map of regexp -> starting string.
-        'Alexios Stoudites': ['Eleutherios', 'Ralles-Potles', 'VV', ''],
-        'Docheiariou': lambda s: page_to_num(s, 'Docheiariou', OrderedDict(
-            {r'53': '1', r'58\.[23]\d': '2b', r'58\.1\d': '2a', r'58\.[2-9]\D': '2a', r'58\.1\D': '2',
-             r'59\.40': '2'})),
-        'Documents d\'ecclesiologie ': lambda s: page_to_num(s, 'Documents', OrderedDict(
-            {r'1': 4, r'20[0-6]': 4, r'208': 5, r'21': 5, r'230': 5, r'238': 6, r'250': 7})),
-        'Eleousa: Acts': {r'2[5-7]': 'Eleousa: Acts'},
-        'Esphigmenou': lambda s: page_to_num(s, 'Esphigmenou', {
-            r'4[23]': 1, r'4[56]': 2, r'4[89]': 3, r'5[2-4]': 4, r'5[78]': 5}),
-        'Eustathios Romaios': {r'Peira': 'Eustathios Romaios Peira',
-                               r'Ralles-Potles V, \d{2}\D': 'Eustathios Romaios RPA',
-                               r'Ralles-Potles V, \d{3}\D': 'Eustathios Romaios RPB',
-                               r'Schminck ([IV]+)': r'Schminck \1'},
-        'Gregory VII, in Caspar': {r'([IVX]+,\s?\d+)': r'\1'},
-        'Iveron': {},
-        'Keroularios': {r'ep. to Petros of Antioch (I+)', r'Keroularios \1'},
-        'Lavra': {},
-        'Leo IX': {r'[Ee]p. I? ? to (\w+)': r'to \1'},
-        'Mauropous, Orations': {},
-        'Mauropous, Letters': {},
-        'Nea Mone,': {r'Gedeon': 'Nea Mone, Gedeon',
-                      r'Miklosich-Müller 5.(\d)': r'Nea Mone, Miklosich-Müller \1'},
-        'Panteleemon': {},
-        'Protaton': lambda s: page_to_num(s, 'Protaton', OrderedDict(
-            {r'225.[23]\d': '8a', r'22[4-9]': 8, r'23[0-2]': 8, r'23[6-8]': 9})),
-        'Psellos': parse_psellos_ref,  # yeah, it needs its own
-        'Vatopedi': {},
-        'Xenophontos': {},
-        'Xeropotamou': {}
-    }
-    source_id = pbw_id
-    if pbw_id in aggregate_sources:
-        # We have to look at the source ref to figure out which version of the source we are using
-        aggregates = aggregate_sources[pbw_id]
-        if isinstance(aggregates, dict):
-            for rexp, sstr in aggregates.items():
-                result = re.match(rexp, pbw_ref)
-                if result:
-                    if len(result.groups()):
-                        source_id = "%s %s" % (pbw_id, sstr.replace('##', result.group(1)))
-                    else:
-                        source_id = "%s %s" % (pbw_id, sstr)
-                    break
-        else:
-            for sstr in aggregates:
-                if pbw_ref.startswith(sstr):
-                    source_id = ' '.join([pbw_id, sstr]).rstrip() # to account for the null match
-                    break
-    return sourcelist.get(source_id)
+
+def parse_neamone(refstring, sourcelist):
+    if refstring.startswith('Gedeon'):
+        return 'Nea Mone, Gedeon'
+    else:
+        kstr = 'Nea Mone, Miklosich-Müller'
+        return page_to_key(refstring, kstr, {x: sourcelist[x] for x in sourcelist.keys() if x.startswith(kstr)},
+                           strip="Miklosich-Müller 5.")
+
+
+# Make a persistent class to hold the data
+class PBWSources:
+    def __init__(self, csvfile):
+        """Given a CSV file of sources in the expected format, turn it into a data structure recognisable
+        by PBWStarConstants"""
+        # This will contain the information parsed from the CSV file
+        self.sourcelist = dict()
+        # These are the sources that need something stripped from a reference string.
+        self.stripped = {
+            'Alexios Stoudites': ['Eleutherios', 'Ralles-Potles', 'VV', ''],
+            'Eustathios Romaios': ['Peira', 'Ralles-Potles V', r'Schminck I*'],
+            'Keroularios': ['ep. to Petros of Antioch'],
+            'Nea Mone,': ['Gedeon', 'Miklosich-Müller 5.'],
+            'Psellos': [r'Actum 2', r'Against Ophrydas', r'Andronikos', r'Apologetikos', r'De omnifari doctrina',
+                        r'Eirene', r'Epiphanios', r'Hypomnema', r'Kategoria', r'Keroularios', r'Leichoudes',
+                        r'Malik-shah', r'Mother', r'Nikolaos of Horaia Pege', r'Niketas Maïstor',
+                        r'Philosophica minora I', r'Robert', r'Styliane', r'Xiphilinos', r'Monodies \(Gautier\)',
+                        r'(Orationes panegyricae [IVX]+)', r'(Poema \d+)\.', 'Oratoria minora',
+                        r'Letters \(([\w -]+)\) (\d+)']
+        }
+        # These are our composite sources; we will have to store a function for each which takes a
+        # reference string and returns the right source part.
+        self.composites = {
+            'Alexios Stoudites': lambda x: ref_substring(x, 'Alexios Stoudites', self.stripped['Alexios Stoudites']),
+            'Docheiariou': lambda x: page_to_key(x, 'Docheiariou', self.sourcelist),
+            'Documents d\'ecclesiologie': lambda x: page_to_key(x, 'Documents', self.sourcelist),
+            'Esphigmenou': lambda x: page_to_key(x, 'Esphigmenou', self.sourcelist),
+            'Eustathios Romaios': parse_romaios,
+            'Gregory VII, in Caspar': lambda x: appended_string(x, 'Gregory VII, in Caspar', self.sourcelist),
+            'Iveron': lambda x: page_to_key(x, 'Iveron', self.sourcelist),
+            'Keroularios': lambda x: appended_string(x, 'Keroularios', self.sourcelist,
+                                                     strip=self.stripped['Keroularios'][0]),
+            'Lavra': lambda x: page_to_key(x, 'Lavra', self.sourcelist),
+            'Mauropous: Orations': lambda x: page_to_key(x, 'Mauropous: Orations', self.sourcelist),
+            'Mauropous: Letters': lambda x: page_to_key(x, 'Mauropous: Letters', self.sourcelist),
+            'Nea Mone,': lambda x: parse_neamone(x, self.sourcelist),
+            'Panteleemon': lambda x: page_to_key(x, 'Panteleemon', self.sourcelist),
+            'Patmos: Acts': lambda x: page_to_key(x, 'Patmos: Acts', self.sourcelist),
+            'Protaton': lambda x: page_to_key(x, 'Protaton', self.sourcelist),
+            'Psellos': parse_psellos_ref,
+            'Theophylaktos of Ohrid, Letters': lambda x: page_to_key(x, 'Theophylaktos of Ohrid, Letters',
+                                                                     self.sourcelist),
+            'Vatopedi': lambda x: page_to_key(x, 'Vatopedi', self.sourcelist),
+            'Xenophontos': lambda x: page_to_key(x, 'Xenophontos', self.sourcelist),
+            'Xeropotamou': lambda x: page_to_key(x, 'Xeropotamou', self.sourcelist)
+        }
+
+        # These are the modern scholars who put the source information into PBW records
+        self.authorities = dict()
+        self.authorities['mj'] = {'identifier': 'Jeffreys, Michael J.', 'viaf': '73866641'}
+        self.authorities['tp'] = {'identifier': 'Papacostas, Tassos', 'viaf': '316793603'}
+        self.authorities['ta'] = {'identifier': 'Andrews, Tara Lee', 'viaf': '316505144'}
+        self.authorities['jr'] = {'identifier': 'Ryder, Judith R.', 'viaf': '51999624'}
+        self.authorities['mw'] = {'identifier': 'Whitby, Mary', 'viaf': '34477027'}
+        self.authorities['wa'] = {'identifier': 'Amin, Wahid M.', 'viaf': '213149617100303751518'}
+        self.authorities['bs'] = {'identifier': 'Soravia, Bruna', 'viaf': '69252167'}
+        self.authorities['hm'] = {'identifier': 'Munt, Harry', 'viaf': '78568758'}
+        self.authorities['lo'] = {'identifier': 'Osti, Letizia', 'viaf': '236145542536996640148'}
+        self.authorities['cr'] = {'identifier': 'Roueché, Charlotte', 'viaf': '44335536'}
+        self.authorities['ok'] = {'identifier': 'Karágiṓrgou, ́Olga', 'viaf': '253347413'}
+
+        with open(csvfile, encoding='utf-8', newline='') as fh:
+            reader = csv.DictReader(fh, delimiter=';')
+            for row in reader:
+                # Make an object for the source information
+                source_id = row['PBW Source ID']
+                source_data = dict()
+                add_authors(source_data, source_id, row['Author(ity)'])
+                add_provenance(source_data, source_id, row['Evidence of authorship'])
+                add_pbw_authorities(source_data, row['PBW editor'], self.authorities)
+                add_if_exists(source_data, 'work', row['Source canonical name'])
+                add_if_exists(source_data, 'expression', row['Source edition used'])
+                add_if_exists(source_data, 'url', row['Edition URL'])
+                if row['Page range'] is not None:
+                    source_data['range'] = make_refrange(row['Page range'])
+                self.sourcelist[source_id] = source_data
+
+    def key_for(self, source, refstring):
+        if source in self.sourcelist:
+            return source
+        if source in self.composites:
+            return self.composites[source](refstring)
+
+    def get(self, source):
+        return self.sourcelist.get(source)
+
+    def sourceref(self, source, refstring):
+        """Return the source reference, modified to account for our aggregate sources."""
+        if source in self.stripped:
+            # We have to look at the source ref to figure out which version of the source we are using
+            for expr in self.stripped[source]:
+                refstring = re.sub(expr, '', refstring).lstrip()
+        return refstring

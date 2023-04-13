@@ -1,4 +1,3 @@
-import re
 import PBWSources
 # This package contains a bunch of information curated from the PBW website about authority, authorship
 # and so forth. It is a huge laundry list of data and some initialiser and accessor functions for it; the
@@ -16,7 +15,7 @@ class PBWstarConstants:
         self.mj = {'identifier': 'Jeffreys, Michael J.', 'viaf': '73866641'}
         self.ta = {'identifier': 'Andrews, Tara Lee', 'viaf': '316505144'}
 
-        self.sourcelist = PBWSources.ingest('pbw_sources.csv')
+        self.sourcelist = PBWSources.PBWSources('pbw_sources.csv')
 
         self.entitylabels = {
             'C1': 'Resource:sdhss__C1',    # Social Quality of an Actor (Embodiment)
@@ -31,7 +30,6 @@ class PBWstarConstants:
             'C23': 'Resource:sdhss__C23',  # Religious Identity
             'C24': 'Resource:sdhss__C24',  # Religion or Religious Denomination
             'C29': 'Resource:sdhss__C29',  # Know-How
-            'C99': 'Resource:r11__C99',    # Kinship
             'E13': 'Resource:crm__E13_Attribute_Assignment',
             'E15': 'Resource:crm__E15_Identifier_Assignment',
             'E17': 'Resource:crm__E17_Type_Assignment',
@@ -226,17 +224,17 @@ class PBWstarConstants:
 
     def source(self, factoid):
         """Return all the information we have for the given source ID"""
-        return PBWSources.get_source_info(self.sourcelist, factoid.source, factoid.sourceRef)
+        return self.sourcelist.get(self.sourcelist.key_for(factoid.source, factoid.sourceRef))
 
     def author(self, a):
         """Return the PBW person identifier for the given source author."""
-        srecord = self.sourcelist.get(a, None)
+        srecord = self.source(a)
         if srecord is None:
             return None
         return srecord.get('author', None)
 
     def editor(self, a):
-        srecord = self.sourcelist.get(a, None)
+        srecord = self.source(a)
         if srecord is None:
             return None
         return srecord.get('editor', None)
@@ -245,30 +243,14 @@ class PBWstarConstants:
         """Return the name(s) of the scholar(s) responsible for ingesting the info from the given source
         into the database. Information on the latter is taken from https://pbw2016.kdl.kcl.ac.uk/ref/sources/
         and https://pbw2016.kdl.kcl.ac.uk/ref/seal-editions/"""
-        srecord = self.sourcelist.get(a, None)
+        srecord = self.source(a)
         if srecord is None:
             return None
         return srecord.get('authority', None)
 
     def sourceref(self, factoid):
         """Return the source reference, modified to account for our aggregate sources."""
-        a = factoid.source
-        aref = factoid.sourceRef
-        if a in self.aggregate_sources:
-            # We have to look at the source ref to figure out which version of the source we are using
-            aggregates = self.aggregate_sources[a]
-            if isinstance(aggregates, dict):
-                for rexp, sstr in aggregates.items():
-                    result = re.match(rexp, aref)
-                    if result is not None:
-                        aref = aref.replace(result.group(0), '')
-            else:
-                for rexp in aggregates:
-                    aref = aref.replace(rexp, '')
-        return aref
-
-
-
+        return self.sourcelist.sourceref(factoid.source, factoid.sourceRef)
 
     def get_label(self, lbl):
         """Return the fully-qualified entity or predicate label given the short name.
