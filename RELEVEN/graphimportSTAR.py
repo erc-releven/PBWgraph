@@ -20,19 +20,19 @@ def escape_text(t):
 
 def collect_person_records():
     """Get a list of people whose floruit matches our needs"""
-    relevant = [x for x in mysqlsession.query(pbw.Person).all()
-                if constants.inrange(x.floruit) and len(x.factoids) > 0]
-    # Add the corner cases that we want to include: two emperors and a hegoumenos early in his career
-    for name, code in [('Konstantinos', 8), ('Romanos', 3), ('Neophytos', 107)]:
-        relevant.append(mysqlsession.query(pbw.Person).filter_by(name=name, mdbCode=code).scalar())
-    print("Found %d relevant people" % len(relevant))
-    return relevant
+    # relevant = [x for x in mysqlsession.query(pbw.Person).all()
+    #             if constants.inrange(x.floruit) and len(x.factoids) > 0]
+    # # Add the corner cases that we want to include: two emperors and a hegoumenos early in his career
+    # for name, code in [('Konstantinos', 8), ('Romanos', 3), ('Neophytos', 107)]:
+    #     relevant.append(mysqlsession.query(pbw.Person).filter_by(name=name, mdbCode=code).scalar())
+    # print("Found %d relevant people" % len(relevant))
+    # return relevant
     # Debugging / testing: restrict the list of relevant people
-    # debugnames = ['Anna', 'Apospharios', 'Balaleca', 'Gagik', 'Herve', 'Ioannes', 'Konstantinos', 'Liparites']
-    # debugcodes = [62, 64, 68, 101, 102, 110]
-    # return mysqlsession.query(pbw.Person).filter(
-    #     and_(pbw.Person.name.in_(debugnames), pbw.Person.mdbCode.in_(debugcodes))
-    # ).all()
+    debugnames = ['Anna', 'Apospharios', 'Balaleca', 'Gagik', 'Herve', 'Ioannes', 'Konstantinos', 'Liparites']
+    debugcodes = [62, 64, 68, 101, 102, 110]
+    return mysqlsession.query(pbw.Person).filter(
+        and_(pbw.Person.name.in_(debugnames), pbw.Person.mdbCode.in_(debugcodes))
+    ).all()
 
 
 def _smooth_labels(label):
@@ -197,7 +197,7 @@ def get_source_and_agent(factoid):
         if sourcekey != 'Seals' or factoid.boulloterion is None:
             warn("No boulloterion found for seal-sourced factoid %d" % factoid.factoidKey
                  if sourcekey == 'Seals'
-                 else "Source %s of factoid %d not known" % (sourcekey, factoid.factoidKey))
+                 else "Source %s of factoid %d not known" % (factoid.source, factoid.factoidKey))
             return None, None
     if factoid.boulloterion is not None:
         agentnode = get_boulloterion_authority(factoid.boulloterion)
@@ -432,7 +432,7 @@ def get_source_work_expression(factoid):
     # a CREATION event, asserted by the author.
 
     sourcekey = constants.source(factoid)
-    workinfo = constants.sourcelist[sourcekey]
+    workinfo = constants.sourceinfo(sourcekey)
     # pbw_authority = get_authority_node(constants.authorities(sourcekey))
     editors = get_authority_node(workinfo.get('editor'))
     # The work identifier is the 'work' key, or else the PBW source ID string.
@@ -505,6 +505,9 @@ def get_source_work_expression(factoid):
                     aship_srefnode = "(srcref:%s {reference:'%s', text:'%s'})" % (
                         constants.get_label('F2'), escape_text(afact.sourceRef), escape_text(afact.origLDesc))
                     aship_source = 'srcref'
+            elif 'provenance' in workinfo:
+                # We have a page number
+                pass
             # On to the assertion that the author authored the work
             if aship_authority != author and aship_authority != editors:
                 q += "WITH work, expr "

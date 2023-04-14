@@ -224,17 +224,21 @@ class PBWstarConstants:
 
     def source(self, factoid):
         """Return all the information we have for the given source ID"""
-        return self.sourcelist.get(self.sourcelist.key_for(factoid.source, factoid.sourceRef))
+        return self.sourcelist.key_for(factoid.source, factoid.sourceRef)
+
+    def sourceinfo(self, a):
+        """Return the whole dictionary of info for the given source key."""
+        return self.sourcelist.get(a)
 
     def author(self, a):
         """Return the PBW person identifier for the given source author."""
-        srecord = self.source(a)
+        srecord = self.sourcelist.get(a)
         if srecord is None:
             return None
         return srecord.get('author', None)
 
     def editor(self, a):
-        srecord = self.source(a)
+        srecord = self.sourcelist.get(a)
         if srecord is None:
             return None
         return srecord.get('editor', None)
@@ -243,7 +247,7 @@ class PBWstarConstants:
         """Return the name(s) of the scholar(s) responsible for ingesting the info from the given source
         into the database. Information on the latter is taken from https://pbw2016.kdl.kcl.ac.uk/ref/sources/
         and https://pbw2016.kdl.kcl.ac.uk/ref/seal-editions/"""
-        srecord = self.source(a)
+        srecord = self.sourcelist.get(a)
         if srecord is None:
             return None
         return srecord.get('authority', None)

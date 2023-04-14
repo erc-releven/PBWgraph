@@ -17,8 +17,10 @@ def add_one_or_more(d, key, datum):
 
 def add_editors(d, source_id, editor_names, editor_viafs):
     """Add the editors of the source edition as a list of {identifier: 'name', viaf: 'viafcode'}"""
-    namelist = re.split(r';\s*', editor_names)
-    viaflist = re.split(r';\s*', editor_viafs)
+    namelist = [x for x in re.split(r';\s*', editor_names) if not re.match(r'^\s*$', x)]
+    viaflist = [x for x in re.split(r';\s*', editor_viafs) if not re.match(r'^\s*$', x)]
+    if not namelist:
+        return
     editors = []
     if len(namelist) != len(viaflist):
         raise ImportError(f"Editor list mismatch on line {source_id}")
@@ -28,6 +30,9 @@ def add_editors(d, source_id, editor_names, editor_viafs):
 
 
 def add_pbw_authorities(d, authority_string, pbw_authorities):
+    """Add the PBW authority info that is specified"""
+    if not authority_string:
+        return
     pbwauths = re.split(r';\s*', authority_string)
     d['authority'] = [pbw_authorities[x] for x in pbwauths]
 
@@ -39,8 +44,8 @@ def add_authors(d, source_id, author_string):
     for author in authorlist:
         pbwid = re.match(r'^(\w+) (\d+)', author)
         if pbwid is not None:
-            authors.extend([pbwid.group(1), pbwid.group(2)])
-    if len(authors) == 0:
+            authors.extend([pbwid.group(1), int(pbwid.group(2))])
+    if len(authors) == 0 and author_string != '':
         warn(f"Author {author_string} not created for source {source_id}")
     else:
         d['author'] = authors
@@ -70,97 +75,94 @@ def make_refrange(refrange):
         if mprefix:
             match_set.update([f"{mprefix}.{x}" for x in mrange])
         else:
-            match_set.update(mrange)
+            match_set.update(f"{mrange}")
     return match_set
-
-
-# Functions to lambdafy for the page range parsing
-
-def ref_substring(refstring, prefix, possible):
-    for p in possible:
-        source_id = ' '.join([prefix, possible]).rstrip()
-        if refstring.startswith(p):
-            return source_id
-    return None
-
-
-def page_to_key(refstring, prefix, sourcelist, strip=None):
-    """Given a refstring, the common prefix, and a dictionary of items and their page ranges,
-    return which item the refstring is pointing to."""
-    # Get the list of ranges from the source list
-    ranges = {sourcelist[x].get('range'): x for x in sourcelist.keys()
-              if x.startswith(prefix) and 'range' in sourcelist[x]}
-    # Strip off the beginning of the ref string if necessary
-    matchstring = refstring
-    if strip:
-        matchstring = refstring.replace(strip, '').lstrip()
-    for r, k in ranges.items():
-        if matchstring.startswith(r):
-            return k
-
-
-def appended_string(refstring, prefix, sourcelist, strip=None):
-    components = [x for x in sourcelist.keys() if x.startswith(prefix)]
-    for key in components:
-        mstr = key.replace(prefix, '').lstrip()
-        matchstring = refstring
-        if strip:
-            matchstring = refstring.replace(strip, '').lstrip()
-        if matchstring.startswith(mstr):
-            return key
-
-
-# Some of the sources are special
-def parse_psellos_ref(refstring, sourcelist):
-    # All the static strings
-    for val in ['Actum 2', 'Against Ophrydas', 'Andronikos', 'Apologetikos', 'De omnifari doctrina', 'Eirene',
-                'Epiphanios', 'Hypomnema', 'Kategoria', 'Keroularios', 'Leichoudes', 'Malik-shah', 'Mother',
-                'Nikolaos of Horaia Pege', 'Niketas Maïstor', 'Philosophica minora I', 'Robert', 'Styliane',
-                'Xiphilinos']:
-        if refstring.startswith(val):
-            return f'Psellos, {val}'
-
-    # All the pre-numbered strings
-    for pattern in [r'(Orationes panegyricae [IVX]+)', r'(Poema \d+)\.', ]:
-        m = re.match(pattern, refstring)
-        if m:
-            return f'Psellos, {m.group(1)}'
-    # Monodies
-    if refstring.startswith('Monodies (Gautier)'):
-        return page_to_key(refstring, 'Psellos, Monodies (Gautier)', sourcelist, strip='Monodies (Gautier)')
-    # Oratoria minora
-    if refstring.startswith('Oratoria minora'):
-        return page_to_key(refstring, 'Psellos, Oratoria minora', sourcelist, strip='Oratoria minora')
-
-    # Letters
-    m = re.match(r'Letters \(([\w -]+)\) (\d+)', refstring)
-    if m:
-        return f'Psellos {m.group(1)} {m.group(2)}'
-    return None
-
-
-def parse_romaios(refstring):
-    (tocheck, pages) = refstring.split(', ', 1)
-    answer = 'Eustathios Romaios '
-    for p in ['Peira', 'Schminck']:
-        if tocheck.startswith(p):
-            return answer + p
-    if tocheck == 'Ralles-Potles V':
-        return answer + ('RPB' if re.match(r'\d{3}', pages) else 'RPA')
-    return None
-
-
-def parse_neamone(refstring, sourcelist):
-    if refstring.startswith('Gedeon'):
-        return 'Nea Mone, Gedeon'
-    else:
-        kstr = 'Nea Mone, Miklosich-Müller'
-        return page_to_key(refstring, kstr, {x: sourcelist[x] for x in sourcelist.keys() if x.startswith(kstr)},
-                           strip="Miklosich-Müller 5.")
 
 
 # Make a persistent class to hold the data
 class PBWSources:
+    # Functions to lambdafy for the page range parsing
+
+    @staticmethod
+    def ref_substring(refstring, prefix, possible):
+        for p in possible:
+            source_id = ' '.join([prefix, possible]).rstrip()
+            if refstring.startswith(p):
+                return source_id
+        return None
+
+    def page_to_key(self, refstring, prefix, strip=None):
+        """Given a refstring, the common prefix, and a dictionary of items and their page ranges,
+        return which item the refstring is pointing to."""
+        # Get the list of ranges from the source list
+        ranges = {x: self.sourcelist[x].get('range') for x in self.sourcelist.keys()
+                  if x.startswith(prefix) and 'range' in self.sourcelist[x]}
+        # Strip off the beginning of the ref string if necessary
+        matchstring = refstring
+        if strip:
+            matchstring = refstring.replace(strip, '').lstrip()
+        for k, r in ranges.items():
+            for i in r:
+                if matchstring.startswith(i):
+                    return k
+
+    def appended_string(self, refstring, prefix, strip=None):
+        components = [x for x in self.sourcelist.keys() if x.startswith(prefix)]
+        for key in components:
+            mstr = key.replace(prefix, '').lstrip()
+            matchstring = refstring
+            if strip:
+                matchstring = refstring.replace(strip, '').lstrip()
+            if matchstring.startswith(mstr):
+                return key
+
+    # Some of the sources are special
+    def parse_psellos_ref(self, refstring):
+        # All the static strings
+        for val in ['Actum 2', 'Against Ophrydas', 'Andronikos', 'Apologetikos', 'De omnifari doctrina', 'Eirene',
+                    'Epiphanios', 'Hypomnema', 'Kategoria', 'Keroularios', 'Leichoudes', 'Malik-shah', 'Mother',
+                    'Nikolaos of Horaia Pege', 'Niketas Maïstor', 'Philosophica minora I', 'Robert', 'Styliane',
+                    'Xiphilinos']:
+            if refstring.startswith(val):
+                return f'Psellos, {val}'
+
+        # All the pre-numbered strings
+        for pattern in [r'(Orationes panegyricae [IVX]+)', r'(Poema \d+)\.', ]:
+            m = re.match(pattern, refstring)
+            if m:
+                return f'Psellos, {m.group(1)}'
+        # Monodies
+        if refstring.startswith('Monodies (Gautier)'):
+            return self.page_to_key(refstring, 'Psellos, Monodies (Gautier)', strip='Monodies (Gautier)')
+        # Oratoria minora
+        if refstring.startswith('Oratoria minora'):
+            return self.page_to_key(refstring, 'Psellos, Oratoria minora', strip='Oratoria minora')
+
+        # Letters
+        m = re.match(r'Letters \(([\w -]+)\) (\d+)', refstring)
+        if m:
+            return f'Psellos {m.group(1)} {m.group(2)}'
+        return None
+
+    @staticmethod
+    def parse_romaios(refstring):
+        (tocheck, pages) = refstring.split(', ', 1)
+        answer = 'Eustathios Romaios '
+        for p in ['Peira', 'Schminck']:
+            if tocheck.startswith(p):
+                return answer + p
+        if tocheck == 'Ralles-Potles V':
+            return answer + ('RPB' if re.match(r'\d{3}', pages) else 'RPA')
+        return None
+
+    def parse_neamone(self, refstring):
+        if refstring.startswith('Gedeon'):
+            return 'Nea Mone, Gedeon'
+        else:
+            kstr = 'Nea Mone, Miklosich-Müller'
+            return self.page_to_key(refstring, kstr, strip="Miklosich-Müller 5.")
+
+    # Initialize from the CSV file
     def __init__(self, csvfile):
         """Given a CSV file of sources in the expected format, turn it into a data structure recognisable
         by PBWStarConstants"""
@@ -182,28 +184,27 @@ class PBWSources:
         # These are our composite sources; we will have to store a function for each which takes a
         # reference string and returns the right source part.
         self.composites = {
-            'Alexios Stoudites': lambda x: ref_substring(x, 'Alexios Stoudites', self.stripped['Alexios Stoudites']),
-            'Docheiariou': lambda x: page_to_key(x, 'Docheiariou', self.sourcelist),
-            'Documents d\'ecclesiologie': lambda x: page_to_key(x, 'Documents', self.sourcelist),
-            'Esphigmenou': lambda x: page_to_key(x, 'Esphigmenou', self.sourcelist),
-            'Eustathios Romaios': parse_romaios,
-            'Gregory VII, in Caspar': lambda x: appended_string(x, 'Gregory VII, in Caspar', self.sourcelist),
-            'Iveron': lambda x: page_to_key(x, 'Iveron', self.sourcelist),
-            'Keroularios': lambda x: appended_string(x, 'Keroularios', self.sourcelist,
-                                                     strip=self.stripped['Keroularios'][0]),
-            'Lavra': lambda x: page_to_key(x, 'Lavra', self.sourcelist),
-            'Mauropous: Orations': lambda x: page_to_key(x, 'Mauropous: Orations', self.sourcelist),
-            'Mauropous: Letters': lambda x: page_to_key(x, 'Mauropous: Letters', self.sourcelist),
-            'Nea Mone,': lambda x: parse_neamone(x, self.sourcelist),
-            'Panteleemon': lambda x: page_to_key(x, 'Panteleemon', self.sourcelist),
-            'Patmos: Acts': lambda x: page_to_key(x, 'Patmos: Acts', self.sourcelist),
-            'Protaton': lambda x: page_to_key(x, 'Protaton', self.sourcelist),
-            'Psellos': parse_psellos_ref,
-            'Theophylaktos of Ohrid, Letters': lambda x: page_to_key(x, 'Theophylaktos of Ohrid, Letters',
-                                                                     self.sourcelist),
-            'Vatopedi': lambda x: page_to_key(x, 'Vatopedi', self.sourcelist),
-            'Xenophontos': lambda x: page_to_key(x, 'Xenophontos', self.sourcelist),
-            'Xeropotamou': lambda x: page_to_key(x, 'Xeropotamou', self.sourcelist)
+            'Alexios Stoudites': lambda x: self.ref_substring(x, 'Alexios Stoudites',
+                                                              self.stripped['Alexios Stoudites']),
+            'Docheiariou': lambda x: self.page_to_key(x, 'Docheiariou'),
+            'Documents d\'ecclesiologie': lambda x: self.page_to_key(x, 'Documents'),
+            'Esphigmenou': lambda x: self.page_to_key(x, 'Esphigmenou'),
+            'Eustathios Romaios': self.parse_romaios,
+            'Gregory VII, in Caspar': lambda x: self.appended_string(x, 'Gregory VII, in Caspar'),
+            'Iveron': lambda x: self.page_to_key(x, 'Iveron'),
+            'Keroularios': lambda x: self.appended_string(x, 'Keroularios', strip=self.stripped['Keroularios'][0]),
+            'Lavra': lambda x: self.page_to_key(x, 'Lavra'),
+            'Mauropous: Orations': lambda x: self.page_to_key(x, 'Mauropous: Orations'),
+            'Mauropous: Letters': lambda x: self.page_to_key(x, 'Mauropous: Letters'),
+            'Nea Mone,': self.parse_neamone,
+            'Panteleemon': lambda x: self.page_to_key(x, 'Panteleemon'),
+            'Patmos: Acts': lambda x: self.page_to_key(x, 'Patmos: Acts'),
+            'Protaton': lambda x: self.page_to_key(x, 'Protaton'),
+            'Psellos': self.parse_psellos_ref,
+            'Theophylaktos of Ohrid, Letters': lambda x: self.page_to_key(x, 'Theophylaktos of Ohrid, Letters'),
+            'Vatopedi': lambda x: self.page_to_key(x, 'Vatopedi'),
+            'Xenophontos': lambda x: self.page_to_key(x, 'Xenophontos'),
+            'Xeropotamou': lambda x: self.page_to_key(x, 'Xeropotamou')
         }
 
         # These are the modern scholars who put the source information into PBW records
@@ -221,7 +222,7 @@ class PBWSources:
         self.authorities['ok'] = {'identifier': 'Karágiṓrgou, ́Olga', 'viaf': '253347413'}
 
         with open(csvfile, encoding='utf-8', newline='') as fh:
-            reader = csv.DictReader(fh, delimiter=';')
+            reader = csv.DictReader(fh)
             for row in reader:
                 # Make an object for the source information
                 source_id = row['PBW Source ID']
@@ -232,7 +233,8 @@ class PBWSources:
                 add_if_exists(source_data, 'work', row['Source canonical name'])
                 add_if_exists(source_data, 'expression', row['Source edition used'])
                 add_if_exists(source_data, 'url', row['Edition URL'])
-                if row['Page range'] is not None:
+                add_editors(source_data, 'editor', row['Editor name'], row['Editor VIAF'])
+                if row['Page range']:
                     source_data['range'] = make_refrange(row['Page range'])
                 self.sourcelist[source_id] = source_data
 
