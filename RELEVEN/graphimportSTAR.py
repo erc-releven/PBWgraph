@@ -150,23 +150,6 @@ def identifier_handler(sqlperson, graphperson):
             session.run(idassertion.replace('COMMAND', 'CREATE'))
 
 
-def disambiguation_handler(sqlperson, graphperson):
-    """The short description of the person provided by PBW"""
-    orig = 'person/%d' % sqlperson.personKey
-    disassertion = _matchid('p', graphperson)
-    disassertion += _matchid('pbw', constants.pbw_agent)
-    disassertion += _matchid('pred', constants.get_predicate('P3'))
-    disassertion += "MERGE (desc:%s {%s:\"%s\"}) " % (
-        constants.get_label('E62'), constants.get_label('P190'), escape_text(sqlperson.descName))
-    disassertion += "WITH p, pred, desc, pbw "
-    disassertion += _create_assertion_query(orig, 'p', 'pred', 'desc', 'pbw', None)
-    disassertion += "RETURN a"
-    with constants.graphdriver.session() as session:
-        result = session.run(disassertion.replace('COMMAND', 'MATCH')).single()
-        if result is None:
-            session.run(disassertion.replace('COMMAND', 'CREATE'))
-
-
 def _find_or_create_event(person, eventclass, predicate):
     """Helper function to find the relevant event for event-based factoids"""
     query = _matchid('pers', person)
@@ -259,7 +242,7 @@ def get_boulloterion(boulloterion, pbweditor):
             # The seal. Make a unique ID from collectionKey.boulloterionKey
             seal_id = "%d.%d.%d" % (seal.collectionKey, seal.boulloterionKey, seal.collectionRef)
             q += "MERGE (seal%d:%s {%s:\"%s\"}) " % (
-                i, constants.get_label('E22'), constants.get_label('P48'), seal_id)
+                i, constants.get_label('E22'), constants.get_label('P3'), seal_id)
             # The curation activity; one per curated holding
             q += "MERGE (cur%d:%s {%s:\"%s\"}) " % (
                 i, constants.get_label('E87'), constants.get_label('P1'), coll)
@@ -277,7 +260,7 @@ def get_boulloterion(boulloterion, pbweditor):
             result = session.run(q.replace('COMMAND', 'CREATE')).single()
             # Sanity check
             if result['boul.uuid'] != boul_node:
-                raise "Boulloterion metadata not created!"
+                raise Exception("Boulloterion metadata not created!")
     return boul_node
 
 
@@ -448,7 +431,7 @@ def get_source_work_expression(factoid):
     # First see if the expression already exists. We cheat here by setting a 'pbwid' on the
     # expression for easy lookup.
     expression = "(expr:%s {%s: \"%s\", pbwid: \"%s\"})" % (
-        constants.get_label('F2'), constants.get_label('P48'), escape_text(exprid), sourcekey)
+        constants.get_label('F2'), constants.get_label('P3'), escape_text(exprid), sourcekey)
     mquery = "MATCH %s RETURN expr.uuid" % expression
     with constants.graphdriver.session() as session:
         result = session.run(mquery).single()
@@ -471,7 +454,7 @@ def get_source_work_expression(factoid):
         # the work; this is based on, well, the edition.
         q = _matchid('editors', editors)
         q += _matchid('r3', constants.get_predicate('R3'))
-        q += "MERGE (work:%s {%s: \"%s\"}) " % (constants.get_label('F1'), constants.get_label('P48'), workid)
+        q += "MERGE (work:%s {%s: \"%s\"}) " % (constants.get_label('F1'), constants.get_label('P3'), workid)
         q += "CREATE %s " % expression
         q += "WITH editors, r3, work, expr "
         q += _create_assertion_query(None, 'work', 'r3', 'expr', 'editors', 'expr')
@@ -498,8 +481,7 @@ def get_source_work_expression(factoid):
                     fact_person = afact.main_person()
                     if len(fact_person) > 1:
                         print("More than one main person in a factoid??")
-                    aship_authority = _find_or_create_pbwperson(
-                        fact_person[0].name, fact_person[0].mdbCode, fact_person[0].descName)
+                    aship_authority = _find_or_create_pbwperson(fact_person[0])
                     # We have to make a sourceref expression node, connected to this expression, for
                     # the factoid source
                     aship_srefnode = "(srcref:%s {%s:'%s', %s:'%s'})" % (
@@ -534,23 +516,27 @@ def get_source_work_expression(factoid):
 
 def _find_or_create_identified_entity(etype, agent, identifier, dname):
     """Return an identified entity. This can be a E22 Human-Made Object, an E21 Person, an E39 Agent,
-    or an E74 Group depending on context. It is labeled with the identifier via an E14 Identifier Assignment
-    carried outby the given agent, with dname going into a custom 'descname' property."""
-    # We can't merge with comma statements, so we have to do it with successive one-liners.
+    or an E74 Group depending on context. It is labeled with the identifier via an E15 Identifier Assignment
+    carried out by the given agent, with dname becoming our preferred human-readable identifier. If disamb
+    is present, it becomes a note (via P3 has note) on the entity object."""
     if etype == constants.get_label('E22'):
         url = 'https://pbw2016.kdl.kcl.ac.uk/boulloterion/%s' % identifier
     elif 'Byzantine' in agent:
         url = 'https://pbw2016.kdl.kcl.ac.uk/person/%s' % identifier.replace(' ', '/')
     else:
         url = 'https://viaf.org/viaf/%s/' % identifier
+    # We can't merge with comma statements, so we have to do it with successive one-liners.
     # Start the merge from the specific information we have, which is the agent and the identifier itself.
+    # E15:idass -[P14 carried out by]-> coll
+    # E15:idass -[P37 assigned]-> E42:idlabel -[:P190 has content]-> "url"
+    # E15:idass -[P140 assigned to]-> etype:p -[P3 has note]-> "dname"
     nodelookup = _matchid('coll', agent)
     nodelookup += "MERGE (idlabel:%s {%s:'%s'}) " \
                   "MERGE (coll)<-[:%s]-(idass:%s)-[:%s]->(idlabel) " \
                   "MERGE (idass)-[:%s]->(p:%s {%s:'%s'}) RETURN p" % \
                   (constants.get_label('E42'), constants.get_label('P190'), url,
                    constants.get_label('P14'), constants.get_label('E15'), constants.get_label('P37'),
-                   constants.get_label('P140'), etype, constants.get_label('P48'), escape_text(dname))
+                   constants.get_label('P140'), etype, constants.get_label('P3'), escape_text(dname))
     with constants.graphdriver.session() as session:
         graph_entity = session.run(nodelookup).single()['p']
         if 'uuid' not in graph_entity:
@@ -559,9 +545,10 @@ def _find_or_create_identified_entity(etype, agent, identifier, dname):
     return graph_entity.get('uuid')
 
 
-def _find_or_create_pbwperson(name, code, displayname):
+def _find_or_create_pbwperson(sqlperson):
     return _find_or_create_identified_entity(
-        constants.get_label('E21'), constants.pbw_agent, "%s %d" % (name, code), displayname)
+        constants.get_label('E21'), constants.pbw_agent,
+        "%s %d" % (sqlperson.name, sqlperson.mdbCode), sqlperson.descName)
 
 
 def _find_or_create_viafperson(name, viafid):
@@ -580,7 +567,7 @@ def get_author_node(authorlist):
         pcode = mutable_list.pop(0)
         # We need to get the SQL record for the author in case they aren't in the DB yet
         sqlperson = mysqlsession.query(pbw.Person).filter_by(name=pname, mdbCode=pcode).scalar()
-        authors.append(_find_or_create_pbwperson(pname, pcode, sqlperson.descName))
+        authors.append(_find_or_create_pbwperson(sqlperson))
     if len(authors) > 1:
         # It is our multi-authored text. Make a group because both authors share authority.
         return _find_or_create_authority_group(authors)
@@ -625,7 +612,7 @@ def _find_or_create_authority_group(members):
 
 
 def _get_source_lang(factoid):
-    lkeys = {2: 'gr', 3: 'la', 4: 'ar', 5: 'hy'}
+    lkeys = {2: 'grc', 3: 'la', 4: 'ar', 5: 'xcl'}
     try:
         return lkeys.get(factoid.oLangKey)
     except NameError:
@@ -686,8 +673,9 @@ def appellation_handler(sourcenode, agent, factoid, graphperson):
             olang = _get_source_lang(factoid) or 'gr'
         print("Adding second name %s (%s '%s')" % (name_en, olang, name_ol))
 
-    appassertion += "MERGE (n:%s {en:'%s', %s:'%s'}) " % (
-        constants.get_label('E41'), escape_text(name_en), olang, escape_text(name_ol))
+    content = '["%s@en","%s@%s"]' % (escape_text(name_en), escape_text(name_ol), olang)
+    appassertion += "MERGE (n:%s {%s:%s}) " % (
+        constants.get_label('E41'), constants.get_label('P190'), content)
     appassertion += "WITH p, agent, source, pred, n "
     appassertion += _create_assertion_query(orig, 'p', 'pred', 'n', 'agent', 'source')
     appassertion += "RETURN a"
@@ -899,7 +887,7 @@ def kinship_handler(sourcenode, agent, factoid, graphperson):
         if kin.name == 'Anonymi' or kin.name == 'Anonymae':
             # We skip kin who are anonymous groups
             continue
-        graphkin = _find_or_create_pbwperson(kin.name, kin.mdbCode, kin.descName)
+        graphkin = _find_or_create_pbwperson(kin)
         if graphkin == graphperson:
             warn("Person %s listed as related to self" % kin)
             continue
@@ -957,10 +945,13 @@ def record_assertion_factoids():
     database creation event."""
     e13 = constants.get_label('E13')  # Attribute_Assignment
     e31 = constants.get_label('E31')  # Document
+    e52 = constants.get_label('E52')  # Time-Span
     f2 = constants.get_label('F2')    # Expression
     f28 = constants.get_label('F28')  # Expression Creation
+    p4 = constants.get_label('P4')    # has time-span
     p14 = constants.get_label('P14')  # carried out by
     p70 = constants.get_label('P70')  # documents
+    p80 = constants.get_label('P80')  # end is qualified by
     r17 = constants.get_label('R17')  # created
     r76 = constants.get_label('R76')  # is derivative of
     with constants.graphdriver.session() as session:
@@ -968,13 +959,15 @@ def record_assertion_factoids():
         timestamp = datetime.now(timezone.utc).isoformat()
         # NOTE we will have to remove the a.origsource attribute later
         findnewassertions = "MATCH (tla) WHERE tla.uuid = '%s' " \
-                            "CREATE (dbr:%s {timestamp:datetime('%s')})-[:%s {role:'recorder'}]->(tla) " \
+                            "CREATE (dbr:%s)-[:%s {role:'recorder'}]->(tla), " \
+                            "(dbr)-[:%s]->(ts:%s {%s: datetime('%s')}) " \
                             "WITH tla, dbr " \
                             "MATCH (a:%s) WHERE NOT (a)<-[:%s]-(:%s) " \
                             "CREATE (a)<-[:%s]-(d:%s:%s)<-[:%s]-(dbr) " \
-                            "SET d.%s = a.origsource " \
+                            "SET d.%s = a.origsource REMOVE a.origsource " \
                             "RETURN dbr, count(d) as newrecords" % (tla,
-                                                                    f28, timestamp, p14,
+                                                                    f28, p14,
+                                                                    p4, e52, p80, timestamp,
                                                                     e13, p70, e31,
                                                                     p70, e31, f2, r17,
                                                                     r76)
@@ -985,12 +978,14 @@ def record_assertion_factoids():
             # go back and delete the db record
             session.run('MATCH (dbr) WHERE dbr.timestamp = "%s" DELETE dbr' % timestamp)
         else:
-            # make sure the URI is set for all nodes
+            # make sure the URI is set for all nodes and remove their UUIDs
             result = session.run('MATCH (n:Resource) WHERE n.uri IS NULL '
                                  'SET n.uri = "https://r11.eu/rdf/resource/" + n.uuid '
-                                 'RETURN COUNT(n) AS nct').single()
-            if len(result) != 1:
+                                 'REMOVE n.uuid RETURN COUNT(n) AS nct').single()
+            if not result:
                 warn("Something went wrong setting URIs!")
+            # clean out the convenience properties
+            session.run('MATCH (n:Resource) REMOVE n.pbwid REMOVE n.prefix')
 
 
 def process_persons():
@@ -1001,7 +996,7 @@ def process_persons():
     seals = 0
 
     # Get the classes of info that are directly in the person record
-    direct_person_records = ['Gender', 'Disambiguation', 'Identifier']
+    direct_person_records = ['Gender', 'Identifier']
     # Get the list of factoid types in the PBW DB
     factoid_types = [x.typeName for x in mysqlsession.query(pbw.FactoidType).all() if x.typeName != '(Unspecified)']
     for person in collect_person_records():
@@ -1011,7 +1006,7 @@ def process_persons():
         processed += 1
         # Create or find the person node
         print("*** Making/finding node for person %s %d ***" % (person.name, person.mdbCode))
-        graph_person = _find_or_create_pbwperson(person.name, person.mdbCode, person.descName)
+        graph_person = _find_or_create_pbwperson(person)
 
         # Get the 'factoids' that are directly in the person record
         for ftype in direct_person_records:

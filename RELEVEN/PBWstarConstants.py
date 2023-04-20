@@ -35,14 +35,14 @@ class PBWstarConstants:
             'E17': 'Resource:crm__E17_Type_Assignment',
             'E18': 'Resource:crm__E18_Physical_Thing',
             'E21': 'Resource:crm__E21_Person',
-            'E22': 'Resource:crm__E22_Human_Made_Object',
+            'E22': 'Resource:`crm__E22_Human-Made_Object`',
             'E31': 'Resource:crm__E31_Document',
             'E33': 'Resource:crm__E33_Linguistic_Object',
             'E34': 'Resource:crm__E34_Inscription',
             'E39': 'Resource:crm__E39_Actor',
             'E41': 'Resource:crm__E41_Appellation',
             'E42': 'Resource:crm__E42_Identifier',
-            'E52': 'Resource:crm__E52_Time_Span',
+            'E52': 'Resource:`crm__E52_Time-Span`',
             'E55': 'Resource:crm__E55_Type',
             'E56': 'Resource:crm__E56_Language',
             'E62': 'Resource:crm__E62_String',
@@ -61,7 +61,7 @@ class PBWstarConstants:
             'P1': 'crm__P1_is_identified_by',
             'P2': 'crm__P2_has_type',
             'P3': 'crm__P3_has_note',
-            'P4': 'crm__P4_has_time_span',
+            'P4': '`crm__P4_has_time-span`',
             'P14': 'crm__P14_carried_out_by',
             'P16': 'crm__P16_used_specific_object',
             'P17': 'crm__P17_was_motivated_by',
@@ -71,6 +71,7 @@ class PBWstarConstants:
             'P48': 'crm__P48_has_preferred_identifier',
             'P51': 'crm__P51_has_former_or_current_owner',
             'P70': 'crm__P70_documents',
+            'P80': 'crm__P80_end_is_qualified_by',
             'P94': 'crm__P94_has_created',
             'P100': 'crm__P100_was_death_of',
             'P102': 'crm__P102_has_title',
@@ -190,13 +191,13 @@ class PBWstarConstants:
         # Initialise our group agents and the data structures we need to start
         print("Setting up PBW constants...")
         # Make our anonymous agent PBW for the un-sourced information
-        pbwcmd = "COMMAND (a:%s {descname:'Prosopography of the Byzantine World', " \
-                 "prefix:'https://pbw2016.kdl.kcl.ac.uk/person/', " \
-                 "constant:TRUE}) RETURN a" % self.entitylabels.get('E39')
+        pbwcmd = "COMMAND (a:%s {%s:'Prosopography of the Byzantine World', " \
+                 "prefix:'https://pbw2016.kdl.kcl.ac.uk/person/'}) RETURN a" % (
+            self.entitylabels.get('E39'), self.get_label('P3'))
         self.pbw_agent = self._fetch_uuid_from_query(pbwcmd)
         # and our VIAF agent for identifying PBW contributors
-        viafcmd = "COMMAND (a:%s {descname:'Virtual Internet Authority File', prefix:'https://viaf.org/viaf/', " \
-                  "constant:TRUE}) RETURN a" % self.entitylabels.get('E39')
+        viafcmd = "COMMAND (a:%s {%s:'Virtual Internet Authority File', " \
+                  "prefix:'https://viaf.org/viaf/'}) RETURN a" % (self.entitylabels.get('E39'), self.get_label('P3'))
         self.viaf_agent = self._fetch_uuid_from_query(viafcmd)
 
         # Some of these factoid types have their own controlled vocabularies.
@@ -272,9 +273,14 @@ class PBWstarConstants:
         an exception if no predicate with this key is defined."""
         if p not in self.prednodes:
             fqname = self.predicates[p]
-            predq = "COMMAND (n:Resource:%s {constant:TRUE}) RETURN n" % fqname
-            npred = self._fetch_uuid_from_query(predq)
-            self.prednodes[p] = npred
+            # Fish out the actual ontology predicate
+            dqname = fqname.replace('`', '').split('__')[1]
+            with self.graphdriver.session() as session:
+                result = session.run("MATCH (n:Resource:r11__Relationship {r11__name:\"%s\"}) RETURN n.uuid"
+                                     % dqname).single()
+                if not result:
+                    raise Exception("Predicate %s not found - have you set up the ontology?" % fqname)
+                self.prednodes[p] = result[0]
         return self.prednodes[p]
 
     # Accessors / creators for our controlled vocabularies
@@ -282,15 +288,15 @@ class PBWstarConstants:
         if label in self.cv[category]:
             return self.cv[category][label]
         # We have to create the node, possibly attaching it to a superclass
-        nodeq = "(cventry:%s {constant:TRUE, value:\"%s\"})" % (nodeclass, label)
+        nodeq = "(cventry:%s {%s:\"%s\"})" % (nodeclass, self.get_label('P190'), label)
         nq = "COMMAND %s" % nodeq
         if superlabel is not None:
-            nq = "MERGE (super:%s {constant:TRUE, value:\"%s\"}) WITH super COMMAND %s-[:%s]->(super) " % (
-                self.get_label('E55'), superlabel, nodeq, self.get_label('P2'))
+            nq = "MERGE (super:%s {%s:\"%s\"}) WITH super COMMAND %s-[:%s]->(super) " % (
+                self.get_label('E55'), self.get_label('P190'), superlabel, nodeq, self.get_label('P2'))
         nq += " RETURN cventry"
         uuid = self._fetch_uuid_from_query(nq)
         if uuid is None:
-            raise('UUID for %s label (%s) not found' % (label, category))
+            raise Exception('UUID for %s label (%s) not found' % (label, category))
         self.cv[category][label] = uuid
         return uuid
 
