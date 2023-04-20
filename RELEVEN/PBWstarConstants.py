@@ -84,6 +84,7 @@ class PBWstarConstants:
             'P148': 'crm__P148_has_component',
             'P165': 'crm__P165_incorporates',
             'P177': 'crm__P177_assigned_property_type',
+            'P190': 'crm__P190_has_symbolic_content',
             'R3': 'lrmoo__R3',     # is realised in
             'R5': 'lrmoo__R5',     # has component
             'R15': 'lrmoo__R15',   # has fragment
@@ -223,7 +224,9 @@ class PBWstarConstants:
     # Lookup functions
 
     def source(self, factoid):
-        """Return all the information we have for the given source ID"""
+        """Return all the information we have for the given source ID. Special-case the 'seals' source"""
+        if factoid.source == 'Seals':
+            return factoid.source
         return self.sourcelist.key_for(factoid.source, factoid.sourceRef)
 
     def sourceinfo(self, a):

@@ -9,12 +9,6 @@ def add_if_exists(d, key, datum):
         d[key] = datum
 
 
-def add_one_or_more(d, key, datum):
-    if datum is None or re.match(r'^\s*$', datum) or datum == 'n/a':
-        return
-    d[key] = re.split(r';\s*', datum)
-
-
 def add_editors(d, source_id, editor_names, editor_viafs):
     """Add the editors of the source edition as a list of {identifier: 'name', viaf: 'viafcode'}"""
     namelist = [x for x in re.split(r';\s*', editor_names) if not re.match(r'^\s*$', x)]
@@ -59,7 +53,8 @@ def add_provenance(d, source_id, prov_string):
         d['factoid'] = factoid_id.group(1)
     else:
         # This didn't match a factoid. Put it in as a provenance
-        warn(f"No factoid key found for provenance of source {source_id}")
+        if 'author' in d and len(d['author']):
+            warn(f"No factoid key found for provenance of source {source_id}")
         d['provenance'] = prov_string
 
 
@@ -157,7 +152,8 @@ class PBWSources:
 
     def parse_neamone(self, refstring):
         if refstring.startswith('Gedeon'):
-            return 'Nea Mone, Gedeon'
+            kstr = 'Nea Mone, Gedeon'
+            return self.page_to_key(refstring, kstr, strip="Gedeon")
         else:
             kstr = 'Nea Mone, Miklosich-Müller'
             return self.page_to_key(refstring, kstr, strip="Miklosich-Müller 5.")
@@ -193,6 +189,7 @@ class PBWSources:
             'Gregory VII, in Caspar': lambda x: self.appended_string(x, 'Gregory VII, in Caspar'),
             'Iveron': lambda x: self.page_to_key(x, 'Iveron'),
             'Keroularios': lambda x: self.appended_string(x, 'Keroularios', strip=self.stripped['Keroularios'][0]),
+            'Kleinchroniken': lambda x: self.page_to_key(x, 'Kleinchroniken'),
             'Lavra': lambda x: self.page_to_key(x, 'Lavra'),
             'Mauropous: Orations': lambda x: self.page_to_key(x, 'Mauropous: Orations'),
             'Mauropous: Letters': lambda x: self.page_to_key(x, 'Mauropous: Letters'),
@@ -234,7 +231,7 @@ class PBWSources:
                 add_if_exists(source_data, 'expression', row['Source edition used'])
                 add_if_exists(source_data, 'url', row['Edition URL'])
                 add_editors(source_data, 'editor', row['Editor name'], row['Editor VIAF'])
-                if row['Page range']:
+                if row['Page range'] and not re.match(r'^\s+$', row['Page range']):
                     source_data['range'] = make_refrange(row['Page range'])
                 self.sourcelist[source_id] = source_data
 
@@ -242,7 +239,11 @@ class PBWSources:
         if source in self.sourcelist:
             return source
         if source in self.composites:
-            return self.composites[source](refstring)
+            key = self.composites[source](refstring)
+            if key is None:
+                key = 'OUT_OF_SCOPE'
+            return key
+        return None
 
     def get(self, source):
         return self.sourcelist.get(source)

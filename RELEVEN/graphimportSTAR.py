@@ -92,7 +92,6 @@ def _create_assertion_query(factoid, subj, pred, obj, auth, src, var="a"):
 
 
 def gender_handler(sqlperson, graphperson):
-    uncertain = False
     orig = 'person/%d' % sqlperson.personKey
     pbw_sex = sqlperson.sex
     if pbw_sex == 'Mixed':  # we have already excluded Anonymi
@@ -102,12 +101,10 @@ def gender_handler(sqlperson, graphperson):
     elif pbw_sex == '(Unspecified)':
         pbw_sex = 'Unknown'
     elif pbw_sex == 'Eunuch (Probable)':
-        pbw_sex = 'Eunuch'
-        uncertain = True
-    if uncertain:
-        assertion_props = ' {uncertain:true}'
-    else:
-        assertion_props = ''
+        # All of these are known only from seals; presumably they are "probable eunuchs" based on
+        # their titles, but I have no information about who made this determination or why. So we
+        # go back to treating them as male, and can make a separate inference if we ever find out.
+        pbw_sex = 'Male'
     if pbw_sex != "Unknown":
         # print("...setting gender assignment to %s%s" % (pbw_sex, " (maybe)" if uncertain else ""))
         # Make the event tied to this person
@@ -116,7 +113,7 @@ def gender_handler(sqlperson, graphperson):
         genderassertion += _matchid('pbw', constants.pbw_agent)
         genderassertion += _matchid('sp41', constants.get_predicate('P41'))
         # Have to add the Resource tag here manually, since we are making a custom predicate node
-        genderassertion += "MERGE (sp42:Resource:%s%s) " % (constants.get_label('P42'), assertion_props)
+        genderassertion += "MERGE (sp42:Resource:%s) " % constants.get_label('P42')
         genderassertion += "WITH p, s, pbw, sp41, sp42 "
         genderassertion += _create_assertion_query(orig, 'ga:%s' % constants.get_label('E17'),
                                                    'sp41', 'p', 'pbw', None, 'a1')
@@ -142,7 +139,8 @@ def identifier_handler(sqlperson, graphperson):
     idassertion = _matchid('p', graphperson)
     idassertion += _matchid('pbw', constants.pbw_agent)
     idassertion += _matchid('pred', constants.get_predicate('P1'))
-    idassertion += "MERGE (app:%s {value: \"%s\"}) " % (constants.get_label('E41'), appellation)
+    idassertion += "MERGE (app:%s {%s: \"%s\"}) " % (
+        constants.get_label('E41'), constants.get_label('P190'), appellation)
     idassertion += "WITH p, pbw, pred, app "
     idassertion += _create_assertion_query(orig, 'p', 'pred', 'app', 'pbw', None)
     idassertion += "RETURN a"
@@ -158,7 +156,8 @@ def disambiguation_handler(sqlperson, graphperson):
     disassertion = _matchid('p', graphperson)
     disassertion += _matchid('pbw', constants.pbw_agent)
     disassertion += _matchid('pred', constants.get_predicate('P3'))
-    disassertion += "MERGE (desc:%s {value:\"%s\"}) " % (constants.get_label('E62'), escape_text(sqlperson.descName))
+    disassertion += "MERGE (desc:%s {%s:\"%s\"}) " % (
+        constants.get_label('E62'), constants.get_label('P190'), escape_text(sqlperson.descName))
     disassertion += "WITH p, pred, desc, pbw "
     disassertion += _create_assertion_query(orig, 'p', 'pred', 'desc', 'pbw', None)
     disassertion += "RETURN a"
@@ -397,8 +396,9 @@ def get_text_sourceref(factoid):
     sourcekey = constants.source(factoid)
     agent = get_authority_node(constants.authorities(sourcekey))
     # First see whether this source reference already exists
-    srcref_node = "(sourceref:%s {reference:'%s', text:'%s'})" % (
-        constants.get_label('E33'), escape_text(constants.sourceref(factoid)), escape_text(factoid.origLDesc))
+    srcref_node = "(sourceref:%s {%s:'%s', %s:'%s'})" % (
+        constants.get_label('E33'), constants.get_label('P3'), escape_text(constants.sourceref(factoid)),
+        constants.get_label('P190'), escape_text(factoid.origLDesc))
     qm = _matchid('expr', wholesource)
     qm += "MATCH %s " % srcref_node
     qm += _create_assertion_query(None, 'expr', constants.get_label('R15'), 'sourceref', 'agent', None)
@@ -502,8 +502,9 @@ def get_source_work_expression(factoid):
                         fact_person[0].name, fact_person[0].mdbCode, fact_person[0].descName)
                     # We have to make a sourceref expression node, connected to this expression, for
                     # the factoid source
-                    aship_srefnode = "(srcref:%s {reference:'%s', text:'%s'})" % (
-                        constants.get_label('F2'), escape_text(afact.sourceRef), escape_text(afact.origLDesc))
+                    aship_srefnode = "(srcref:%s {%s:'%s', %s:'%s'})" % (
+                        constants.get_label('F2'), constants.get_label('P3'), escape_text(afact.sourceRef),
+                        constants.get_label('P190'), escape_text(afact.origLDesc))
                     aship_source = 'srcref'
             elif 'provenance' in workinfo:
                 # We have a page number
@@ -544,10 +545,10 @@ def _find_or_create_identified_entity(etype, agent, identifier, dname):
         url = 'https://viaf.org/viaf/%s/' % identifier
     # Start the merge from the specific information we have, which is the agent and the identifier itself.
     nodelookup = _matchid('coll', agent)
-    nodelookup += "MERGE (idlabel:%s {value:'%s', url:'%s'}) " \
+    nodelookup += "MERGE (idlabel:%s {%s:'%s'}) " \
                   "MERGE (coll)<-[:%s]-(idass:%s)-[:%s]->(idlabel) " \
                   "MERGE (idass)-[:%s]->(p:%s {%s:'%s'}) RETURN p" % \
-                  (constants.get_label('E42'), escape_text(identifier), url,
+                  (constants.get_label('E42'), constants.get_label('P190'), url,
                    constants.get_label('P14'), constants.get_label('E15'), constants.get_label('P37'),
                    constants.get_label('P140'), etype, constants.get_label('P48'), escape_text(dname))
     with constants.graphdriver.session() as session:
@@ -728,7 +729,8 @@ def death_handler(sourcenode, agent, factoid, graphperson):
     deathassertion += _matchid('p4', constants.get_predicate('P4'))
     if deathdate is not None:
         # Just record the string; many of them don't resolve to a fixed date
-        deathassertion += "MERGE (datedesc:%s {content:\"%s\"}) " % (constants.get_label('E52'), deathdate)
+        deathassertion += "MERGE (datedesc:%s {%s:\"%s\"}) " % (
+            constants.get_label('E52'), constants.get_label('P3'), deathdate)
     deathassertion += "WITH p, agent, source, devent, p100, p4%s " % (', datedesc' if deathdate else '')
     # Create an assertion that the death happened
     deathassertion += _create_assertion_query(orig, 'devent', 'p100', 'p', 'agent', 'source')
@@ -982,6 +984,13 @@ def record_assertion_factoids():
         if new_assertions == 0:
             # go back and delete the db record
             session.run('MATCH (dbr) WHERE dbr.timestamp = "%s" DELETE dbr' % timestamp)
+        else:
+            # make sure the URI is set for all nodes
+            result = session.run('MATCH (n:Resource) WHERE n.uri IS NULL '
+                                 'SET n.uri = "https://r11.eu/rdf/resource/" + n.uuid '
+                                 'RETURN COUNT(n) AS nct').single()
+            if len(result) != 1:
+                warn("Something went wrong setting URIs!")
 
 
 def process_persons():
@@ -1020,11 +1029,17 @@ def process_persons():
                 method = eval("%s_handler" % ourftype.lower())
                 fprocessed = 0
                 for f in person.main_factoids(ftype):
-                    # Note which sources we actually use, so we know what to record
-                    if f.source == 'Psellos':
-                        used_sources.add("%s %s" % (f.source, f.sourceRef))
+                    # Find out what sources we are actually using and make note of them
+                    source_key = constants.source(f)
+                    if source_key is None:
+                        warn("Skipping factoid %d with unlisted source %s" % (f.factoidKey, f.source))
+                        continue
+                    elif source_key == 'OUT_OF_SCOPE':
+                        warn("Skipping factoid %d with a source %s out of our temporal scope"
+                             % (f.factoidKey, f.source))
+                        continue
                     else:
-                        used_sources.add(f.source)
+                        used_sources.add(source_key)
                     # Note if we use a boulloterion, and if so how many seals it has
                     if f.boulloterion is not None:
                         if f.boulloterion.boulloterionKey not in boulloteria:
@@ -1036,7 +1051,7 @@ def process_persons():
                     (source_node, authority_node) = get_source_and_agent(f)
                     # If the factoid has no source then we skip it
                     if source_node is None:
-                        warn("Skipping factoid %d without a traceable source" % f.factoidKey)
+                        warn("We should not have got here! with factoid %d" % f.factoidKey)
                         continue
                     # If the factoid has no authority then we assign it to the generic PBW agent
                     if authority_node is None:
