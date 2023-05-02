@@ -205,12 +205,12 @@ def get_boulloterion_authority(boulloterion):
 
 
 def get_boulloterion(boulloterion, pbweditor):
-    """Helper function to find a boulloterion with a given ID. Creates it seals and sources
+    """Helper function to find a boulloterion with a given ID. Creates its seals and sources
     if it is a new boulloterion."""
     orig = 'boulloterion/%d' % boulloterion.boulloterionKey
     # boulloterion is an E22 Human-Made Object, with an identifier assigned by PBW
     keystr = "%d" % boulloterion.boulloterionKey
-    btitle = "Boulloterion for %s" % boulloterion.title
+    btitle = "Boulloterion of %s" % boulloterion.title
     boul_node = _find_or_create_identified_entity(
         constants.get_label('E22'), constants.pbw_agent, keystr, btitle)
     # Does it have any E13 assertions yet?
@@ -222,10 +222,9 @@ def get_boulloterion(boulloterion, pbweditor):
         # It does not. We have some creating to do.
         q = _matchid('pbweditor', pbweditor)
         q += _matchid('boul', boul_node)
-        q += _matchid('p16', constants.get_predicate('P16'))
+        q += _matchid('p46', constants.get_predicate('P46'))
         q += _matchid('p108', constants.get_predicate('P108'))
         q += _matchid('p128', constants.get_predicate('P128'))
-        q += _matchid('p147', constants.get_predicate('P147'))
         # Get/create the list of sources, if we have one
         source_node = get_boulloterion_sourcelist(boulloterion)
         if source_node is not None:
@@ -246,12 +245,11 @@ def get_boulloterion(boulloterion, pbweditor):
             # The curation activity; one per curated holding
             q += "MERGE (cur%d:%s {%s:\"%s\"}) " % (
                 i, constants.get_label('E87'), constants.get_label('P1'), coll)
-        # Now assert the curation events and the connection of the boulloterion to the seals
+        # Now assert that the seal belongs to the collection and that the boulloterion produced
+        # the seals. These both depend on the PBW editor
         for i in range(len(boulloterion.seals)):
             q += _create_assertion_query(
-                orig, "cur%d" % i, 'p16', "seal%d" % i, 'pbweditor', None, 'cs%d' % i)
-            q += _create_assertion_query(
-                orig, 'cur%d' % i, 'p147', 'coll%d' % i, 'pbweditor', None, 'cc%d' % i)
+                orig, "coll", 'p46', "seal%d" % i, 'pbweditor', None, 'cs%d' % i)
             q += _create_assertion_query(orig, 'boul', 'p108', 'seal%d' % i, 'pbweditor', None, 'bs%d' % i)
         # Finally, assert based on the sources that the boulloterion carries the inscription
         q += _create_assertion_query(orig, 'boul', 'p128', 'inscription', 'pbweditor', 'src' if source_node else None)

@@ -68,6 +68,7 @@ class PBWstarConstants:
             'P37': 'crm__P37_assigned',
             'P41': 'crm__P41_classified',
             'P42': 'crm__P42_assigned',
+            'P46': 'crm__P46_is_composed_of',
             'P48': 'crm__P48_has_preferred_identifier',
             'P51': 'crm__P51_has_former_or_current_owner',
             'P70': 'crm__P70_documents',
