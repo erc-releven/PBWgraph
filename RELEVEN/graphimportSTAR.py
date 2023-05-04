@@ -207,9 +207,9 @@ def get_boulloterion(boulloterion, pbweditor):
     btitle = "Boulloterion of %s" % boulloterion.title
     boul_node = _find_or_create_identified_entity(
         constants.get_label('E22B'), constants.pbw_agent, keystr, btitle)
-    # Does it have any E13 assertions yet?
+    # Does it have any assertions yet concerning its inscription?
     testq = "MATCH (boul)<-[:%s]-(a:%s) WHERE boul.uuid = '%s' RETURN a" % (
-        constants.star_subject, constants.get_label('E13'), boul_node)
+        constants.star_subject, constants.get_assertion_for_predicate('P128'), boul_node)
     with constants.graphdriver.session() as session:
         exists = session.run(testq).values()
     if len(exists) == 0:
@@ -233,14 +233,11 @@ def get_boulloterion(boulloterion, pbweditor):
             seal_id = "%d.%d.%d" % (seal.collectionKey, seal.boulloterionKey, seal.collectionRef)
             q += "MERGE (seal%d:%s {%s:\"%s\"}) " % (
                 i, constants.get_label('E22S'), constants.get_label('P3'), seal_id)
-            # The curation activity; one per curated holding
-            q += "MERGE (cur%d:%s {%s:\"%s\"}) " % (
-                i, constants.get_label('E87'), constants.get_label('P1'), coll)
         # Now assert that the seal belongs to the collection and that the boulloterion produced
         # the seals. These both depend on the PBW editor
         for i in range(len(boulloterion.seals)):
             q += _create_assertion_query(
-                orig, "coll", 'P46', "seal%d" % i, 'pbweditor', None, 'cs%d' % i)
+                orig, "coll%d" % i, 'P46', "seal%d" % i, 'pbweditor', None, 'cs%d' % i)
             q += _create_assertion_query(orig, 'boul', 'P108', 'seal%d' % i, 'pbweditor', None, 'bs%d' % i)
         # Finally, assert based on the sources that the boulloterion carries the inscription
         q += _create_assertion_query(orig, 'boul', 'P128', 'inscription', 'pbweditor', 'src' if source_node else None)
@@ -910,7 +907,6 @@ def record_assertion_factoids():
     """To be run after everything else is done. Creates the assertion record for all assertions created here,
     tying each to the factoid or person record that originated it and tying all the assertion records to the
     database creation event."""
-    e13 = constants.get_label('E13')  # Attribute_Assignment
     e31 = constants.get_label('E31')  # Document
     e52 = constants.get_label('E52')  # Time-Span
     f2 = constants.get_label('F2')    # Expression
@@ -929,13 +925,13 @@ def record_assertion_factoids():
                             "CREATE (dbr:%s)-[:%s {role:'recorder'}]->(tla), " \
                             "(dbr)-[:%s]->(ts:%s {%s: datetime('%s')}) " \
                             "WITH tla, dbr " \
-                            "MATCH (a:%s) WHERE NOT (a)<-[:%s]-(:%s) " \
+                            "MATCH (a) WHERE a.origsource IS NOT NULL AND NOT (a)<-[:%s]-(:%s) " \
                             "CREATE (a)<-[:%s]-(d:%s:%s)<-[:%s]-(dbr) " \
                             "SET d.%s = a.origsource REMOVE a.origsource " \
                             "RETURN dbr, count(d) as newrecords" % (tla,
                                                                     f28, p14,
                                                                     p4, e52, p80, timestamp,
-                                                                    e13, p70, e31,
+                                                                    p70, e31,
                                                                     p70, e31, f2, r17,
                                                                     r76)
         result = session.run(findnewassertions).single()

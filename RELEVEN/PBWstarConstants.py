@@ -276,9 +276,9 @@ class PBWstarConstants:
         """Takes a predicate key and returns the qualified assertion class which implies that predicate.
         This will throw an exception if no predicate is defined for the key."""
         fqname = self.predicates[p]
-        (nsstr, name) = fqname.split('__')
+        (nsstr, name) = fqname.replace('`', '').split('__')
         code = name.split('_')[0]
-        return f"star__E13_{nsstr}_{code}"
+        return f"Resource:star__E13_{nsstr}_{code}"
 
     # Accessors / creators for our controlled vocabularies
     def _find_or_create_cv_entry(self, category, nodeclass, label, superlabel=None):
