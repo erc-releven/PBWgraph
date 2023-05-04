@@ -519,7 +519,7 @@ def _find_or_create_identified_entity(etype, agent, identifier, dname):
     is present, it becomes a note (via P3 has note) on the entity object."""
     if etype == constants.get_label('E22'):
         url = 'https://pbw2016.kdl.kcl.ac.uk/boulloterion/%s' % identifier
-    elif 'Byzantine' in agent:
+    elif agent == constants.pbw_agent:
         url = 'https://pbw2016.kdl.kcl.ac.uk/person/%s' % identifier.replace(' ', '/')
     else:
         url = 'https://viaf.org/viaf/%s/' % identifier

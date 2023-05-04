@@ -193,12 +193,13 @@ class PBWstarConstants:
         print("Setting up PBW constants...")
         # Make our anonymous agent PBW for the un-sourced information
         pbwcmd = "COMMAND (a:%s {%s:'Prosopography of the Byzantine World', " \
-                 "prefix:'https://pbw2016.kdl.kcl.ac.uk/person/'}) RETURN a" % (
-            self.entitylabels.get('E39'), self.get_label('P3'))
+                 "%s:'https://pbw2016.kdl.kcl.ac.uk/'}) RETURN a" % (
+            self.entitylabels.get('E39'), self.get_label('P3'), self.get_label('P1'))
         self.pbw_agent = self._fetch_uuid_from_query(pbwcmd)
         # and our VIAF agent for identifying PBW contributors
         viafcmd = "COMMAND (a:%s {%s:'Virtual Internet Authority File', " \
-                  "prefix:'https://viaf.org/viaf/'}) RETURN a" % (self.entitylabels.get('E39'), self.get_label('P3'))
+                  "%s:'https://viaf.org/'}) RETURN a" % (
+            self.entitylabels.get('E39'), self.get_label('P3'), self.get_label('P1'))
         self.viaf_agent = self._fetch_uuid_from_query(viafcmd)
 
         # Some of these factoid types have their own controlled vocabularies.
