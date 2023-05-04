@@ -36,6 +36,8 @@ class PBWstarConstants:
             'E18': 'Resource:crm__E18_Physical_Thing',
             'E21': 'Resource:crm__E21_Person',
             'E22': 'Resource:`crm__E22_Human-Made_Object`',
+            'E22B': 'Resource:spec__E22_Boulloterion',
+            'E22S': 'Resource:spec__E22_Lead_Seal',
             'E31': 'Resource:crm__E31_Document',
             'E33': 'Resource:crm__E33_Linguistic_Object',
             'E34': 'Resource:crm__E34_Inscription',
@@ -54,7 +56,7 @@ class PBWstarConstants:
             'F1': 'Resource:lrmoo__F1',    # Work
             'F2': 'Resource:lrmoo__F2',    # Expression
             'F27': 'Resource:lrmoo__F27',  # Work Creation
-            'F28': 'Resource:lrmoo__F28'   # Expression Creation
+            'F28': 'Resource:lrmoo__F28',   # Expression Creation
         }
 
         self.predicates = {
@@ -270,20 +272,13 @@ class PBWstarConstants:
         except KeyError:
             return self.predicates[lbl]
 
-    def get_predicate(self, p):
-        """Return the reified predicate UUID for the given short name. This will throw
-        an exception if no predicate with this key is defined."""
-        if p not in self.prednodes:
-            fqname = self.predicates[p]
-            # Fish out the actual ontology predicate
-            dqname = fqname.replace('`', '').split('__')[1]
-            with self.graphdriver.session() as session:
-                result = session.run("MATCH (n:Resource:r11__Relationship {r11__name:\"%s\"}) RETURN n.uuid"
-                                     % dqname).single()
-                if not result:
-                    raise Exception("Predicate %s not found - have you set up the ontology?" % fqname)
-                self.prednodes[p] = result[0]
-        return self.prednodes[p]
+    def get_assertion_for_predicate(self, p):
+        """Takes a predicate key and returns the qualified assertion class which implies that predicate.
+        This will throw an exception if no predicate is defined for the key."""
+        fqname = self.predicates[p]
+        (nsstr, name) = fqname.split('__')
+        code = name.split('_')[0]
+        return f"star__E13_{nsstr}_{code}"
 
     # Accessors / creators for our controlled vocabularies
     def _find_or_create_cv_entry(self, category, nodeclass, label, superlabel=None):
