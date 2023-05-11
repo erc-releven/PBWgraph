@@ -1,4 +1,5 @@
-import PBWSources
+import RELEVEN.PBWSources
+from os.path import join, dirname
 # This package contains a bunch of information curated from the PBW website about authority, authorship
 # and so forth. It is a huge laundry list of data and some initialiser and accessor functions for it; the
 # class requires a graph driver in order to do the initialisation.
@@ -15,7 +16,7 @@ class PBWstarConstants:
         self.mj = {'identifier': 'Jeffreys, Michael J.', 'viaf': '73866641'}
         self.ta = {'identifier': 'Andrews, Tara Lee', 'viaf': '316505144'}
 
-        self.sourcelist = PBWSources.PBWSources('pbw_sources.csv')
+        self.sourcelist = RELEVEN.PBWSources.PBWSources(join(dirname(__file__), '../pbw_sources.csv'))
 
         self.entitylabels = {
             'C1': 'Resource:sdhss__C1',    # Social Quality of an Actor (Embodiment)
@@ -285,11 +286,12 @@ class PBWstarConstants:
         if label in self.cv[category]:
             return self.cv[category][label]
         # We have to create the node, possibly attaching it to a superclass
-        nodeq = "(cventry:%s {%s:\"%s\"})" % (nodeclass, self.get_label('P190'), label)
+        dataprop = self.get_label('P1')
+        nodeq = "(cventry:%s {%s:\"%s\"})" % (nodeclass, dataprop, label)
         nq = "COMMAND %s" % nodeq
         if superlabel is not None:
             nq = "MERGE (super:%s {%s:\"%s\"}) WITH super COMMAND %s-[:%s]->(super) " % (
-                self.get_label('E55'), self.get_label('P190'), superlabel, nodeq, self.get_label('P2'))
+                self.get_label('E55'), dataprop, superlabel, nodeq, self.get_label('P2'))
         nq += " RETURN cventry"
         uuid = self._fetch_uuid_from_query(nq)
         if uuid is None:
