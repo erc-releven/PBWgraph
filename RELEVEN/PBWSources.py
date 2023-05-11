@@ -80,11 +80,23 @@ class PBWSources:
 
     @staticmethod
     def ref_substring(refstring, prefix, possible):
+        # e.g. 'Alexios Stoudites / Ralles-Potles' -> 'Alexios Stoudites Ralles-Potles'
         for p in possible:
             source_id = ' '.join([prefix, possible]).rstrip()
             if refstring.startswith(p):
                 return source_id
         return None
+
+    def appended_string(self, refstring, prefix, strip=None):
+        # e.g. 'Keroularios / ep. to Petros of Antioch II' -> 'Keroularios II'
+        components = [x for x in self.sourcelist.keys() if x.startswith(prefix)]
+        for key in components:
+            mstr = key.replace(prefix, '').lstrip()
+            matchstring = refstring
+            if strip:
+                matchstring = refstring.replace(strip, '').lstrip()
+            if matchstring.startswith(mstr):
+                return key
 
     def page_to_key(self, refstring, prefix, strip=None):
         """Given a refstring, the common prefix, and a dictionary of items and their page ranges,
@@ -100,16 +112,6 @@ class PBWSources:
             for i in r:
                 if matchstring.startswith(i):
                     return k
-
-    def appended_string(self, refstring, prefix, strip=None):
-        components = [x for x in self.sourcelist.keys() if x.startswith(prefix)]
-        for key in components:
-            mstr = key.replace(prefix, '').lstrip()
-            matchstring = refstring
-            if strip:
-                matchstring = refstring.replace(strip, '').lstrip()
-            if matchstring.startswith(mstr):
-                return key
 
     # Some of the sources are special
     def parse_psellos_ref(self, refstring):
@@ -158,6 +160,14 @@ class PBWSources:
             kstr = 'Nea Mone, Miklosich-Müller'
             return self.page_to_key(refstring, kstr, strip="Miklosich-Müller 5.")
 
+    def parse_parthenon(self, refstring):
+        m = re.match(r'col\. \d+, no\. (\d+)', refstring)
+        if m:
+            return 'Parthenon inscriptions %s' % m.group(1)
+        else:
+            return None
+
+
     # Initialize from the CSV file
     def __init__(self, csvfile):
         """Given a CSV file of sources in the expected format, turn it into a data structure recognisable
@@ -169,6 +179,7 @@ class PBWSources:
             'Alexios Stoudites': ['Eleutherios', 'Ralles-Potles', 'VV', ''],
             'Eustathios Romaios': ['Peira', 'Ralles-Potles V', r'Schminck I*'],
             'Keroularios': ['ep. to Petros of Antioch'],
+            'Leo IX': ['ep. to Monomachos', ''],
             'Nea Mone,': ['Gedeon', 'Miklosich-Müller 5.'],
             'Psellos': [r'Actum 2', r'Against Ophrydas', r'Andronikos', r'Apologetikos', r'De omnifari doctrina',
                         r'Eirene', r'Epiphanios', r'Hypomnema', r'Kategoria', r'Keroularios', r'Leichoudes',
@@ -191,14 +202,18 @@ class PBWSources:
             'Keroularios': lambda x: self.appended_string(x, 'Keroularios', strip=self.stripped['Keroularios'][0]),
             'Kleinchroniken': lambda x: self.page_to_key(x, 'Kleinchroniken'),
             'Lavra': lambda x: self.page_to_key(x, 'Lavra'),
+            'Leo IX': lambda x: self.ref_substring(x, 'Leo IX', self.stripped['Leo IX']),
             'Mauropous: Orations': lambda x: self.page_to_key(x, 'Mauropous: Orations'),
             'Mauropous: Letters': lambda x: self.page_to_key(x, 'Mauropous: Letters'),
             'Nea Mone,': self.parse_neamone,
+            'Niketas Stethatos (Darrouzes)': lambda x: self.page_to_key(x, 'Niketas Stethatos (Darrouzes)'),
             'Panteleemon': lambda x: self.page_to_key(x, 'Panteleemon'),
+            'Parthenon inscriptions': self.parse_parthenon,
             'Patmos: Acts': lambda x: self.page_to_key(x, 'Patmos: Acts'),
             'Protaton': lambda x: self.page_to_key(x, 'Protaton'),
             'Psellos': self.parse_psellos_ref,
             'Theophylaktos of Ohrid, Letters': lambda x: self.page_to_key(x, 'Theophylaktos of Ohrid, Letters'),
+            'Tornikes, Georgios': lambda x: self.page_to_key(x, 'Tornikes, Georgios'),
             'Vatopedi': lambda x: self.page_to_key(x, 'Vatopedi'),
             'Xenophontos': lambda x: self.page_to_key(x, 'Xenophontos'),
             'Xeropotamou': lambda x: self.page_to_key(x, 'Xeropotamou')

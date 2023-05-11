@@ -55,6 +55,18 @@ def _matchid(var, val):
     return 'MATCH (%s) WHERE %s.uuid = "%s" ' % (var, var, val)
 
 
+def re_encode(s):
+    # To be used for fields where the Unicode encoding is broken in that special MySQL way
+    # cf. https://www.digitalbyzantinist.org/2014/06/17/the_mystery_of_the_character_encoding/
+    newchrs = bytearray()
+    for cc in s:
+        if ord(cc) > 256:
+            newchrs.append(ord(cc.encode('cp1252')))
+        else:
+            newchrs.append(ord(cc))
+    return newchrs.decode('utf-8')
+
+
 def _create_assertion_query(factoid, subj, pred, obj, auth, src, var="a"):
     """Create the query pattern for an assertion with the given connections. Use 'var' to control
     the variable name for the assertion. Attempts to build the query with specific information first,
@@ -234,7 +246,8 @@ def get_boulloterion(boulloterion, pbweditor):
             q += "MERGE (seal%d:%s {%s:\"%s\"}) " % (
                 i, constants.get_label('E22S'), constants.get_label('P3'), seal_id)
         # Now assert that the seal belongs to the collection and that the boulloterion produced
-        # the seals. These both depend on the PBW editor
+        # the seals. These both depend on the PBW editor, and we can't name a specific source for
+        # either assertion based on the PBW data.
         for i in range(len(boulloterion.seals)):
             q += _create_assertion_query(
                 orig, "coll%d" % i, 'P46', "seal%d" % i, 'pbweditor', None, 'cs%d' % i)
@@ -295,8 +308,8 @@ def get_boulloterion_sourcelist(boulloterion):
     source_nodes = []
     for source in pubs:
         # Make sure with 'merge' that each bibliography node exists
-        sn = "(src%d:%s {%s:'%s', %s:'%s'})" % (pubct, f2, constants.get_label('P1'), source.shortName,
-                                                constants.get_label('P102'), escape_text(source.latinBib))
+        sn = "(src%d:%s {%s:'%s', %s:'%s'})" % (pubct, f2, constants.get_label('P1'), re_encode(source.shortName),
+                                                constants.get_label('P102'), escape_text(re_encode(source.latinBib)))
         source_nodes.append(sn)
         mquery += "MERGE %s " % sn
         pubct += 1
@@ -393,14 +406,12 @@ def get_text_sourceref(factoid):
 
 
 def get_source_work_expression(factoid):
-    # Pass in the factoid, the dictionary describing the work, and the node we have already created
-    # for the author of the work, if applicable.
     # Ensure the existence of the work and, if it has a declared author, link the author to it via
     # a CREATION event, asserted by the author.
 
     sourcekey = constants.source(factoid)
     workinfo = constants.sourceinfo(sourcekey)
-    # pbw_authority = get_authority_node(constants.authorities(sourcekey))
+    pbw_authority = get_authority_node(constants.authorities(sourcekey))
     editors = get_authority_node(workinfo.get('editor'))
     # The work identifier is the 'work' key, or else the PBW source ID string.
     workid = workinfo.get('work')
@@ -462,25 +473,37 @@ def get_source_work_expression(factoid):
                     fact_person = afact.main_person()
                     if len(fact_person) > 1:
                         print("More than one main person in a factoid??")
-                    aship_authority = _find_or_create_pbwperson(fact_person[0])
-                    # We have to make a sourceref expression node, connected to this expression, for
-                    # the factoid source
-                    aship_srefnode = "(srcref:%s {%s:'%s', %s:'%s'})" % (
-                        constants.get_label('F2'), constants.get_label('P3'), escape_text(afact.sourceRef),
-                        constants.get_label('P190'), escape_text(afact.origLDesc))
-                    aship_source = 'srcref'
+                    # Make sure that the primary factoid person is indeed our author
+                    if author != _find_or_create_pbwperson(fact_person[0]):
+                        print("HELP: Author according to our data is not primary factoid referent!")
+                    else:
+                        # If the factoid is an authorship factoid, then the author is claiming to have written; if
+                        # it is a narrative factoid, then the PBW editor is making the claim
+                        aship_authority = author if afact.factoidType == 'Authorship' else pbw_authority
+                        # We have to make a sourceref expression node, connected to this expression, for
+                        # the factoid source
+                        aship_srefnode = "(srcref:%s {%s:'%s', %s:'%s'})" % (
+                            constants.get_label('E33'), constants.get_label('P3'), escape_text(afact.sourceRef),
+                            constants.get_label('P190'), escape_text(afact.origLDesc))
+                        aship_source = 'srcref'
             elif 'provenance' in workinfo:
-                # We have a page number
-                pass
+                # We have a page number. This makes our authorship authority the editor(s), with the source
+                # being the passage in this very edition.
+                aship_srefnode = "(srcref:%s {%s:'%s'})" % (
+                    constants.get_label('E33'), constants.get_label('P3'), workinfo['provenance'])
+                aship_source = 'srcref'
             # On to the assertion that the author authored the work
-            if aship_authority != author and aship_authority != editors:
+            if aship_authority == editors:
+                q += "WITH editors AS reporter, work, expr "
+            else:
+                # If the authorship authority is the author or the PBW editor, we have to fish them out.
                 q += "WITH work, expr "
                 q += _matchid('reporter', aship_authority)
-            else:
-                q += "WITH editors AS reporter, work, expr "
             q += _matchid('author', author)
             if aship_srefnode:
                 q += "MERGE %s " % aship_srefnode
+                # The reporter asserts that the srefnode belongs to the source expression
+                q += _create_assertion_query(None, 'expr', 'R15', aship_source, 'reporter', None, 'wc0')
             q += _create_assertion_query(None, 'wc:%s' % constants.get_label('F27'),
                                          'R16', 'work', 'reporter', aship_source, 'wc1')
             q += _create_assertion_query(None, 'wc', 'P14', 'author', 'reporter', aship_source, 'wc2')
@@ -494,11 +517,11 @@ def get_source_work_expression(factoid):
 
 
 def _find_or_create_identified_entity(etype, agent, identifier, dname):
-    """Return an identified entity. This can be a E22 Human-Made Object, an E21 Person, an E39 Agent,
+    """Return an identified entity. This can be a Boulloterion (E22 subclass), an E21 Person, an E39 Agent,
     or an E74 Group depending on context. It is labeled with the identifier via an E15 Identifier Assignment
     carried out by the given agent, with dname becoming our preferred human-readable identifier. If disamb
     is present, it becomes a note (via P3 has note) on the entity object."""
-    if etype == constants.get_label('E22'):
+    if etype == constants.get_label('E22B'):
         url = 'https://pbw2016.kdl.kcl.ac.uk/boulloterion/%s' % identifier
     elif agent == constants.pbw_agent:
         url = 'https://pbw2016.kdl.kcl.ac.uk/person/%s' % identifier.replace(' ', '/')
@@ -540,10 +563,9 @@ def get_author_node(authorlist):
     if authorlist is None or len(authorlist) == 0:
         return None
     authors = []
-    mutable_list = authorlist.copy()
-    while len(mutable_list) > 0:
-        pname = mutable_list.pop(0)
-        pcode = mutable_list.pop(0)
+    for i in range(0, len(authorlist), 2):
+        pname = authorlist[i]
+        pcode = authorlist[i+1]
         # We need to get the SQL record for the author in case they aren't in the DB yet
         sqlperson = mysqlsession.query(pbw.Person).filter_by(name=pname, mdbCode=pcode).scalar()
         authors.append(_find_or_create_pbwperson(sqlperson))
@@ -570,17 +592,22 @@ def get_authority_node(authoritylist):
 
 
 def _find_or_create_authority_group(members):
-    gc = []
+    gc = []  # group connection parts
+    ll = []  # label parts
     i = 1
-    q = ''
+    q = ''   # main query
     for m in members:
         lvar = "m%d" % i
         q += _matchid(lvar, m)
         gc.append("(group)-[:%s]->(m%d)" % (constants.get_label('P107'), i))
+        ll.append("m%d.%s" % (i, constants.get_label('P3')))
         i += 1
+    # We've matched the nodes, now make the group label
+    q += "WITH %s, %s as glabel " % (', '.join(["m%d" % x for x in range(1, i)]), ' + "; " + '.join(ll))
     # Since this is a group with symmetrical membership, we have to add a 'DISTINCT' in order to avoid getting
     # mirrored orders of the group
-    q += "COMMAND (group:%s), %s RETURN DISTINCT group" % (constants.get_label('E74'), ", ".join(gc))
+    q += "COMMAND (group:%s {%s:glabel}), %s " \
+         "RETURN group" % (constants.get_label('E74'), constants.get_label('P3'), ", ".join(gc))
     with constants.graphdriver.session() as session:
         g = session.run(q.replace('COMMAND', 'MATCH')).single()
         if g is None:
