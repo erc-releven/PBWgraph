@@ -406,7 +406,7 @@ class GraphImportTests(unittest.TestCase):
                 % (c.get_label('E21'), c.star_subject, c.get_assertion_for_predicate('P1'), c.star_object,
                    c.get_label('E41'), c.star_auth, pbwagent, pinfo['uuid'], c.get_label('P190'))
             with self.graphdriver.session() as session:
-                result = session.run(q).single()
+                result = session.run(q).single(strict=True)
                 self.assertIsNotNone(result)
                 self.assertEqual(pinfo['identifier'], result['id'], "Test identifier for %s" % person)
 
@@ -533,7 +533,7 @@ class GraphImportTests(unittest.TestCase):
                        c.get_label('C24'), c.star_auth, pinfo['uuid'], c.get_label('P1'), c.get_label('P3'))
                 with self.graphdriver.session() as session:
                     # We are cheating by knowing that no test person has more than one religion specified
-                    result = session.run(q).single()
+                    result = session.run(q).single(strict=True)
                     self.assertIsNotNone(result)
                     self.assertTrue(result['rel'] in rels)
                     self.assertIn('Georgios Tornikes', result['auth'])
@@ -755,7 +755,7 @@ class GraphImportTests(unittest.TestCase):
                     c.star_subject, c.get_assertion_for_predicate('R3'), c.star_object, c.get_label('F2'),
                     c.star_auth, c.star_source, p3, sinfo.get('work'), p3, p3, p3, p3, p3, p3
                 )
-            elif 'work' in s:
+            elif 'work' in sinfo:
                 # The 1094 synod: work has edition according to editor based on edition
                 q = 'MATCH (work:%s)<-[:%s]-(wed:%s)-[:%s]->(edition:%s), ' \
                     '(wed)-[:%s]->(editor), (wed)-[:%s]->(edition) ' \
@@ -792,17 +792,17 @@ class GraphImportTests(unittest.TestCase):
                 self.assertEqual(sinfo.get('editor'), result['editor'])
 
                 # Now check that the passages are present & correct and have the right authority
-                pq = 'MATCH (edition:%s {%s:"%s"})<-[%s]-(psa:%s)-[:%s]->(passage:%s), ' \
+                pq = 'MATCH (edition:%s {%s:\'%s\'})<-[%s]-(psa:%s)-[:%s]->(passage:%s), ' \
                     '(psa)-[:%s]->(pbwed) RETURN passage.%s as passage, pbwed.%s as pbwed' % (
                     c.get_label('F2'), p3, sinfo.get('edition'), c.star_subject, c.get_assertion_for_predicate('R15'),
                     c.star_object, c.get_label('E33'), c.star_auth, p3, p3
                 )
                 passages = session.run(pq)
-                c = 0
+                ct = 0
                 for row in passages:
-                    c += 1
+                    ct += 1
                     self.assertEqual(row['pbwed'], sinfo.get('pbwed'))
-                self.assertEqual(c, sinfo.get('passages'))
+                self.assertEqual(ct, sinfo.get('passages'))
 
     def test_db_entry(self):
         """All the assertions in the database should be attached to DB records, linked to the single entry

@@ -479,6 +479,7 @@ def get_source_work_expression(factoid):
                     else:
                         # If the factoid is an authorship factoid, then the author is claiming to have written; if
                         # it is a narrative factoid, then the PBW editor is making the claim
+                        # Either way, the PBW editor will be who says this passage belongs to the edition
                         aship_authority = author if afact.factoidType == 'Authorship' else pbw_authority
                         # We have to make a sourceref expression node, connected to this expression, for
                         # the factoid source
@@ -501,9 +502,11 @@ def get_source_work_expression(factoid):
                 q += _matchid('reporter', aship_authority)
             q += _matchid('author', author)
             if aship_srefnode:
+                # It is the PBW editor who says that a particular passage belongs to the respective edition.
+                # n.b. We will need to fix/change this manually for non-factoid provenance!
+                q += _matchid('pbweditor', pbw_authority)
                 q += "MERGE %s " % aship_srefnode
-                # The reporter asserts that the srefnode belongs to the source expression
-                q += _create_assertion_query(None, 'expr', 'R15', aship_source, 'reporter', None, 'wc0')
+                q += _create_assertion_query(None, 'expr', 'R15', aship_source, 'pbweditor', None, 'wc0')
             q += _create_assertion_query(None, 'wc:%s' % constants.get_label('F27'),
                                          'R16', 'work', 'reporter', aship_source, 'wc1')
             q += _create_assertion_query(None, 'wc', 'P14', 'author', 'reporter', aship_source, 'wc2')
