@@ -31,7 +31,7 @@ def add_pbw_authorities(d, authority_string, pbw_authorities):
     d['authority'] = [pbw_authorities[x] for x in pbwauths]
 
 
-def add_authors(d, source_id, author_string):
+def add_authors(d, source_id, author_string, pbw_authorities):
     """Add any PBW authors in the form [name1, code1, name2, code2, ...]"""
     authorlist = re.split(r';\s*', author_string)
     authors = []
@@ -40,9 +40,14 @@ def add_authors(d, source_id, author_string):
         if pbwid is not None:
             authors.extend([pbwid.group(1), int(pbwid.group(2))])
     if len(authors) == 0 and author_string != '':
-        warn(f"Author {author_string} not created for source {source_id}")
-    else:
-        d['author'] = authors
+        # Is the author in our external authority list?
+        if author_string in pbw_authorities:
+            a = pbw_authorities[author_string]
+            authors.extend([a['identifier'], a['viaf']])
+        else:
+            print(f"HELP: Author {author_string} not created for source {source_id}")
+
+    d['author'] = authors
 
 
 def add_provenance(d, source_id, prov_string):
@@ -54,8 +59,11 @@ def add_provenance(d, source_id, prov_string):
     else:
         # This didn't match a factoid. Put it in as a provenance
         if 'author' in d and len(d['author']):
-            warn(f"No factoid key found for provenance of source {source_id}")
-        d['provenance'] = prov_string
+            if len(prov_string):
+                d['provenance'] = prov_string
+            else:
+                print(f"HELP: No provenance found for authorship of source {source_id}")
+
 
 
 def make_refrange(refrange):
@@ -139,18 +147,23 @@ class PBWSources:
         m = re.match(r'Letters \(([\w -]+)\) (\d+)', refstring)
         if m:
             return f'Psellos {m.group(1)} {m.group(2)}'
+        warn(f"Failed to parse Psellos refstring {refstring}")
         return None
 
     @staticmethod
     def parse_romaios(refstring):
-        (tocheck, pages) = refstring.split(', ', 1)
+        parts = re.split(r',\s*', refstring, 1)
+        # If there is no comma, it's the Peira
+        if len(parts) == 1 or parts[0] == 'Peira':
+            return 'Eustathios Romaios Peira'
         answer = 'Eustathios Romaios '
-        for p in ['Peira', 'Schminck']:
-            if tocheck.startswith(p):
-                return answer + p
-        if tocheck == 'Ralles-Potles V':
-            return answer + ('RPB' if re.match(r'\d{3}', pages) else 'RPA')
-        return None
+        if parts[0].startswith('Schminck'):
+            return answer + parts[0]
+        elif parts[0] == 'Ralles-Potles V':
+            return answer + ('RPB' if re.match(r'\d{3}', parts[1]) else 'RPA')
+        else:
+            warn(f"Could not parse Romaios refstring {refstring}")
+            return None
 
     def parse_neamone(self, refstring):
         if refstring.startswith('Gedeon'):
@@ -232,14 +245,18 @@ class PBWSources:
         self.authorities['lo'] = {'identifier': 'Osti, Letizia', 'viaf': '236145542536996640148'}
         self.authorities['cr'] = {'identifier': 'Roueché, Charlotte', 'viaf': '44335536'}
         self.authorities['ok'] = {'identifier': 'Karágiṓrgou, ́Olga', 'viaf': '253347413'}
-
+        self.authorities['yahya'] = {'identifier': 'Yaḥyā ibn Saʻīd al-Anṭākī', 'viaf': '79063594'}
+        self.authorities['athir'] = {'identifier': 'Ibn al-Athīr, ʿIzz al-Dīn', 'viaf': '54439868'}
+        self.authorities['shaddad'] = {'identifier': 'Ibn Shaddād, Muḥammad ibn ʻAlī', 'viaf': '81960386'}
+        self.authorities['lupus'] = {'identifier': 'Lupus Protospatharius', 'viaf': '84485715'}
+        self.authorities['abari'] = {'identifier': 'Anonymus Barensis', 'viaf': '13129565'}
         with open(csvfile, encoding='utf-8', newline='') as fh:
             reader = csv.DictReader(fh)
             for row in reader:
                 # Make an object for the source information
                 source_id = row['PBW Source ID']
                 source_data = dict()
-                add_authors(source_data, source_id, row['Author(ity)'])
+                add_authors(source_data, source_id, row['Author(ity)'], self.authorities)
                 add_provenance(source_data, source_id, row['Evidence of authorship'])
                 add_pbw_authorities(source_data, row['PBW editor'], self.authorities)
                 add_if_exists(source_data, 'work', row['Source canonical name'])

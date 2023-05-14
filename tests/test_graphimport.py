@@ -52,6 +52,10 @@ class GraphImportTests(unittest.TestCase):
                                  'mother': ['Romanos/106']}},
         'Apospharios/101': {'gender': ['Male'], 'identifier': ' Ἀποσφάριον', 'legalrole': {'Slave': 1},
                             'kinship': {'husband': ['Selegno/101']}},
+        'Bagrat/101': {'gender': ['Male'], 'identifier': 'τῷ Παγκρατίῳ بقراط بن جرجس',
+                       'legalrole': {'King': 3, 'Kouropalates': 2, 'Sebastos': 1},
+                       'kinship': {'son': ['Anonyma/6003', 'Georgios/105', 'Maria/103'],
+                                   'husband': ['Helena/104'], 'father': ['Maria/61']}},
         'Balaleca/101': {'gender': ['Male'], 'identifier': 'Βαλαλεχα', 'language': 'Georgian'},
         'Gagik/101': {'gender': ['Male'], 'identifier': 'Κακίκιος',
                       'legalrole': {'Archon': 2, 'King': 1, 'Magistros': 1},
@@ -97,7 +101,7 @@ class GraphImportTests(unittest.TestCase):
                         'death': {'count': 1, 'dated': 0},
                         'legalrole': {'Archbishop': 3, 'Monk': 3}},
         'Ioannes/102': {'gender': ['Eunuch'], 'identifier': 'Ἰωάννην',
-                        'legalrole': {'Bishop': 1, 'Metropolitan': 12, 'Protoproedros': 1, 'Hypertimos': 2,
+                        'legalrole': {'Bishop': 1, 'Metropolitan': 13, 'Protoproedros': 1, 'Hypertimos': 2,
                                       'Protoproedros of the protosynkelloi': 2, 'Protosynkellos': 2}},
         'Ioannes/110': {'gender': ['Male'], 'identifier': 'Ἰωάννου...τοῦ Σκυλίτζη',
                         'legalrole': {'Megas droungarios of the vigla': 1, 'Kouropalates': 1}},
@@ -331,6 +335,17 @@ class GraphImportTests(unittest.TestCase):
             'editor': 'Gautier, Paul',
             'pbwed': 'Jeffreys, Michael J.',
             'passages': 5
+        },
+
+        # Source with author outside of PBW
+        'yahya': {
+            'work': 'Ta’rikh Yahya ibn Said al-Antaki (The History of Yahya ibn Sa’id of Antioch)',
+            'edition': 'Histoire de Yahya ibn Sa’id d’Antioche, Patrologia Orientalis 47.4 (no.212), Turnhout 1997',
+            'author': 'Yaḥyā ibn Saʻīd al-Anṭākī',
+            'authority': 'Kračkovskij, Ignati; Micheau, Françoise; Troupeau, Gérard',
+            'editor': 'Kračkovskij, Ignati; Micheau, Françoise; Troupeau, Gérard',
+            'pbwed': 'Papacostas, Tassos; Osti, Letizia; Munt, Harry',
+            'passages': 4
         },
 
         # Source without author
@@ -741,7 +756,9 @@ class GraphImportTests(unittest.TestCase):
                 # The Chronographia: work was created by author according to author based on passage
                 # The typikon: work was created by author according to editor
                 # The praktikon: work was created by author according to PBW editor
+                # Yahya: work was created by author according to editor based on *edition*
                 # All: work has edition according to editor based on edition
+                motivation = c.get_label('F2') if s == 'yahya' else c.get_label('E33')
                 q = 'MATCH (work:%s)<-[:%s]-(wc1:%s)-[:%s]->(wc:%s)<-[:%s]-(wc2:%s)-[:%s]->(author:%s), ' \
                     '(wc1)-[:%s]->(authority), (wc2)-[:%s]->(authority), ' \
                     '(wc1)-[:%s]->(passage:%s), (wc2)-[:%s]->(passage), ' \
@@ -751,7 +768,7 @@ class GraphImportTests(unittest.TestCase):
                     'edition.%s as edition, passage.%s as passage' % (
                     c.get_label('F1'), c.star_object, c.get_assertion_for_predicate('R16'), c.star_subject,
                     c.get_label('F27'), c.star_subject, c.get_assertion_for_predicate('P14'), c.star_object,
-                    c.get_label('E21'), c.star_auth, c.star_auth, c.star_source, c.get_label('E33'), c.star_source,
+                    c.get_label('E21'), c.star_auth, c.star_auth, c.star_source, motivation, c.star_source,
                     c.star_subject, c.get_assertion_for_predicate('R3'), c.star_object, c.get_label('F2'),
                     c.star_auth, c.star_source, p3, sinfo.get('work'), p3, p3, p3, p3, p3, p3
                 )

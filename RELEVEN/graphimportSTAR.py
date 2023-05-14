@@ -28,7 +28,7 @@ def collect_person_records():
     # print("Found %d relevant people" % len(relevant))
     # return relevant
     # Debugging / testing: restrict the list of relevant people
-    debugnames = ['Anna', 'Apospharios', 'Balaleca', 'Gagik', 'Herve', 'Ioannes', 'Konstantinos', 'Liparites']
+    debugnames = ['Anna', 'Apospharios', 'Bagrat', 'Balaleca', 'Gagik', 'Herve', 'Ioannes', 'Konstantinos', 'Liparites']
     debugcodes = [62, 64, 68, 101, 102, 110]
     return mysqlsession.query(pbw.Person).filter(
         and_(pbw.Person.name.in_(debugnames), pbw.Person.mdbCode.in_(debugcodes))
@@ -569,9 +569,14 @@ def get_author_node(authorlist):
     for i in range(0, len(authorlist), 2):
         pname = authorlist[i]
         pcode = authorlist[i+1]
-        # We need to get the SQL record for the author in case they aren't in the DB yet
-        sqlperson = mysqlsession.query(pbw.Person).filter_by(name=pname, mdbCode=pcode).scalar()
-        authors.append(_find_or_create_pbwperson(sqlperson))
+        # Hackish, but after all this is a script... If the code is longer than five digits, we are
+        # dealing with a VIAF person; otherwise we are dealing with a PBW person.
+        if len(str(pcode)) > 5:
+            authors.append(_find_or_create_viafperson(pname, pcode))
+        else:
+            # We need to get the SQL record for the author in case they aren't in the DB yet
+            sqlperson = mysqlsession.query(pbw.Person).filter_by(name=pname, mdbCode=pcode).scalar()
+            authors.append(_find_or_create_pbwperson(sqlperson))
     if len(authors) > 1:
         # It is our multi-authored text. Make a group because both authors share authority.
         return _find_or_create_authority_group(authors)
