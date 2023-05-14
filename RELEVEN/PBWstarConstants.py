@@ -16,7 +16,7 @@ class PBWstarConstants:
         self.mj = {'identifier': 'Jeffreys, Michael J.', 'viaf': '73866641'}
         self.ta = {'identifier': 'Andrews, Tara Lee', 'viaf': '316505144'}
 
-        self.sourcelist = RELEVEN.PBWSources.PBWSources(join(dirname(__file__), '../pbw_sources.csv'))
+        self.sourcelist = RELEVEN.PBWSources.PBWSources(join(dirname(__file__), 'pbw_sources.csv'))
 
         self.entitylabels = {
             'C1': 'Resource:sdhss__C1',    # Social Quality of an Actor (Embodiment)
