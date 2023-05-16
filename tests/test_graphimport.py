@@ -6,11 +6,11 @@ from neo4j import GraphDatabase
 
 
 def pburi(x):
-    return f"https://pbw2016.kdl.kcl.ac.uk/person/{x}"
+    return f"https://pbw2016.kdl.kcl.ac.uk/person/{x}/"
 
 
 def pbwid(x):
-    return x.lstrip('https://pbw2016.kdl.kcl.ac.uk/person/')
+    return x.lstrip('https://pbw2016.kdl.kcl.ac.uk/person/').rstrip('/')
 
 
 class GraphImportTests(unittest.TestCase):
@@ -184,6 +184,9 @@ class GraphImportTests(unittest.TestCase):
               'seals': {480: 'Cambridge, Mass., Fogg Art Museum'}, 'sources': {
                 'Nesbitt - Oikonomides I': 'J. Nesbitt and N. Oikonomides, Catalogue of Byzantine Seals at Dumbarton Oaks and in the Fogg Museum of Art 1: Italy, North of the Balkans, North of the Black Sea, Washington D.C. 1991 [reviewed by W. Seibt in Byzantinische Zeitschrift 84/85 (1991), 548-5',
                 'Laurent, Serbie': 'V. Laurent, "La thème byzantine de Serbie au XIe siècle", Revue des Études Byzantines 15, 1957'}},
+        1406: {'inscription': 'St Nikolaos. / Lord aid your servant Niketas and man of the most felicitous kaisar',
+               'seals': {5297: 'Sale Catalogue: Spink: October 6, 1999'}, 'sources': {
+                'Zacos II': 'G. Zacos, Byzantine Lead Seals II, compiled and edited by J.W. Nesbitt, Bern 1984 [reviewed by H. Hunger in Jahrbuch der Ã–sterreichischen Byzantinistik 36 (1986), 333-339 and by N. Oikonomides, "A propos d\'une nouvelle publication de sceaux byzantins", Re'}},
         2216: {
             'inscription': 'Michael / See the seal of (Ioannes) protoproedros (of the protosynkelloi) metropolitan (protoproedros) of Side (metrical, with one word performing two functions)',
             'seals': {2607: 'Cambridge, Mass., Fogg Art Museum',
@@ -313,7 +316,7 @@ class GraphImportTests(unittest.TestCase):
             'authority': 'Michael Psellos (named Konstantinos till tonsure in 1054)',
             'editor': 'Renauld, Émile',
             'pbwed': 'Whitby, Mary',
-            'passages': 40
+            'passages': 99
         },
         # Source with narrative factoid
         'praktikon_adam': {
@@ -345,7 +348,7 @@ class GraphImportTests(unittest.TestCase):
             'authority': 'Kračkovskij, Ignati; Micheau, Françoise; Troupeau, Gérard',
             'editor': 'Kračkovskij, Ignati; Micheau, Françoise; Troupeau, Gérard',
             'pbwed': 'Papacostas, Tassos; Osti, Letizia; Munt, Harry',
-            'passages': 4
+            'passages': 5
         },
 
         # Source without author
@@ -380,12 +383,11 @@ class GraphImportTests(unittest.TestCase):
         # Get the UUIDs for each of our test people
         c = self.constants
         q = 'MATCH (id:%s)<-[:%s]-(idass:%s)-[:%s]->(person:%s), (idass)-[:%s]->(agent:%s) ' \
-            'WHERE id.%s IN %s ' \
+            'WHERE id.uri IN %s ' \
             'AND agent.%s = "Prosopography of the Byzantine World" ' \
-            'RETURN id.%s as uri, person.uuid as uuid' % (
+            'RETURN id.uri as uri, person.uuid as uuid' % (
                 c.get_label('E42'), c.get_label('P37'), c.get_label('E15'), c.get_label('P140'), c.get_label('E21'),
-                c.get_label('P14'), c.get_label('E39'), c.get_label('P190'),
-                [pburi(x) for x in self.td_people.keys()], c.get_label('P3'), c.get_label('P190'))
+                c.get_label('P14'), c.get_label('F11'), [pburi(x) for x in self.td_people.keys()], c.get_label('P3'))
         with self.graphdriver.session() as session:
             result = session.run(q)
             self.assertIsNotNone(result)
@@ -416,7 +418,7 @@ class GraphImportTests(unittest.TestCase):
         for person, pinfo in self.td_people.items():
             # We want the appellation that was assigned by the generic PBW agent, not any of
             # the sourced ones
-            pbwagent = '%s {%s: "Prosopography of the Byzantine World"}' % (c.get_label('E39'), c.get_label('P3'))
+            pbwagent = '%s {%s: "Prosopography of the Byzantine World"}' % (c.get_label('F11'), c.get_label('P3'))
             q = "MATCH (p:%s)<-[:%s]-(a:%s)-[:%s]->(id:%s), (a)-[:%s]->(pbw:%s) WHERE p.uuid = '%s' RETURN id.%s AS id" \
                 % (c.get_label('E21'), c.star_subject, c.get_assertion_for_predicate('P1'), c.star_object,
                    c.get_label('E41'), c.star_auth, pbwagent, pinfo['uuid'], c.get_label('P190'))
@@ -520,11 +522,10 @@ class GraphImportTests(unittest.TestCase):
             # Find those with a declared ethnicity. This means a membership in a group of the given type.
             if 'ethnicity' in pinfo:
                 eths = pinfo['ethnicity']
-                q = "MATCH (p:%s)<-[:%s]-(a:%s)-[:%s]->(group:%s)-[:%s]->(type:%s {%s: 'Ethnic Group'}) " \
+                q = "MATCH (p:%s)<-[:%s]-(a:%s)-[:%s]->(group:%s) " \
                     "WHERE p.uuid = '%s' RETURN group.%s AS eth, COUNT(group.%s) AS act" \
                     % (c.get_label('E21'), c.star_object, c.get_assertion_for_predicate('P107'), c.star_subject,
-                       c.get_label('E74'), c.get_label('P2'), c.get_label('E55'), c.get_label('P1'), pinfo['uuid'],
-                       c.get_label('P1'), c.get_label('P1'))
+                       c.get_label('E74E'), pinfo['uuid'], c.get_label('P1'), c.get_label('P1'))
                 with self.graphdriver.session() as session:
                     result = session.run(q)
                     rowct = 0
@@ -593,18 +594,15 @@ class GraphImportTests(unittest.TestCase):
         for person, pinfo in self.td_people.items():
             # Find those with a language skill set
             if 'language' in pinfo:
-                q = "MATCH (p:%s)<-[:%s]-(a:%s)-[:%s]->(skill:%s)<-[:%s]-(a2:%s)-[:%s]->(kh:%s), " \
-                    "(kh)-[:%s]->(type:%s) " \
-                    "WHERE p.uuid = '%s' RETURN kh.%s as kh, type.%s as type" % (
+                q = "MATCH (p:%s)<-[:%s]-(a:%s)-[:%s]->(skill:%s)<-[:%s]-(a2:%s)-[:%s]->(kh:%s) " \
+                    "WHERE p.uuid = '%s' RETURN kh.%s as kh" % (
                     c.get_label('E21'), c.star_subject, c.get_assertion_for_predicate('SP38'), c.star_object,
                     c.get_label('C21'), c.star_subject, c.get_assertion_for_predicate('SP37'), c.star_object,
-                    c.get_label('C29'), c.get_label('P2'), c.get_label('E55'), pinfo['uuid'],
-                    c.get_label('P1'), c.get_label('P1'))
+                    c.get_label('C29'), pinfo['uuid'], c.get_label('P1'))
                 with self.graphdriver.session() as session:
                     result = session.run(q).single()  # At the moment we do only have one
                     self.assertIsNotNone(result)
                     self.assertEqual(pinfo['language'], result['kh'], "Test language for %s" % person)
-                    self.assertEqual('Language Skill', result['type'])
 
     def test_kinship(self):
         """Test the kinship assertions for one of our well-connected people"""
@@ -615,13 +613,13 @@ class GraphImportTests(unittest.TestCase):
                     "(kg:%s)<-[:%s]-(a2:%s)-[:%s]->(kin:%s), " \
                     "(kg)<-[:%s]-(a3:%s)-[:%s]->(ktype:%s), " \
                     "(kin)<-[:%s]-(ia2:%s)-[:%s]->(kinid:%s) " \
-                    "RETURN DISTINCT kinid.%s as kin, ktype.%s as kintype" % (
+                    "RETURN DISTINCT kinid.uri as kin, ktype.%s as kintype" % (
                     c.get_label('E21'), pinfo['uuid'], c.star_object, c.get_assertion_for_predicate('SP17'),
                     c.star_subject, c.get_label('C3'), c.star_subject, c.get_assertion_for_predicate('SP18'),
                     c.star_object, c.get_label('E21'), c.star_subject, c.get_assertion_for_predicate('SP16'),
                     c.star_object, c.get_label('C4'),
                     c.star_subject, c.get_label('E15'), c.get_label('P37'), c.get_label('E42'),
-                    c.get_label('P190'), c.get_label('P1')  # CHANGE TO P1
+                    c.get_label('P1')
                 )
                 with self.graphdriver.session() as session:
                     result = session.run(q)
@@ -654,7 +652,7 @@ class GraphImportTests(unittest.TestCase):
                     "(edition)<-[:%s]-(a3:%s)-[:%s]->(work:%s), " \
                     "(work)<-[:%s]-(a4:%s)-[:%s]->(creation:%s), " \
                     "(creation)<-[:%s]-(a5:%s)-[:%s]->(author) " \
-                    "WHERE p.uuid = '%s' RETURN poss.%s as poss, id.%s as id, src.%s as src" % (
+                    "WHERE p.uuid = '%s' RETURN poss.%s as poss, id.uri as id, src.%s as src" % (
                         # person is object property of possession
                         c.get_label('E21'), c.star_object, a, c.star_subject, c.get_label('E18'),
                         # ...according to author, who is known by an identifier
@@ -668,7 +666,7 @@ class GraphImportTests(unittest.TestCase):
                         # the creation involves our author, who carried it out
                         c.star_subject, a5, c.star_object, pinfo['uuid'],
                         # Just get back the data fields we want
-                        c.get_label('P1'), c.get_label('P190'), c.get_label('P3')
+                        c.get_label('P1'), c.get_label('P3')
                     )
                 with self.graphdriver.session() as session:
                     result = session.run(q)  # At the moment we do only have one

@@ -37,8 +37,8 @@ class PBWstarConstants:
             'E18': 'Resource:crm__E18_Physical_Thing',
             'E21': 'Resource:crm__E21_Person',
             'E22': 'Resource:`crm__E22_Human-Made_Object`',
-            'E22B': 'Resource:spec__E22_Boulloterion',
-            'E22S': 'Resource:spec__E22_Lead_Seal',
+            'E22B': 'Resource:spec__Boulloterion',
+            'E22S': 'Resource:spec__Lead_Seal',
             'E31': 'Resource:crm__E31_Document',
             'E33': 'Resource:crm__E33_Linguistic_Object',
             'E34': 'Resource:crm__E34_Inscription',
@@ -52,12 +52,15 @@ class PBWstarConstants:
             'E69': 'Resource:crm__E69_Death',
             'E73': 'Resource:crm__E73_Information_Object',
             'E74': 'Resource:crm__E74_Group',
+            'E74A': 'Resource:spec__Author_Group',
+            'E74E': 'Resource:spec__Ethnic_Group',
             'E78': 'Resource:crm__E78_Curated_Holding',
             'E87': 'Resource:crm__E87_Curation_Activity',
             'F1': 'Resource:lrmoo__F1',    # Work
             'F2': 'Resource:lrmoo__F2',    # Expression
+            'F11': 'Resource:lrmoo__F11',  # Corporate Body
             'F27': 'Resource:lrmoo__F27',  # Work Creation
-            'F28': 'Resource:lrmoo__F28',   # Expression Creation
+            'F28': 'Resource:lrmoo__F28',  # Expression Creation
         }
 
         self.predicates = {
@@ -197,12 +200,12 @@ class PBWstarConstants:
         # Make our anonymous agent PBW for the un-sourced information
         pbwcmd = "COMMAND (a:%s {%s:'Prosopography of the Byzantine World', " \
                  "%s:'https://pbw2016.kdl.kcl.ac.uk/'}) RETURN a" % (
-            self.entitylabels.get('E39'), self.get_label('P3'), self.get_label('P1'))
+            self.entitylabels.get('F11'), self.get_label('P3'), self.get_label('P1'))
         self.pbw_agent = self._fetch_uuid_from_query(pbwcmd)
         # and our VIAF agent for identifying PBW contributors
         viafcmd = "COMMAND (a:%s {%s:'Virtual Internet Authority File', " \
                   "%s:'https://viaf.org/'}) RETURN a" % (
-            self.entitylabels.get('E39'), self.get_label('P3'), self.get_label('P1'))
+            self.entitylabels.get('F11'), self.get_label('P3'), self.get_label('P1'))
         self.viaf_agent = self._fetch_uuid_from_query(viafcmd)
 
         # Some of these factoid types have their own controlled vocabularies.
@@ -282,16 +285,16 @@ class PBWstarConstants:
         return f"Resource:star__E13_{nsstr}_{code}"
 
     # Accessors / creators for our controlled vocabularies
-    def _find_or_create_cv_entry(self, category, nodeclass, label, superlabel=None):
+    def _find_or_create_cv_entry(self, category, nodeclass, label):
         if label in self.cv[category]:
             return self.cv[category][label]
         # We have to create the node, possibly attaching it to a superclass
         dataprop = self.get_label('P1')
         nodeq = "(cventry:%s {%s:\"%s\"})" % (nodeclass, dataprop, label)
         nq = "COMMAND %s" % nodeq
-        if superlabel is not None:
-            nq = "MERGE (super:%s {%s:\"%s\"}) WITH super COMMAND %s-[:%s]->(super) " % (
-                self.get_label('E55'), dataprop, superlabel, nodeq, self.get_label('P2'))
+        # if superlabel is not None:
+        #     nq = "MERGE (super:%s {%s:\"%s\"}) WITH super COMMAND %s-[:%s]->(super) " % (
+        #         self.get_label('E55'), dataprop, superlabel, nodeq, self.get_label('P2'))
         nq += " RETURN cventry"
         uuid = self._fetch_uuid_from_query(nq)
         if uuid is None:
@@ -306,17 +309,17 @@ class PBWstarConstants:
         return self._find_or_create_cv_entry('Religion', self.get_label('C24'), rel)
 
     def get_ethnicity(self, ethlabel):
-        return self._find_or_create_cv_entry('Ethnicity', self.get_label('E74'), ethlabel, 'Ethnic Group')
+        return self._find_or_create_cv_entry('Ethnicity', self.get_label('E74E'), ethlabel)
 
     def get_language(self, lang):
-        return self._find_or_create_cv_entry('Language', self.get_label('C29'), lang, 'Language Skill')
+        return self._find_or_create_cv_entry('Language', self.get_label('C29'), lang)
 
     def get_kinship(self, kinlabel):
-        return self._find_or_create_cv_entry('Kinship', self.get_label('C4'), kinlabel, 'Kinship')
+        return self._find_or_create_cv_entry('Kinship', self.get_label('C4'), kinlabel)
 
     def get_societyrole(self, srlabel):
         if srlabel in self.legal_designations:
-            return self._find_or_create_cv_entry('SocietyRole', self.get_label('C12'), srlabel, 'Legal Status')
+            return self._find_or_create_cv_entry('SocietyRole', self.get_label('C12'), srlabel)
         else:
             return self._find_or_create_cv_entry('SocietyRole', self.get_label('C7'), srlabel)
 
@@ -326,7 +329,7 @@ class PBWstarConstants:
         diglabel = [dignity]
         if ' of the ' not in dignity:  # Don't split (yet) titles that probably don't refer to places
             diglabel = dignity.split(' of ')
-        dig_uuid = self._find_or_create_cv_entry('Dignity', self.get_label('C12'), diglabel[0], 'Legal Status')
+        dig_uuid = self._find_or_create_cv_entry('Dignity', self.get_label('C12'), diglabel[0])
         # Make sure that the UUID also appears under the original label
         self.cv['Dignity'][dignity] = dig_uuid
         return dig_uuid

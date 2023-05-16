@@ -180,6 +180,12 @@ class PBWSources:
         else:
             return None
 
+    def parse_epistle(self, refstring, work):
+        m = re.match(r'[Ee]p\.\s+(.*)\s+\(Will\)', refstring)
+        if m:
+            return f'{work} ep. {m.group(1)}'
+        else:
+            return None
 
     # Initialize from the CSV file
     def __init__(self, csvfile):
@@ -191,8 +197,9 @@ class PBWSources:
         self.stripped = {
             'Alexios Stoudites': ['Eleutherios', 'Ralles-Potles', 'VV', ''],
             'Eustathios Romaios': ['Peira', 'Ralles-Potles V', r'Schminck I*'],
-            'Keroularios': ['ep. to Petros of Antioch'],
-            'Leo IX': ['ep. to Monomachos', ''],
+            'Keroularios': ['ep. to Petros of Antioch I (Will)', 'ep. to Petros of Antioch II (Will)'],
+            'Leo IX': ['ep. to Monomachos (Will)', 'ep. I to Keroularios (Will)', 'ep. II to Keroularios (Will)',
+                       'ep. to Petros of Antioch (Will)'],
             'Nea Mone,': ['Gedeon', 'Miklosich-Müller 5.'],
             'Psellos': [r'Actum 2', r'Against Ophrydas', r'Andronikos', r'Apologetikos', r'De omnifari doctrina',
                         r'Eirene', r'Epiphanios', r'Hypomnema', r'Kategoria', r'Keroularios', r'Leichoudes',
@@ -212,10 +219,10 @@ class PBWSources:
             'Eustathios Romaios': self.parse_romaios,
             'Gregory VII, in Caspar': lambda x: self.appended_string(x, 'Gregory VII, in Caspar'),
             'Iveron': lambda x: self.page_to_key(x, 'Iveron'),
-            'Keroularios': lambda x: self.appended_string(x, 'Keroularios', strip=self.stripped['Keroularios'][0]),
+            'Keroularios': lambda x: self.parse_epistle(x, 'Keroularios'),
             'Kleinchroniken': lambda x: self.page_to_key(x, 'Kleinchroniken'),
             'Lavra': lambda x: self.page_to_key(x, 'Lavra'),
-            'Leo IX': lambda x: self.ref_substring(x, 'Leo IX', self.stripped['Leo IX']),
+            'Leo IX': lambda x: self.parse_epistle(x, 'Leo IX'),
             'Mauropous: Orations': lambda x: self.page_to_key(x, 'Mauropous: Orations'),
             'Mauropous: Letters': lambda x: self.page_to_key(x, 'Mauropous: Letters'),
             'Nea Mone,': self.parse_neamone,

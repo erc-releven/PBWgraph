@@ -18,6 +18,15 @@ def escape_text(t):
     return t.replace("'", "\\'").replace('"', '\\"')
 
 
+def dedupe(lst):
+    """Remove duplicates from a list, keeping the order"""
+    r = []
+    for i in lst:
+        if i not in r:
+            r.append(i)
+    return r
+
+
 def collect_person_records():
     """Get a list of people whose floruit matches our needs"""
     # relevant = [x for x in mysqlsession.query(pbw.Person).all()
@@ -75,15 +84,17 @@ def _create_assertion_query(factoid, subj, pred, obj, auth, src, var="a"):
               'obj': '[:%s]' % constants.star_object,
               'auth': '[:%s]' % constants.star_auth,
               'src': '[:%s]' % constants.star_source}
+    dataprops = ['P3']
     # Do the subject and object first, then source, authority and predicate
     # as search area probably increases for each in that order
     anodes = [('auth', auth)]
     if src is not None:
         anodes.insert(0, ('src', src))
-    if re.match(r'^\w+$', obj):
-        anodes.insert(0, ('obj', obj))
-    else:
-        anodes.append(('obj', obj))
+    if pred not in dataprops:  # otherwise it is a data property, see below
+        if re.match(r'^\w+$', obj):
+            anodes.insert(0, ('obj', obj))
+        else:
+            anodes.append(('obj', obj))
     if re.match(r'^\w+$', subj):
         anodes.insert(0, ('subj', subj))
     else:
@@ -93,7 +104,11 @@ def _create_assertion_query(factoid, subj, pred, obj, auth, src, var="a"):
     if factoid is None:
         factoid = 'NONE'
     afromfact = 'https://pbw2016.kdl.kcl.ac.uk/rdf/' + factoid
-    ameta = ':%s {origsource:"%s"}' % (constants.get_assertion_for_predicate(pred), afromfact)
+    aprops = ['origsource: "%s"' % afromfact]
+    # If the predicate is P3, we need a data property instead of an object property
+    if pred in dataprops:
+        aprops.append('%s: %s' % (constants.get_label(pred), obj))
+    ameta = ':%s {%s}' % (constants.get_assertion_for_predicate(pred), ', '.join(aprops))
     aclassed = False
     aqparts = []
     for nt in anodes:
@@ -183,11 +198,14 @@ def get_source_and_agent(factoid):
     sourcekey = constants.source(factoid)
     if constants.authorities(sourcekey) is None:
         if sourcekey != 'Seals' or factoid.boulloterion is None:
-            warn("No boulloterion found for seal-sourced factoid %d" % factoid.factoidKey
+            warn("No boulloterion found for seal-sourced factoid %d; skipping" % factoid.factoidKey
                  if sourcekey == 'Seals'
-                 else "Source %s of factoid %d not known" % (factoid.source, factoid.factoidKey))
+                 else "Source %s of factoid %d not known; skipping" % (factoid.source, factoid.factoidKey))
             return None, None
     if factoid.boulloterion is not None:
+        if len(factoid.boulloterion.publication) == 0:
+            warn("Boulloterion %d has empty publication list; skipping" % factoid.boulloterion.boulloterionKey)
+            return None, None
         agentnode = get_boulloterion_authority(factoid.boulloterion)
         sourcenode = get_boulloterion_inscription(factoid.boulloterion, agentnode)
         return sourcenode, agentnode
@@ -237,6 +255,7 @@ def get_boulloterion(boulloterion, pbweditor):
             constants.get_label('E34'), constants.get_label('P3'), boulloterion.origLText)
         # Create the seal(s) that belong to it; these are E22s that belong to E78 Curated Holdings (the collections).
         for i, seal in enumerate(boulloterion.seals):
+            # n.b. I had to correct the collectionKey of seal 4990
             coll = seal.collection.collectionName
             # The curated holding
             q += "MERGE (coll%d:%s {%s:\"%s\"}) " % (
@@ -290,7 +309,7 @@ def get_boulloterion_sourcelist(boulloterion):
     try to isolate individual references here; anyone interested in that can follow the link back
     to the original boulloterion description."""
     # Extract the bibliography and page / object ref for each publication
-    pubs = [x.bibSource for x in boulloterion.publication]
+    pubs = dedupe([x.bibSource for x in boulloterion.publication])
     if len(pubs) == 0:
         extrapub, ref = constants.boulloterion_sources.get(boulloterion.boulloterionKey, (-1, None))
         if extrapub < 0:
@@ -472,21 +491,22 @@ def get_source_work_expression(factoid):
                     # Find the primary person for the authorship factoid
                     fact_person = afact.main_person()
                     if len(fact_person) > 1:
-                        print("More than one main person in a factoid??")
+                        print("CHECK: More than one main person in a factoid?")
                     # Make sure that the primary factoid person is indeed our author
-                    if author != _find_or_create_pbwperson(fact_person[0]):
-                        print("HELP: Author according to our data is not primary factoid referent!")
-                    else:
-                        # If the factoid is an authorship factoid, then the author is claiming to have written; if
-                        # it is a narrative factoid, then the PBW editor is making the claim
-                        # Either way, the PBW editor will be who says this passage belongs to the edition
-                        aship_authority = author if afact.factoidType == 'Authorship' else pbw_authority
-                        # We have to make a sourceref expression node, connected to this expression, for
-                        # the factoid source
-                        aship_srefnode = "(srcref:%s {%s:'%s', %s:'%s'})" % (
-                            constants.get_label('E33'), constants.get_label('P3'), escape_text(afact.sourceRef),
-                            constants.get_label('P190'), escape_text(afact.origLDesc))
-                        aship_source = 'srcref'
+                    fp0 = fact_person[0]
+                    if author != _find_or_create_pbwperson(fp0):
+                        print("CHECK: Is %s multiply authored, and is %s %d among the authors?" % (
+                            sourcekey, fp0.name, fp0.mdbCode))
+                    # If the factoid is an authorship factoid, then the author is claiming to have written; if
+                    # it is a narrative factoid, then the PBW editor is making the claim
+                    # Either way, the PBW editor will be who says this passage belongs to the edition
+                    aship_authority = author if afact.factoidType == 'Authorship' else pbw_authority
+                    # We have to make a sourceref expression node, connected to this expression, for
+                    # the factoid source
+                    aship_srefnode = "(srcref:%s {%s:'%s', %s:'%s'})" % (
+                        constants.get_label('E33'), constants.get_label('P3'), escape_text(afact.sourceRef),
+                        constants.get_label('P190'), escape_text(afact.origLDesc))
+                    aship_source = 'srcref'
             elif 'provenance' in workinfo:
                 # We have a page number. This makes our authorship authority the editor(s), with the source
                 # being the passage in this very edition.
@@ -525,21 +545,21 @@ def _find_or_create_identified_entity(etype, agent, identifier, dname):
     carried out by the given agent, with dname becoming our preferred human-readable identifier. If disamb
     is present, it becomes a note (via P3 has note) on the entity object."""
     if etype == constants.get_label('E22B'):
-        url = 'https://pbw2016.kdl.kcl.ac.uk/boulloterion/%s' % identifier
+        url = 'https://pbw2016.kdl.kcl.ac.uk/boulloterion/%s/' % identifier
     elif agent == constants.pbw_agent:
-        url = 'https://pbw2016.kdl.kcl.ac.uk/person/%s' % identifier.replace(' ', '/')
+        url = 'https://pbw2016.kdl.kcl.ac.uk/person/%s/' % identifier.replace(' ', '/')
     else:
         url = 'https://viaf.org/viaf/%s/' % identifier
     # We can't merge with comma statements, so we have to do it with successive one-liners.
     # Start the merge from the specific information we have, which is the agent and the identifier itself.
     # E15:idass -[P14 carried out by]-> coll
-    # E15:idass -[P37 assigned]-> E42:idlabel -[:P190 has content]-> "url"
+    # E15:idass -[P37 assigned]-> E42:idlabel {uri:"url"}
     # E15:idass -[P140 assigned to]-> etype:p -[P3 has note]-> "dname"
     nodelookup = _matchid('coll', agent)
-    nodelookup += "MERGE (idlabel:%s {%s:'%s'}) " \
+    nodelookup += "MERGE (idlabel:%s {uri:'%s'}) " \
                   "MERGE (coll)<-[:%s]-(idass:%s)-[:%s]->(idlabel) " \
                   "MERGE (idass)-[:%s]->(p:%s {%s:'%s'}) RETURN p" % \
-                  (constants.get_label('E42'), constants.get_label('P190'), url,
+                  (constants.get_label('E42'), url,
                    constants.get_label('P14'), constants.get_label('E15'), constants.get_label('P37'),
                    constants.get_label('P140'), etype, constants.get_label('P3'), escape_text(dname))
     with constants.graphdriver.session() as session:
@@ -615,7 +635,7 @@ def _find_or_create_authority_group(members):
     # Since this is a group with symmetrical membership, we have to add a 'DISTINCT' in order to avoid getting
     # mirrored orders of the group
     q += "COMMAND (group:%s {%s:glabel}), %s " \
-         "RETURN group" % (constants.get_label('E74'), constants.get_label('P3'), ", ".join(gc))
+         "RETURN group" % (constants.get_label('E74A'), constants.get_label('P3'), ", ".join(gc))
     with constants.graphdriver.session() as session:
         g = session.run(q.replace('COMMAND', 'MATCH')).single()
         if g is None:
@@ -679,11 +699,11 @@ def appellation_handler(sourcenode, agent, factoid, graphperson):
         if factoid.secondName is not None:
             name_en = factoid.secondName.famName
             name_ol = factoid.secondName.famNameOL
-            olang = _get_source_lang(factoid.secondName) or 'gr'
+            olang = _get_source_lang(factoid.secondName) or 'grc'
         else:
             name_en = factoid.engDesc
             name_ol = factoid.origLDesc
-            olang = _get_source_lang(factoid) or 'gr'
+            olang = _get_source_lang(factoid) or 'grc'
         print("Adding second name %s (%s '%s')" % (name_en, olang, name_ol))
 
     content = '["%s@en","%s@%s"]' % (escape_text(name_en), escape_text(name_ol), olang)
@@ -696,6 +716,22 @@ def appellation_handler(sourcenode, agent, factoid, graphperson):
         result = session.run(appassertion.replace('COMMAND', 'MATCH')).single()
         if result is None:
             session.run(appassertion.replace('COMMAND', 'CREATE'))
+
+
+def description_handler(sourcenode, agent, factoid, graphperson):
+    """Record the descriptions given in the sources as P3 data-property assertions."""
+    orig = "factoid/%d" % factoid.factoidKey
+    olang = _get_source_lang(factoid) or 'grc'
+    content = '["%s@en","%s@%s"]' % (escape_text(factoid.replace_referents()), escape_text(factoid.origLDesc), olang)
+    descassertion = _matchid('p', graphperson)
+    descassertion += _matchid('agent', agent)
+    descassertion += _matchid('src', sourcenode)
+    descassertion += _create_assertion_query(orig, 'p', 'P3', content, 'agent', 'src')
+    descassertion += 'RETURN a'
+    with constants.graphdriver.session() as session:
+        result = session.run(descassertion.replace('COMMAND', 'MATCH')).single()
+        if result is None:
+            session.run(descassertion.replace('COMMAND', 'CREATE'))
 
 
 def death_handler(sourcenode, agent, factoid, graphperson):
@@ -961,14 +997,15 @@ def record_assertion_factoids():
                             "(dbr)-[:%s]->(ts:%s {%s: datetime('%s')}) " \
                             "WITH tla, dbr " \
                             "MATCH (a) WHERE a.origsource IS NOT NULL AND NOT (a)<-[:%s]-(:%s) " \
-                            "CREATE (a)<-[:%s]-(d:%s:%s)<-[:%s]-(dbr) " \
-                            "SET d.%s = a.origsource REMOVE a.origsource " \
+                            "MERGE (orig:%s {uri:a.origsource}) " \
+                            "CREATE (a)<-[:%s]-(d:%s:%s)<-[:%s]-(dbr), (d)-[:%s]->(orig) " \
+                            "REMOVE a.origsource " \
                             "RETURN dbr, count(d) as newrecords" % (tla,
                                                                     f28, p14,
                                                                     p4, e52, p80, timestamp,
                                                                     p70, e31,
-                                                                    p70, e31, f2, r17,
-                                                                    r76)
+                                                                    f2,
+                                                                    p70, e31, f2, r17, r76)
         result = session.run(findnewassertions).single()
         new_assertions = result.get('newrecords', 0)
         print("*** Created %d new assertions ***" % new_assertions)
@@ -1025,10 +1062,10 @@ def process_persons():
                     # Find out what sources we are actually using and make note of them
                     source_key = constants.source(f)
                     if source_key is None:
-                        warn("Skipping factoid %d with unlisted source %s" % (f.factoidKey, f.source))
+                        print("Skipping factoid %d with unlisted source %s" % (f.factoidKey, f.source))
                         continue
                     elif source_key == 'OUT_OF_SCOPE':
-                        warn("Skipping factoid %d with a source %s out of our temporal scope"
+                        print("Skipping factoid %d with a source %s out of our temporal scope"
                              % (f.factoidKey, f.source))
                         continue
                     else:
@@ -1044,7 +1081,7 @@ def process_persons():
                     (source_node, authority_node) = get_source_and_agent(f)
                     # If the factoid has no source then we skip it
                     if source_node is None:
-                        warn("We should not have got here! with factoid %d" % f.factoidKey)
+                        print("HELP: Factoid %d had no parseable source for some reason" % f.factoidKey)
                         continue
                     # If the factoid has no authority then we assign it to the generic PBW agent
                     if authority_node is None:
