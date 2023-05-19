@@ -132,7 +132,7 @@ class PBWSources:
                 return f'Psellos, {val}'
 
         # All the pre-numbered strings
-        for pattern in [r'(Orationes panegyricae [IVX]+)', r'(Poema \d+)\.', ]:
+        for pattern in [r'(Orationes panegyricae [IVX]+)', r'(Poema \d+)', ]:
             m = re.match(pattern, refstring)
             if m:
                 return f'Psellos, {m.group(1)}'
