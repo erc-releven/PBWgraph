@@ -51,6 +51,7 @@ class PBWstarConstants:
             'E62': 'Resource:crm__E62_String',
             'E69': 'Resource:crm__E69_Death',
             'E73': 'Resource:crm__E73_Information_Object',
+            'E73B': 'Resource:spec__Bibliography',
             'E74': 'Resource:crm__E74_Group',
             'E74A': 'Resource:spec__Author_Group',
             'E74E': 'Resource:spec__Ethnic_Group',
@@ -58,6 +59,8 @@ class PBWstarConstants:
             'E87': 'Resource:crm__E87_Curation_Activity',
             'F1': 'Resource:lrmoo__F1',    # Work
             'F2': 'Resource:lrmoo__F2',    # Expression
+            'F2D': 'Resource:spec__Database_Record',
+            'F2P': 'Resource:spec__Publication',
             'F11': 'Resource:lrmoo__F11',  # Corporate Body
             'F27': 'Resource:lrmoo__F27',  # Work Creation
             'F28': 'Resource:lrmoo__F28',  # Expression Creation

@@ -192,8 +192,9 @@ def _find_or_create_event(person, eventclass, predicate):
 
 def get_source_and_agent(factoid):
     """Returns a node that represents the source for this factoid. Creates the network of nodes and
-    relationships to describe that source, if necessary. The source will either be a physical E22 Human-Made Object
-    (the boulloterion) or an F2 Expression (the written primary source)."""
+    relationships to describe that source, if necessary. The source will either be an E34 Inscription from
+    a physical E22 Human-Made Object (the boulloterion) or an E33 Linguistic Object, i.e. a passage from a
+    Publication (the written primary source)."""
     # Is this a 'seals' source without a boulloterion? If so warn and return None
     sourcekey = constants.source(factoid)
     if constants.authorities(sourcekey) is None:
@@ -304,8 +305,8 @@ def get_boulloterion_inscription(boulloterion, pbweditor):
 
 def get_boulloterion_sourcelist(boulloterion):
     """A helper function to create the list of publications where the seals allegedly produced by a
-    given boulloterion were published. Returns either a single F2 Expression (if there was a single
-    publication) or an E73 Information Object that represents a collection of Expressions. We do not
+    given boulloterion were published. Returns either a single Publication (if there was a single
+    publication) or a Bibliography that represents a collection of Expressions. We do not
     try to isolate individual references here; anyone interested in that can follow the link back
     to the original boulloterion description."""
     # Extract the bibliography and page / object ref for each publication
@@ -319,15 +320,15 @@ def get_boulloterion_sourcelist(boulloterion):
             pubs = [mysqlsession.query(pbw.Bibliography).filter_by(bibKey=extrapub).scalar()]
 
     # Get some labels
-    f2 = constants.get_label('F2')
-    e73 = constants.get_label('E73')
+    f2p = constants.get_label('F2P')
+    e73b = constants.get_label('E73B')
     p165 = constants.get_label('P165')
     pubct = 0
     mquery = ""
     source_nodes = []
     for source in pubs:
         # Make sure with 'merge' that each bibliography node exists
-        sn = "(src%d:%s {%s:'%s', %s:'%s'})" % (pubct, f2, constants.get_label('P1'), re_encode(source.shortName),
+        sn = "(src%d:%s {%s:'%s', %s:'%s'})" % (pubct, f2p, constants.get_label('P1'), re_encode(source.shortName),
                                                 constants.get_label('P102'), escape_text(re_encode(source.latinBib)))
         source_nodes.append(sn)
         mquery += "MERGE %s " % sn
@@ -339,7 +340,7 @@ def get_boulloterion_sourcelist(boulloterion):
         mquery += "WITH %s " % ", ".join(["src%d" % x for x in range(pubct)])
         # This size syntax taken blindly from
         # https://stackoverflow.com/questions/68785613/neo4j-4-3-deprecation-of-size-function-and-pattern-comprehension
-        mquery += "MATCH (srcgrp:%s) WHERE size([(srcgrp)-[:%s]->(:%s) | srcgrp]) = %d " % (e73, p165, f2, pubct)
+        mquery += "MATCH (srcgrp:%s) WHERE size([(srcgrp)-[:%s]->(:%s) | srcgrp]) = %d " % (e73b, p165, f2p, pubct)
         for n in range(pubct):
             parts.append("(srcgrp)-[:%s]->(src%d)" % (p165, n))
         mquery += "MATCH " + ", ".join(parts) + " "
@@ -351,7 +352,7 @@ def get_boulloterion_sourcelist(boulloterion):
         ret = session.run(mquery).single()
         if ret is None:
             # The plural sources (now) exist, but the source group doesn't. Create it
-            createparts = ["(srcgrp:%s)" % e73]
+            createparts = ["(srcgrp:%s)" % e73b]
             for j in range(pubct):
                 createparts.append("(srcgrp)-[:%s]->(src%d)" % (p165, j))
             cquery = "MATCH " + ", ".join(source_nodes) + " "
@@ -445,7 +446,7 @@ def get_source_work_expression(factoid):
     # First see if the expression already exists. We cheat here by setting a 'pbwid' on the
     # expression for easy lookup.
     expression = "(expr:%s {%s: \"%s\", pbwid: \"%s\"})" % (
-        constants.get_label('F2'), constants.get_label('P3'), escape_text(exprid), sourcekey)
+        constants.get_label('F2P'), constants.get_label('P3'), escape_text(exprid), sourcekey)
     mquery = "MATCH %s RETURN expr.uuid" % expression
     with constants.graphdriver.session() as session:
         result = session.run(mquery).single()
@@ -980,7 +981,7 @@ def record_assertion_factoids():
     database creation event."""
     e31 = constants.get_label('E31')  # Document
     e52 = constants.get_label('E52')  # Time-Span
-    f2 = constants.get_label('F2')    # Expression
+    f2d = constants.get_label('F2D')  # DB record, both ours and PBW's
     f28 = constants.get_label('F28')  # Expression Creation
     p4 = constants.get_label('P4')    # has time-span
     p14 = constants.get_label('P14')  # carried out by
@@ -1004,8 +1005,8 @@ def record_assertion_factoids():
                                                                     f28, p14,
                                                                     p4, e52, p80, timestamp,
                                                                     p70, e31,
-                                                                    f2,
-                                                                    p70, e31, f2, r17, r76)
+                                                                    f2d,
+                                                                    p70, e31, f2d, r17, r76)
         result = session.run(findnewassertions).single()
         new_assertions = result.get('newrecords', 0)
         print("*** Created %d new assertions ***" % new_assertions)
@@ -1066,7 +1067,7 @@ def process_persons():
                         continue
                     elif source_key == 'OUT_OF_SCOPE':
                         print("Skipping factoid %d with a source %s out of our temporal scope"
-                             % (f.factoidKey, f.source))
+                              % (f.factoidKey, f.source))
                         continue
                     else:
                         used_sources.add(source_key)
