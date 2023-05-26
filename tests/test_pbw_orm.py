@@ -60,7 +60,7 @@ class TestConnections(unittest.TestCase):
         alexios5 = self.lookup_person('Alexios', 5)
         sourceref = "%s %s" % (mourtzouphlos.source, mourtzouphlos.sourceRef)
         self.assertEqual(sourceref, 'Kleinchroniken 63.3, 150.92, 174.1, 229.8, 298.1, 534.38')
-        self.assertEqual(mourtzouphlos.origLang, '(Unspecified)')
+        self.assertEqual(mourtzouphlos.origLang, 'Greek')
         self.assertEqual(mourtzouphlos.origLDesc, "τὸν λεγόμενον Μούρτζουφλον")
         self.assertEqual(mourtzouphlos.factoidType, 'Alternative Name')
         self.assertEqual(len(mourtzouphlos.persons), 1)

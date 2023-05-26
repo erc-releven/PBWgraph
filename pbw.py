@@ -29,7 +29,6 @@ class Bibliography(Base):
 # N.B. there are several identical collection records for each ID! Weird.
 class Collection(Base):
     __tablename__ = 'Collection'
-    suppress = Column(Integer)
     collectionName = Column(Text)
     red = Column(Integer)
     collectionKey = Column(Integer, primary_key=True)
@@ -541,7 +540,7 @@ class Factoid(Base):
     vnameInfo = relationship('VariantName', secondary=vname_association, backref="factoidData", uselist=False)
     secondName = relationship('FamilyName', secondary=family_association, uselist=False)
     kinshipType = relationship('KinshipType', secondary=kinship_association, uselist=False)
-    cursusRecord = relationship('Cursus', secondary=cursus_association, uselist=False)
+    cursusRecord = relationship('Cursus', secondary=cursus_association, uselist=False, overlaps="cursusFactoids")
 
     # From association classes that return a record, we have:
     # - deathRecord

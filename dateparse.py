@@ -182,7 +182,8 @@ def parse_date(datestr):
             #     print("Parsed string %s as %s - %s" % (datestr, day_string(dmin), day_string(dmax)))
     # Handle interstitial qualifiers
     if dt is None:
-        beforeafter = re.match(r'(\d+)\s+(before|after|early|late|around|mid(dle)?|end)( of)?\s+(.*)$', datestr, flags=re.I)
+        beforeafter = re.match(r'(\d+)\s+(before|after|early|late|around|mid(dle)?|end)( of)?\s+(.*)$',
+                               datestr, flags=re.I)
         if beforeafter is not None:
             year = int(beforeafter.group(1))
             qualifier = beforeafter.group(2)
@@ -320,7 +321,8 @@ def parse_date_info(nunit):
         # print("Parsed date %s of type %d in range %s - %s"
         #       % (nunit.dates, datetype, day_string(dmin), day_string(dmax)))
         print("Unparsed date %s (%s)" % (nunit.dates, datestr))
-    return dmin, dmax
+    return dmin, dmax, datetype
+
 
 if __name__ == '__main__':
     # Connect to the SQL DB
@@ -329,8 +331,16 @@ if __name__ == '__main__':
     mysqlsession = smaker()
     # Get all the narrative dates
     unparsed = 0
+    print("Trying narrative factoids")
     for nu in mysqlsession.query(pbw.NarrativeUnit).all():
         result = parse_date_info(nu)
         if result is not None and result[0] is None:
             unparsed += 1
+    print("Trying death factoids")
+    for df in mysqlsession.query(pbw.DeathFactoid).all():
+        if df.sourceDate is not None and df.sourceDate != '':
+            result = parse_date(df.sourceDate)
+            if result[0] is None:
+                print("Unparsed date %s" % df.sourceDate)
+                unparsed += 1
     print("Total unparsed: %d" % unparsed)
