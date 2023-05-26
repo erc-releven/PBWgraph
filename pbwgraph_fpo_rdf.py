@@ -1,235 +1,180 @@
 import pbw
-import mariadb
-import sys
-from rdflib import Graph, Literal, RDF, Namespace, URIRef
-from rdflib.namespace import RDFS, FOAF, XSD
+import config
+from rdflib import Graph, Literal, RDF, Namespace
+from rdflib.namespace import RDFS, XSD, OWL
 from datetime import datetime
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from urllib.parse import urlencode
-import re
-from pbwgraph_config import create_engine_str
-from graphimportSTAR import get_authmap
-
-mj = 'Michael Jeffreys'
-tp = 'Tassos Papacostas'
-ta = 'Tara Andrews'
-jr = 'Judith Ryder'
-mw = 'Mary Whitby'
-wa = 'Wahid Amin'
-bs = 'Bruna Soravia'
-hm = 'Harry Munt'
-lo = 'Letizia Osti'
-cr = 'Charlotte Roueché'
-ok = 'Olga Karagiorgiou'
 
 
-pbwfpo=Namespace('http://example.com/PBW/FPO/test_v1/entity/')
 """Defines preliminary namespace for PBW RDF representation."""
-pbw_fpo_extension=Namespace('http://example.com/PBW//')
+pbwfpo = Namespace('http://pbw2016.kdl.kcl.ac.uk/rdf/')
 """Defines preliminary namespace for PBW RDF representation."""
-fpocore=Namespace('http://github.com/johnBradley501/FPO/raw/master/fpo.owl#')
+pbw_fpo_extension = Namespace('http://pbw2016.kdl.kcl.ac.uk/ontology/')
 """Defines Factoid Prosopography Ontology (KCL/Bradley) namespace."""
-dc=Namespace('http://purl.org/dc/elements/1.1/')
-"""Defines Dublincore namespace."""
-crm=Namespace('http://www.cidoc-crm.org/cidoc-crm/')
+fpocore = Namespace('http://github.com/johnBradley501/FPO/raw/master/fpo.owl#')
 """Defines namespace for CIDOC CRM."""
-fpocore=Namespace('http://www.intavia.eu/idm-core/')
-"""Defines namespace for own ontology."""
-owl=Namespace('http://www.w3.org/2002/7/owl#')
-"""Defines namespace for Europeana data model vocabulary."""
-rdf=Namespace('http://www.w3.org/1999/02/22-rdf-syntax-ns#')
-"""Defines namespace for Europeana data model vocabulary."""
-xml=Namespace('http://www.w3.org/XML/1998/namespace')
-"""Defines namespace for Europeana data model vocabulary."""
-xsd=Namespace('http://www.w3.org/2001/XMLSchema#')
-"""Defines namespace for Europeana data model vocabulary."""
-rdfs=Namespace('http://www.w3.org/2000/01/rdf-schema#')
-"""Defines namespace for Europeana data model vocabulary."""
-apis=Namespace('https://www.apis.acdh.oeaw.ac.at/')
+crm = Namespace('http://www.cidoc-crm.org/cidoc-crm/')
 """Defines namespace for APIS database."""
-owl=Namespace('http://www.w3.org/2002/07/owl#')
-"""Defines OWL namespace."""
-frbroo=Namespace('http://www.ifla.org/files/assets/cataloguing/FRBRoo/frbroo_v_2.4.pdf#')
-"""Defines frbroo namespace."""
-pleiades_place=Namespace('http://pleiades.stoa.org/places/')
+apis = Namespace('https://www.apis.acdh.oeaw.ac.at/')
+"""Defines LRMoo namespace."""
+lrmoo = Namespace('http://iflastandards.info/ns/lrm/lrmoo/')
 """"Namespace for places from Pleiades"""
-geonames_place=Namespace('http://www.geonames.org/')
-""""Namespace for places from Pleiades"""
+pleiades_place = Namespace('http://pleiades.stoa.org/places/')
+""""Namespace for places from GeoNames"""
+geonames_place = Namespace('https://sws.geonames.org/')
 
 
-EventFactoidList = [4, 7]
-StateOfAffairsFactoid = [9, 11, 14]
-#complete these lists after discussion with Tara
+def langtag_string(s, lcode):
+    ltag = None
+    match lcode:
+        case 2:
+            ltag = 'grc'
+        case 3:
+            ltag = 'la'
+        case 4:
+            ltag = 'ar'
+        case 5:
+            ltag = 'xcl'
+    if ltag is not None:
+        return Literal(s, datatype=XSD.string, lang=ltag)
+    else:
+        return Literal(s, datatype=XSD.string, lang='en')
 
-def create_factoid_uris(a):
-    factoid_base_uri_str=f"{pbwfpo}factoid/{a}"
-    return factoid_base_uri_str
 
-# def create_person_uris(b):
-#     person_base_uri_str=f"{pbwfpo}factoid/{b.personKey}"
-#     return person_base_uri_str
-
-def create_rdflabel(engDesc):
-    if re.search('<PERSREF\sID=\\"(\d)*\\"\/>', engDesc):
-        engDesc = re.sub('"\/>',"",engDesc)
-        engDesc = re.sub('<PERSREF\sID=\\"', pbwfpo, engDesc)
-    return(engDesc)
-
-def create_factoid(engine, g, mysqlsession):
-    #print(f"""pbw factoid: {fa.factoidKey}""")
-    for a in mysqlsession.query(pbw.Factoid).all():
-        factoid_base_uri_str = create_factoid_uris(a.factoidKey)
-        g.add(((URIRef(f"{pbw_fpo_extension}{a.factoidTypeKey}"), RDFS.subClassOf, (URIRef(f"{fpocore}Factoid")))))
-        g.add((URIRef(factoid_base_uri_str), RDF.type, (URIRef(f"{fpocore}{(a.factoidTypeKey)}"))))
-        g.add((URIRef(f"{pbw_fpo_extension}{a.factoidTypeKey}"), RDFS.label, Literal(f"{a.factoidType} Factoid")))
-        if a.factoidTypeKey in EventFactoidList:
-            g.add((URIRef(f"{pbw_fpo_extension}factiodtype/{a.factoidTypeKey}"), RDFS.subClassOf, (URIRef(f"{fpocore}EventFactoid"))))
-        if a.factoidTypeKey in StateOfAffairsFactoid:
-            g.add((URIRef(f"{pbw_fpo_extension}factiodtype/{a.factoidTypeKey}"), RDFS.subClassOf, (URIRef(f"{fpocore}StateOfAffairsFactoid"))))
-        g.add(((URIRef(factoid_base_uri_str)), fpocore.sourcedForm, (URIRef(f"{pbwfpo}SourceCitation/{a.factoidKey}"))))
-        g.add((URIRef(f"{pbwfpo}SourceCitation/{a.factoidKey}"), RDF.type, fpocore.SourceCitation))
-        g.add((URIRef(f"{pbwfpo}SourceCitation/{a.factoidKey}"), fpocore.hasPlaceInSource, Literal(a.sourceRef)))
-        g.add((URIRef(f"{pbwfpo}SourceCitation/{a.factoidKey}"), fpocore.fromSource, URIRef(f"{pbwfpo}Source/{a.sourceKey}")))
-        rdf_engDesc = create_rdflabel(a.engDesc)
-        g.add((URIRef(factoid_base_uri_str), RDFS.label, Literal(rdf_engDesc, lang="en")))
-        #language tags according to ISO 639-1
-        if a.oLangKey == 5:
-            g.add((URIRef(factoid_base_uri_str), RDFS.label, Literal(a.origLDesc, lang="hy")))
-            #armenian original language tag
-        elif a.oLangKey == 4:
-            g.add((URIRef(factoid_base_uri_str), RDFS.label, Literal(a.origLDesc, lang="ar")))
-            #arabic original language tag
-        elif a.oLangKey == 3:
-            g.add((URIRef(factoid_base_uri_str), RDFS.label, Literal(a.origLDesc, lang="la")))
-            #latin original language tag
-        elif a.oLangKey == 2:
-            g.add((URIRef(factoid_base_uri_str), RDFS.label, Literal(a.origLDesc, lang="gr")))
-            #greek original language tag
+def create_persons(g, session):
+    for p in session.query(pbw.Person).all():
+        # Make the person's URI
+        person = pbwfpo.term(f'person/{p.personKey}')
+        # Which class is the person?
+        if p.name == 'Anonymi' or p.name == 'Anonymae':
+            isa = pbw_fpo_extension.Group
         else:
-            g.add((URIRef(factoid_base_uri_str), RDFS.label, Literal(a.origLDesc)))
-            #unspecified original language tag
-    return g
+            match p.sex:
+                case 'Female':
+                    isa = fpocore.FemalePerson
+                case 'Eunuch':
+                    isa = pbw_fpo_extension.EunuchPerson
+                case 'Male':
+                    isa = fpocore.MalePerson
+                case _:
+                    isa = fpocore.Person
+        # Make some triples
+        g.add((person, RDF.type, isa))
+        # name
+        g.add((person, fpocore.hasDisplayNameComponent, Literal(p.name, datatype=XSD.string)))
+        # mdbCode
+        g.add((person, fpocore.hasDisplayNumberComponent, Literal(p.mdbCode, datatype=XSD.integer)))
+        # descName
+        if p.descName:
+            g.add((person, fpocore.hasDisplayName, langtag_string(p.descName, 0)))
+        # nameOL
+        if p.nameOL:
+            g.add((person, pbw_fpo_extension.hasDisplayName, langtag_string(p.nameOL, p.oLangKey)))
+        # floruit
+        if p.floruit:
+            g.add((person, pbw_fpo_extension.floruit, Literal(p.floruit, datatype=XSD.string)))
 
-def locationref(engine, g, mysqlsession):
-    for h in mysqlsession.query(pbw.FactoidLocation):
-        factoid_base_uri_str = create_factoid_uris(h.factoidKey)
-        g.add ((URIRef(factoid_base_uri_str), fpocore.hasReference, URIRef((f"{pbwfpo}locationreference/{h.factoidKey}/{h.locationKey}"))))
-        g.add ((URIRef(f"{pbwfpo}locationreference/{h.factoidKey}/{h.locationKey}"), RDF.type, fpocore.LocationReference))
-        g.add ((URIRef(f"{pbwfpo}locationreference/{h.factoidKey}/{h.locationKey}"), fpocore.referencesLocation, URIRef(f"{pbwfpo}location/{h.locationKey}")))
-    return g
 
-def location(engine, g, mysqlsession):
-    for i in mysqlsession.query(pbw.Location):
-        g.add ((URIRef(f"{pbwfpo}location/{i.locationKey}"), RDF.type, fpocore.Location))
-        g.add ((URIRef(f"{pbwfpo}locationreference/{i.locationKey}"), RDFS.label, Literal(i.locName, lang="en")))
-        if i.oLangKey == 5:
-            g.add((URIRef(f"{pbwfpo}location/{í.locationKey}"), RDFS.label, Literal(i.locNameOL, lang="hy")))
-            #armenian original language tag
-        elif i.oLangKey == 4:
-            g.add((URIRef(f"{pbwfpo}location/{i.locationKey}"), RDFS.label, Literal(i.locNameOL, lang="ar")))
-            #arabic original language tag
-        elif i.oLangKey == 3:
-            g.add((URIRef(f"{pbwfpo}location/{i.locationKey}"), RDFS.label, Literal(i.locNameOL, lang="la")))
-            #latin original language tag
-        elif i.oLangKey == 2:
-            g.add((URIRef(f"{pbwfpo}location/{i.locationKey}"), RDFS.label, Literal(i.locNameOL, lang="gr")))
-            #greek original language tag
+def create_sources(g, session):
+    for b in session.query(pbw.Source).all():
+        source = pbwfpo.term(f'source/{b.sourceKey}')
+        g.add((source, RDF.type, fpocore.Source))
+        g.add((source, fpocore.hasSourceName, Literal(b.sourceID, datatype=XSD.string)))
+
+
+def create_locations(g, session):
+    for i in session.query(pbw.Location):
+        locuri = pbwfpo.term(f'location/{i.locationKey}')
+        g.add((locuri, RDF.type, fpocore.Location))
+        g.add((locuri, fpocore.hasLocationName, langtag_string(i.locName, 0)))
+        # The original location names are unrecoverable in the database
+        # if i.locNameOL:
+        #     g.add((locuri, fpocore.hasLocationName, langtag_string(i.locNameOL, i.oLangKey)))
+        if i.geonames_id:
+            g.add((locuri, OWL.sameAs, geonames_place.term(i.geonames_id)))
+        if i.pleiades_id:
+            g.add((locuri, OWL.sameAs, pleiades_place.term(i.pleiades_id)))
+        if i.extraInfo:
+            g.add((locuri, RDFS.comment, Literal(i.extraInfo)))
+
+
+def create_boulloterions(g, session):
+    for b in session.query(pbw.Boulloterion).all():
+        bouluri = pbwfpo.term(f'boulloterion/{b.boulloterionKey}')
+        g.add((bouluri, RDF.type, pbw_fpo_extension.Boulloterion))
+        g.add((bouluri, pbw_fpo_extension.hasTextInscription, langtag_string(b.text, 0)))
+        g.add((bouluri, pbw_fpo_extension.hasTextInscription, langtag_string(b.origLText, b.oLangKey)))
+        g.add((bouluri, pbw_fpo_extension.obverseIcon, langtag_string(b.obvIcon, 0)))
+        if b.revIcon:
+            g.add((bouluri, pbw_fpo_extension.reverseIcon, langtag_string(b.revIcon, 0)))
+        if b.diameter:
+            g.add((bouluri, pbw_fpo_extension.hasDiameter, Literal(b.diameter, datatype=XSD.integer)))
+        if b.dateWords:
+            pass  # make date and textual description?
+
+
+def create_factoids(g, session):
+    # print(f"""pbw factoid: {fa.factoidKey}""")
+    for a in session.query(pbw.Factoid).all():
+        factoid_base_uri = pbwfpo.term(f'factoid/{a.factoidKey}')
+        # What type of factoid is it?
+        match a.factoidType.typeName:
+            case 'Dignity/Office':
+                ftype_str = 'Office'
+            case 'Ethnic label':
+                ftype_str = 'Ethnicity'
+            case 'Eunuchs':
+                ftype_str = 'Eunuch'
+            case 'Kinship':
+                ftype_str = 'Relationship'
+            case 'Occupation/Vocation':
+                ftype_str = 'Occupation'
+            case _:
+                ftype_str = a.factoidType.typeName
+        ftype_str = ftype_str.replace(' ', '')
+        g.add((factoid_base_uri, RDF.type, fpocore.term(f"{ftype_str}Factoid")))
+
+        # Get the source citation
+        if a.source.sourceID == 'Seals':
+            pass  # TODO link to boulloterion
         else:
-            g.add((URIRef(f"{pbwfpo}location/{i.locationKey}"), RDFS.label, Literal(i.locNameOL)))
-            #unspecified original language tag
-        if i.geonames_id != None:
-            g.add ((URIRef(f"{pbwfpo}location/{i.locationKey}"), owl.sameAs, URIRef(f"{geonames_place}{i.geonames_id}")))
-        else:
-            continue
-        if i.pleiades_id != None:
-            g.add ((URIRef(f"{pbwfpo}location/{i.locationKey}"), owl.sameAs, URIRef(f"{pleiades_place}{i.pleiades_id}")))
-        else:
-            continue
-    return g
+            urlenc_cit = urlencode(a.sourceRef)
+            sourcecit_uri = pbwfpo.term(f'citation/{urlenc_cit}')
+            g.add((factoid_base_uri, fpocore.sourcedFrom, sourcecit_uri))
+            g.add((sourcecit_uri, RDF.type, fpocore.SourceCitation))
+            g.add((sourcecit_uri, fpocore.fromSource, pbwfpo.term(f'source/{a.sourceKey}')))
+            g.add((sourcecit_uri, fpocore.hasPlaceInSource, Literal(a.sourceRef)))
 
-def create_source(engine, g, mysqlsession):
-    for b in mysqlsession.query(pbw.Source).all():
-        g.add((URIRef(f"{pbwfpo}Source/{b.sourceKey}"), RDFS.label, Literal(b.sourceID)))
-        g.add((URIRef(f"{pbwfpo}Source/{b.sourceKey}"), RDF.type, fpocore.Source))
-    return g
-
-def create_occupation_factoid(engine, g, mysqlsession):
-    for c in mysqlsession.query(pbw.occupation_association).all():
-        factoid_base_uri_str = create_factoid_uris(c.factoidKey)
-        g.add((URIRef(factoid_base_uri_str), fpocore.hasReference, URIRef(f"{pbwfpo}occupationreference/{c.OccupationKey}")))
-    return g
-
-def create_occupation_label(engine, g, mysqlsession):
-    for d in mysqlsession.query(pbw.Occupation).all():
-        g.add((URIRef(f"{pbwfpo}occupation/{d.occupationKey}"), RDFS.label, Literal(d.occupationName)))
-        g.add((URIRef(f"{pbwfpo}occupation/{d.occupationKey}"), RDF.type, pbw_fpo_extension.Occupation))
-    return g
-
-def create_person_uris(pk):
-    person_base_uri_str=f"{pbwfpo}Person/{pk}"
-    return person_base_uri_str
+        # Get the text
+        if a.engDesc:
+            g.add((factoid_base_uri, pbw_fpo_extension.hasDescriptiveText, langtag_string(a.engDesc, 0)))
+        if a.origLDesc:
+            g.add((factoid_base_uri, pbw_fpo_extension.hasDescriptiveText, langtag_string(a.origLDesc, a.oLangKey)))
 
 
-def create_person_reference (engine, g, mysqlsession):
-    for e in mysqlsession.query(pbw.FactoidPerson).all():
-        factoid_base_uri = create_factoid_uris(e.factoidKey)
-        person_uri = create_person_uris(e.personKey)
-        g.add((URIRef(factoid_base_uri), fpocore.hasReference, (URIRef(f"{pbwfpo}personref/{e.fpKey}"))))
-        g.add((URIRef(f"{pbwfpo}personref/{e.fpKey}"), RDF.type, fpocore.PersonReference))
-        g.add((URIRef(f"{pbwfpo}personref/{e.fpKey}"), fpocore.referencesPerson, URIRef(person_uri)))
-        g.add((URIRef(person_uri), RDF.type, fpocore.Person))
-    return g
-
-def create_person_labels(engine, g, mysqlsession):
-    for f in mysqlsession.query(pbw.Person).all():
-        person_uri = create_person_uris(f.personKey)
-        g.add((URIRef(person_uri), RDFS.label, Literal(f.descName, lang="en")))
-    return g
-
-
-# def create_vname_association(engine, g, mysqlsession):
-#     for e in mysqlsession.query(pbw.vname_association).all():
-#         factoid_base_uri_str = create_factoid_uris(e.factoidKey)
-#         g.add((URIRef(factoid_base_uri_str), fpocore.hasReference, URIRef(f"{pbwfpo}occupationreference/{c.OccupationKey}")))
-#     return g
-
-def serializeto_ttl(g):
-    g.bind('pbwfpo', pbwfpo)
-    g.bind('pbw_fpo_extension', pbw_fpo_extension)
-    g.bind('fpocore', fpocore)
-    g.bind('dc', dc)
+def create_full_graph(session):
+    g = Graph(bind_namespaces="rdflib")
     g.bind('crm', crm)
-    g.bind('owl', owl)
-    g.bind('rdf', rdf)
-    g.bind('xml', xml)
-    g.bind('xsd', xsd)
-    g.bind('rdfs', rdfs)
+    g.bind('fpo', fpocore)
+    g.bind('pbw', pbw)
+    g.bind('lrmoo', lrmoo)
     g.bind('apis', apis)
-    g.bind('owl', owl)
-    g.bind('frbroo', frbroo)
-    #Bind namespaces to prefixes for readable output
-    ex_pbw_fpo = g.serialize(destination=f'pbw_rdf_data_{datetime.now().strftime("%d-%m-%Y")}.ttl', format='turtle')
-    #print(ex_pbw_fpo)
-    return(ex_pbw_fpo)
+    create_persons(g, session)
+    create_sources(g, session)
+    create_locations(g, session)
+    # create_boulloterions(g, session)
+    # create_seals(g, session)
+    create_factoids(g, session)
 
-def main(starttime, engine, mysqlsession):
-    g = Graph()
-    g = create_factoid(engine, g, mysqlsession)
-    g = create_source(engine, g, mysqlsession)
-    g = create_occupation_factoid(engine, g, mysqlsession)
-    g = create_occupation_label(engine, g, mysqlsession)
-    g = create_person_reference(engine, g, mysqlsession)
-    g = create_person_labels(engine, g, mysqlsession)
-    g = locationref(engine, g, mysqlsession)
-    g = location(engine, g, mysqlsession)
-    pbw_fpo = serializeto_ttl(g)
+    g.serialize(destination=f'pbw_rdf_data_{datetime.now().strftime("%d-%m-%Y")}.ttl', format='turtle')
 
 
 if __name__ == '__main__':
     # Connect to the SQL DB
     starttime = datetime.now()
-    engine = create_engine(create_engine_str)
+    engine = create_engine('mysql+pymysql://' + config.dbstring)
     smaker = sessionmaker(bind=engine)
     mysqlsession = smaker()
-    main(starttime, engine, mysqlsession)
+    create_full_graph(mysqlsession)
