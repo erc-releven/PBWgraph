@@ -40,8 +40,8 @@ class PBWstarConstants:
             'E22B': 'Resource:spec__Boulloterion',
             'E22S': 'Resource:spec__Lead_Seal',
             'E31': 'Resource:crm__E31_Document',
-            'E33': 'Resource:crm__E33_Linguistic_Object',
-            'E34': 'Resource:crm__E34_Inscription',
+            'E33': 'Resource:crm__E33_Linguistic_Object:crm__E73_Information_Object',
+            'E34': 'Resource:crm__E34_Inscription:crm__E73_Information_Object',
             'E39': 'Resource:crm__E39_Actor',
             'E41': 'Resource:crm__E41_Appellation',
             'E42': 'Resource:crm__E42_Identifier',
@@ -58,9 +58,8 @@ class PBWstarConstants:
             'E78': 'Resource:crm__E78_Curated_Holding',
             'E87': 'Resource:crm__E87_Curation_Activity',
             'F1': 'Resource:lrmoo__F1',    # Work
-            'F2': 'Resource:lrmoo__F2',    # Expression
-            'F2D': 'Resource:spec__Database_Record',
-            'F2P': 'Resource:spec__Publication',
+            'F2': 'Resource:lrmoo__F2',    # Expression - e.g. a database record
+            'F3': 'Resource:lrmoo__F3',    # Publication - e.g. an edition or journal article
             'F11': 'Resource:lrmoo__F11',  # Corporate Body
             'F27': 'Resource:lrmoo__F27',  # Work Creation
             'F28': 'Resource:lrmoo__F28',  # Expression Creation

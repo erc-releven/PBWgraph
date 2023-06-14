@@ -257,6 +257,9 @@ class PBWSources:
         self.authorities['shaddad'] = {'identifier': 'Ibn Shaddād, Muḥammad ibn ʻAlī', 'viaf': '81960386'}
         self.authorities['lupus'] = {'identifier': 'Lupus Protospatharius', 'viaf': '84485715'}
         self.authorities['abari'] = {'identifier': 'Anonymus Barensis', 'viaf': '13129565'}
+        self.authorities['matthew'] = {'identifier': 'Matthew of Edessa', 'viaf': '67980167'}
+        self.authorities['michael'] = {'identifier': 'Michael I, Syrian Orthodox Patriarch of Antioch',
+                                       'viaf': '12704144'}
         with open(csvfile, encoding='utf-8', newline='') as fh:
             reader = csv.DictReader(fh)
             for row in reader:
