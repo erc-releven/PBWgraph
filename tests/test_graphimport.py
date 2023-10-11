@@ -9,10 +9,6 @@ def pburi(x):
     return f"https://pbw2016.kdl.kcl.ac.uk/person/{x}/"
 
 
-def pbwid(x):
-    return x.lstrip('https://pbw2016.kdl.kcl.ac.uk/person/').rstrip('/')
-
-
 class GraphImportTests(unittest.TestCase):
 
     graphdriver = None
@@ -20,106 +16,106 @@ class GraphImportTests(unittest.TestCase):
     # Data keys are gender, identifier (appellation), second-name appellation, alternate-name appellation,
     # death, ethnicity, religion, societyrole, legalrole, language, kinship, possession
     td_people = {
-        'Anna/62': {'gender': ['Female'], 'identifier': 'Ἄννα Κομνηνή',
+        'Anna 62': {'gender': ['Female'], 'identifier': 'Ἄννα Κομνηνή',
                     'secondname': {'Κομνηνοῦ': 2},
                     'death': {'count': 1, 'dated': 0},
                     'religion': {'Christian': ['Georgios 25002']},
                     'legalrole': {'Basilis': 1, 'Basilissa': 1, 'Kaisarissa': 4,
                                   'Pansebastos sebaste': 1, 'Porphyrogennetos': 6},
-                    'kinship': {'daughter': ['Alexios/1', 'Eirene/61'],
-                                'sister': ['Ioannes/2', 'Maria/146'],
-                                'wife': ['Nikephoros/117'],
-                                'sister-in-law': ['Nikephoros/178'],
-                                'niece': ['Ioannes/65', 'Isaakios/61', 'Michael/121'],
-                                'aunt': ['Manuel/1'],
-                                'daughter (eldest)': ['Eirene/61'],
-                                'fiancée': ['Konstantinos/62'],
-                                'granddaughter': ['Anna/61', 'Ioannes/63', 'Maria/62'],
-                                'kin': ['Michael/7'],
-                                'mother': ['Alexios/17005', 'Andronikos/118', 'Eirene/25003', 'Konstantinos/285',
-                                           'Maria/171']}
+                    'kinship': {'daughter': ['Alexios 1', 'Eirene 61'],
+                                'sister': ['Ioannes 2', 'Maria 146'],
+                                'wife': ['Nikephoros 117'],
+                                'sister-in-law': ['Nikephoros 178'],
+                                'niece': ['Ioannes 65', 'Isaakios 61', 'Michael 121'],
+                                'aunt': ['Manuel 1'],
+                                'daughter (eldest)': ['Eirene 61'],
+                                'fiancée': ['Konstantinos 62'],
+                                'granddaughter': ['Anna 61', 'Ioannes 63', 'Maria 62'],
+                                'kin': ['Michael 7'],
+                                'mother': ['Alexios 17005', 'Andronikos 118', 'Eirene 25003', 'Konstantinos 285',
+                                           'Maria 171']}
                     },
-        'Anna/64': {'gender': ['Female'], 'identifier': 'τῆς κουροπαλατίσσης Ἄννης',
+        'Anna 64': {'gender': ['Female'], 'identifier': 'τῆς κουροπαλατίσσης Ἄννης',
                     'legalrole': {'Kouropalatissa': 1},
-                    'kinship': {'grandmother': ['Anonymus/61'],
-                                'mother': ['Ioannes/61', 'Nikephoros/62']}},
-        'Anna/101': {'gender': ['Female'], 'identifier': 'Ἄννα',
+                    'kinship': {'grandmother': ['Anonymus 61'],
+                                'mother': ['Ioannes 61', 'Nikephoros 62']}},
+        'Anna 101': {'gender': ['Female'], 'identifier': 'Ἄννα',
                      'altname': {'Ἀρετῆς': 1}, 'legalrole': {'Nun': 1},
-                     'kinship': {'daughter': ['Eudokia/1', 'Konstantinos/10']}},
-        'Anna/102': {'gender': ['Female'], 'identifier': ' Ἄννῃ',
+                     'kinship': {'daughter': ['Eudokia 1', 'Konstantinos 10']}},
+        'Anna 102': {'gender': ['Female'], 'identifier': ' Ἄννῃ',
                      'death': {'count': 1, 'dated': 0}, 'legalrole': {'Nun': 1},
-                     'kinship': {'wife': ['Eustathios/105'],
-                                 'mother': ['Romanos/106']}},
-        'Apospharios/101': {'gender': ['Male'], 'identifier': ' Ἀποσφάριον', 'legalrole': {'Slave': 1},
-                            'kinship': {'husband': ['Selegno/101']}},
-        'Bagrat/101': {'gender': ['Male'], 'identifier': 'τῷ Παγκρατίῳ بقراط بن جرجس',
+                     'kinship': {'wife': ['Eustathios 105'],
+                                 'mother': ['Romanos 106']}},
+        'Apospharios 101': {'gender': ['Male'], 'identifier': ' Ἀποσφάριον', 'legalrole': {'Slave': 1},
+                            'kinship': {'husband': ['Selegno 101']}},
+        'Bagrat 101': {'gender': ['Male'], 'identifier': 'τῷ Παγκρατίῳ بقراط بن جرجس',
                        'legalrole': {'King': 3, 'Kouropalates': 2, 'Sebastos': 1},
-                       'kinship': {'son': ['Anonyma/6003', 'Georgios/105', 'Maria/103'],
-                                   'husband': ['Helena/104'], 'father': ['Maria/61']}},
-        'Balaleca/101': {'gender': ['Male'], 'identifier': 'Βαλαλεχα', 'language': 'Georgian'},
-        'Gagik/101': {'gender': ['Male'], 'identifier': 'Κακίκιος',
+                       'kinship': {'son': ['Anonyma 6003', 'Georgios 105', 'Maria 103'],
+                                   'husband': ['Helena 104'], 'father': ['Maria 61']}},
+        'Balaleca 101': {'gender': ['Male'], 'identifier': 'Βαλαλεχα', 'language': 'Georgian'},
+        'Gagik 101': {'gender': ['Male'], 'identifier': 'Κακίκιος',
                       'legalrole': {'Archon': 2, 'King': 1, 'Magistros': 1},
-                      'kinship': {'son': ['Ashot/101'],
-                                  'husband': ['Anonyma/158', 'Anonyma/159'],
-                                  'son (in fact, nephew)': ['Ioannes/106']},
+                      'kinship': {'son': ['Ashot 101'],
+                                  'husband': ['Anonyma 158', 'Anonyma 159'],
+                                  'son (in fact, nephew)': ['Ioannes 106']},
                       'possession': {'villages yielding a high income in Cappadocia, Charsianon and Lykandos':
-                                         ['Ioannes/110', '437.28-29'],
+                                         ['Ioannes 110', '437.28-29'],
                                      'Estates much poorer than Ani and its territory':
-                                         ['Aristakes/101', '63.8-9 (55)']}},
-        'Herve/101': {'gender': ['Male'], 'identifier': 'Ἐρβέβιον τὸν Φραγγόπωλον',
+                                         ['Aristakes 101', '63.8-9 (55)']}},
+        'Herve 101': {'gender': ['Male'], 'identifier': 'Ἐρβέβιον τὸν Φραγγόπωλον',
                       'secondname': {'Φραγγόπωλον': 2},
                       'ethnicity': {'Norman': 1},
                       'legalrole': {'Stratelates': 1, 'Vestes': 1, 'Magistros': 1},
-                      'possession': {'House at Dagarabe in Armeniakon': ['Ioannes/110', '485.52']}},
-        'Ioannes/62': {'gender': ['Male'], 'identifier': 'Ἰωάννης',
+                      'possession': {'House at Dagarabe in Armeniakon': ['Ioannes 110', '485.52']}},
+        'Ioannes 62': {'gender': ['Male'], 'identifier': 'Ἰωάννης',
                        'secondname': {'Δούκα': 6}, 'altname': {'Ἰγνάτιος': 1},
                        'death': {'count': 1, 'dated': 0},
                        'legalrole': {'Stratarches': 1, 'Kaisar': 21, 'Basileopator': 1, 'Strategos autokrator': 2,
                                      'Basileus': 3, 'Monk': 4},
-                       'kinship': {'brother': ['Konstantinos/10'],
-                                   'husband': ['Eirene/20117'],
-                                   'uncle': ['Andronikos/62', 'Konstantios/61', 'Michael/7'],
-                                   'father': ['Andronikos/61', 'Konstantinos/61'],
-                                   'father-in-law': ['Maria/62'],
-                                   'grandfather': ['Eirene/61', 'Ioannes/65', 'Michael/121'],
-                                   'nephew (son of brother)': ['Michael/7'],
-                                   'relative by marriage': ['Nikephoros/101']
+                       'kinship': {'brother': ['Konstantinos 10'],
+                                   'husband': ['Eirene 20117'],
+                                   'uncle': ['Andronikos 62', 'Konstantios 61', 'Michael 7'],
+                                   'father': ['Andronikos 61', 'Konstantinos 61'],
+                                   'father-in-law': ['Maria 62'],
+                                   'grandfather': ['Eirene 61', 'Ioannes 65', 'Michael 121'],
+                                   'nephew (son of brother)': ['Michael 7'],
+                                   'relative by marriage': ['Nikephoros 101']
                                    },
-                       'possession': {'Palace in Bithynia at foot of Mount Sophon': ['Nikephoros/117', '173.7-8, 179.15']}},
-        'Ioannes/68': {'gender': ['Eunuch'], 'identifier': 'τοῦ Ὀρφανοτρόφου',
+                       'possession': {'Palace in Bithynia at foot of Mount Sophon': ['Nikephoros 117', '173.7-8, 179.15']}},
+        'Ioannes 68': {'gender': ['Eunuch'], 'identifier': 'τοῦ Ὀρφανοτρόφου',
                        'death': {'count': 4, 'dated': 1},
                        'legalrole': {'Praipositos': 1, 'Orphanotrophos': 12, 'Synkletikos': 1, 'Monk': 7},
                        'occupation': {'Beggar': 1, 'Servant': 1},
-                       'kinship': {'brother': ['Georgios/106', 'Konstantinos/64', 'Maria/104', 'Michael/4',
-                                               'Niketas/104', 'Stephanos/101'],
-                                   'uncle': ['Michael/5'], 'uncle (maternal)': ['Michael/5'],
-                                   'brother (first)': ['Michael/4'],
-                                   'cousin of parent': ['Konstantinos/9101'],
-                                   'kin': ['Konstantinos/9101']}
+                       'kinship': {'brother': ['Georgios 106', 'Konstantinos 64', 'Maria 104', 'Michael 4',
+                                               'Niketas 104', 'Stephanos 101'],
+                                   'uncle': ['Michael 5'], 'uncle (maternal)': ['Michael 5'],
+                                   'brother (first)': ['Michael 4'],
+                                   'cousin of parent': ['Konstantinos 9101'],
+                                   'kin': ['Konstantinos 9101']}
                        },
-        'Ioannes/101': {'gender': ['Male'], 'identifier': 'Ἰωάννην',
+        'Ioannes 101': {'gender': ['Male'], 'identifier': 'Ἰωάννην',
                         'death': {'count': 1, 'dated': 0},
                         'legalrole': {'Archbishop': 3, 'Monk': 3}},
-        'Ioannes/102': {'gender': ['Eunuch'], 'identifier': 'Ἰωάννην',
+        'Ioannes 102': {'gender': ['Eunuch'], 'identifier': 'Ἰωάννην',
                         'legalrole': {'Bishop': 1, 'Metropolitan': 13, 'Protoproedros': 1, 'Hypertimos': 2,
                                       'Protoproedros of the protosynkelloi': 2, 'Protosynkellos': 2}},
-        'Ioannes/110': {'gender': ['Male'], 'identifier': 'Ἰωάννου...τοῦ Σκυλίτζη',
+        'Ioannes 110': {'gender': ['Male'], 'identifier': 'Ἰωάννου...τοῦ Σκυλίτζη',
                         'legalrole': {'Megas droungarios of the vigla': 1, 'Kouropalates': 1}},
-        'Konstantinos/62': {'gender': ['Male'], 'identifier': 'Κωνσταντίνῳ',
+        'Konstantinos 62': {'gender': ['Male'], 'identifier': 'Κωνσταντίνῳ',
                             'secondname': {'Δούκα': 1},
                             'death': {'count': 2, 'dated': 0},
                             'legalrole': {'Basileus': 3, 'Basileus (co-emperor)': 3, 'Porphyrogennetos': 5},
-                            'kinship': {'son': ['Maria/61', 'Michael/7'],
-                                        'fiancé': ['Anna/62'],
-                                        'grandson': ['Konstantinos/10'],
-                                        'husband (betrothed)': ['Helena/101'],
-                                        'husband (proposed)': ['Helena/101'],
-                                        'son (only)': ['Maria/61'],
-                                        'son-in-law': ['Alexios/1', 'Eirene/61']},
+                            'kinship': {'son': ['Maria 61', 'Michael 7'],
+                                        'fiancé': ['Anna 62'],
+                                        'grandson': ['Konstantinos 10'],
+                                        'husband (betrothed)': ['Helena 101'],
+                                        'husband (proposed)': ['Helena 101'],
+                                        'son (only)': ['Maria 61'],
+                                        'son-in-law': ['Alexios 1', 'Eirene 61']},
                             'possession': {
                                 'An estate, Pentegostis, near Serres, with excellent water and buildings to house the '
-                                'imperial entourage': ['Eustathios/20147', '269.60-62']}},
-        'Konstantinos/64': {'gender': ['Eunuch'], 'identifier': 'Κωνσταντῖνος', 'altname': {'Θεοδώρῳ': 1},
+                                'imperial entourage': ['Eustathios 20147', '269.60-62']}},
+        'Konstantinos 64': {'gender': ['Eunuch'], 'identifier': 'Κωνσταντῖνος', 'altname': {'Θεοδώρῳ': 1},
                             'death': {'count': 1, 'dated': 0},
                             'legalrole': {'Domestikos of the eastern tagmata': 1, 'Nobelissimos': 7, 'Praipositos': 1,
                                           'Domestikos of the scholai': 1, 'Proedros': 1, 'Vestarches': 1,
@@ -127,28 +123,28 @@ class GraphImportTests(unittest.TestCase):
                                           'Domestikos of the scholai of Orient': 1,
                                           'Domestikos of the scholai of the East': 1},
                             'occupation': {'Beggar': 1},
-                            'kinship': {'brother': ['Ioannes/68', 'Michael/4'], 'uncle': ['Michael/5']},
+                            'kinship': {'brother': ['Ioannes 68', 'Michael 4'], 'uncle': ['Michael 5']},
                             'possession': {
-                                'Estates in Opsikion where he was banished by <Zoe 1>': ['Ioannes/110', '416.77'],
-                                'A house with a cistern near the Holy Apostles (in Constantinople)': ['Ioannes/110',
+                                'Estates in Opsikion where he was banished by <Zoe 1>': ['Ioannes 110', '416.77'],
+                                'A house with a cistern near the Holy Apostles (in Constantinople)': ['Ioannes 110',
                                                                                                       '422.18']}},
-        'Konstantinos/101': {'gender': ['Male'], 'identifier': 'Κωνσταντῖνος ὁ Διογένης',
+        'Konstantinos 101': {'gender': ['Male'], 'identifier': 'Κωνσταντῖνος ὁ Διογένης',
                              'secondname': {'Διογένης': 6},
                              'death': {'count': 2, 'dated': 0},
                              'legalrole': {'Doux': 4, 'Patrikios': 2, 'Strategos': 3, 'Archon': 1, 'Monk': 1},
-                             'kinship': {'husband': ['Anonyma/108'],
-                                         'father': ['Romanos/4'],
-                                         'husband of niece': ['Romanos/3'],
-                                         'nephew (by marriage)': ['Romanos/3']}},
-        'Konstantinos/102': {'gender': ['Male'], 'identifier': 'Κωνσταντίνῳ',
+                             'kinship': {'husband': ['Anonyma 108'],
+                                         'father': ['Romanos 4'],
+                                         'husband of niece': ['Romanos 3'],
+                                         'nephew (by marriage)': ['Romanos 3']}},
+        'Konstantinos 102': {'gender': ['Male'], 'identifier': 'Κωνσταντίνῳ',
                              'secondname': {'Βοδίνῳ': 3},
                              'altname': {'Πέτρον ἀντὶ Κωνσταντίνου μετονομάσαντες': 1},
                              'legalrole': {'King': 2, 'Basileus': 1},
-                             'kinship': {'son': ['Michael/101'], 'father': ['Georgios/20253']}},
-        'Konstantinos/110': {'gender': ['Male'], 'identifier': 'Κωνσταντῖνος',
+                             'kinship': {'son': ['Michael 101'], 'father': ['Georgios 20253']}},
+        'Konstantinos 110': {'gender': ['Male'], 'identifier': 'Κωνσταντῖνος',
                              'legalrole': {'Patrikios': 1},
-                             'kinship': {'nephew': ['Michael/4']}},
-        'Liparites/101': {'gender': ['Male'], 'identifier': 'τοῦ Λιπαρίτου قاريط ملك الابخاز',
+                             'kinship': {'nephew': ['Michael 4']}},
+        'Liparites 101': {'gender': ['Male'], 'identifier': 'τοῦ Λιπαρίτου قاريط ملك الابخاز',
                           'ethnicity': {'Georgian': 2}, 'legalrole': {'Lord of part of the Iberians': 1}}
     }
 
@@ -383,16 +379,17 @@ class GraphImportTests(unittest.TestCase):
         # Get the UUIDs for each of our test people
         c = self.constants
         q = 'MATCH (id:%s)<-[:%s]-(idass:%s)-[:%s]->(person:%s), (idass)-[:%s]->(agent:%s) ' \
-            'WHERE id.uri IN %s ' \
+            'WHERE id.%s IN %s ' \
             'AND agent.%s = "Prosopography of the Byzantine World" ' \
-            'RETURN id.uri as uri, person.uuid as uuid' % (
+            'RETURN id.%s as ident, person.uuid as uuid' % (
                 c.get_label('E42'), c.get_label('P37'), c.get_label('E15'), c.get_label('P140'), c.get_label('E21'),
-                c.get_label('P14'), c.get_label('F11'), [pburi(x) for x in self.td_people.keys()], c.get_label('P3'))
+                c.get_label('P14'), c.get_label('F11'), c.get_label('P190'),
+                list(self.td_people.keys()), c.get_label('P3'), c.get_label('P190'))
         with self.graphdriver.session() as session:
             result = session.run(q)
             self.assertIsNotNone(result)
             for record in result:
-                idval = pbwid(record['uri'])
+                idval = record['ident']
                 self.td_people[idval]['uuid'] = record['uuid']
 
     # TODO add extra assertions for the eunuchs and K62
@@ -419,7 +416,8 @@ class GraphImportTests(unittest.TestCase):
             # We want the appellation that was assigned by the generic PBW agent, not any of
             # the sourced ones
             pbwagent = '%s {%s: "Prosopography of the Byzantine World"}' % (c.get_label('F11'), c.get_label('P3'))
-            q = "MATCH (p:%s)<-[:%s]-(a:%s)-[:%s]->(id:%s), (a)-[:%s]->(pbw:%s) WHERE p.uuid = '%s' RETURN id.%s AS id" \
+            q = "MATCH (p:%s)<-[:%s]-(a:%s)-[:%s]->(id:%s), (a)-[:%s]->(pbw:%s) WHERE p.uuid = '%s' " \
+                "RETURN id.%s AS id" \
                 % (c.get_label('E21'), c.star_subject, c.get_assertion_for_predicate('P1'), c.star_object,
                    c.get_label('E41'), c.star_auth, pbwagent, pinfo['uuid'], c.get_label('P190'))
             with self.graphdriver.session() as session:
@@ -484,7 +482,7 @@ class GraphImportTests(unittest.TestCase):
         for person, pinfo in self.td_people.items():
             # Check if the person should have a death event.
             devent = deathevents.get(pinfo['uuid'])
-            dpred = c.get_assertion_for_predicate('P100')
+            ddescpred = c.get_assertion_for_predicate('P3')
             ddatepred = c.get_assertion_for_predicate('P4')
             if 'death' not in pinfo:
                 # Make sure that the death was found
@@ -495,7 +493,7 @@ class GraphImportTests(unittest.TestCase):
                 # See if we have the expected info about the death event in question.
                 # Each event should have N description assertions, each with a P3 attribute.
                 q = "MATCH (de:%s)<-[:%s]-(a:%s) WHERE de.uuid = '%s' AND a.%s IS NOT NULL RETURN a" \
-                    % (c.get_label('E69'), c.star_subject, dpred, devent, c.get_label('P3'))
+                    % (c.get_label('E69'), c.star_subject, ddescpred, devent, c.get_label('P141'))
                 with self.graphdriver.session() as session:
                     result = session.run(q).value('a')
                     self.assertEqual(pinfo['death']['count'], len(result), "Death count for %s" % person)
@@ -510,7 +508,7 @@ class GraphImportTests(unittest.TestCase):
                 # Each event should also have N different sources.
                 q = "MATCH (de:%s)<-[:%s]-(a:%s)-[:%s]->(sref) WHERE de.uuid = '%s' " \
                     "RETURN COUNT(DISTINCT sref.uuid) AS num" \
-                    % (c.get_label('E69'), c.star_subject, dpred, c.star_source, devent)
+                    % (c.get_label('E69'), c.star_subject, ddescpred, c.star_source, devent)
                 with self.graphdriver.session() as session:
                     result = session.run(q).single()['num']
                     self.assertEqual(pinfo['death']['count'], result)
@@ -596,9 +594,9 @@ class GraphImportTests(unittest.TestCase):
             if 'language' in pinfo:
                 q = "MATCH (p:%s)<-[:%s]-(a:%s)-[:%s]->(skill:%s)<-[:%s]-(a2:%s)-[:%s]->(kh:%s) " \
                     "WHERE p.uuid = '%s' RETURN kh.%s as kh" % (
-                    c.get_label('E21'), c.star_subject, c.get_assertion_for_predicate('SP38'), c.star_object,
-                    c.get_label('C21'), c.star_subject, c.get_assertion_for_predicate('SP37'), c.star_object,
-                    c.get_label('C29'), pinfo['uuid'], c.get_label('P1'))
+                        c.get_label('E21'), c.star_subject, c.get_assertion_for_predicate('SP38'), c.star_object,
+                        c.get_label('C21'), c.star_subject, c.get_assertion_for_predicate('SP37'), c.star_object,
+                        c.get_label('C29'), pinfo['uuid'], c.get_label('P1'))
                 with self.graphdriver.session() as session:
                     result = session.run(q).single()  # At the moment we do only have one
                     self.assertIsNotNone(result)
@@ -613,14 +611,14 @@ class GraphImportTests(unittest.TestCase):
                     "(kg:%s)<-[:%s]-(a2:%s)-[:%s]->(kin:%s), " \
                     "(kg)<-[:%s]-(a3:%s)-[:%s]->(ktype:%s), " \
                     "(kin)<-[:%s]-(ia2:%s)-[:%s]->(kinid:%s) " \
-                    "RETURN DISTINCT kinid.uri as kin, ktype.%s as kintype" % (
-                    c.get_label('E21'), pinfo['uuid'], c.star_object, c.get_assertion_for_predicate('SP17'),
-                    c.star_subject, c.get_label('C3'), c.star_subject, c.get_assertion_for_predicate('SP18'),
-                    c.star_object, c.get_label('E21'), c.star_subject, c.get_assertion_for_predicate('SP16'),
-                    c.star_object, c.get_label('C4'),
-                    c.star_subject, c.get_label('E15'), c.get_label('P37'), c.get_label('E42'),
-                    c.get_label('P1')
-                )
+                    "RETURN DISTINCT kinid.%s as kin, ktype.%s as kintype" % (
+                        c.get_label('E21'), pinfo['uuid'], c.star_object, c.get_assertion_for_predicate('SP17'),
+                        c.star_subject, c.get_label('C3'), c.star_subject, c.get_assertion_for_predicate('SP18'),
+                        c.star_object, c.get_label('E21'), c.star_subject, c.get_assertion_for_predicate('SP16'),
+                        c.star_object, c.get_label('C4'),
+                        c.star_subject, c.get_label('E15'), c.get_label('P37'), c.get_label('E42'),
+                        c.get_label('P190'), c.get_label('P1')
+                    )
                 with self.graphdriver.session() as session:
                     result = session.run(q)
                     foundkin = dict()
@@ -628,11 +626,10 @@ class GraphImportTests(unittest.TestCase):
                         k = row['kintype']
                         if k not in foundkin:
                             foundkin[k] = []
-                        foundkin[k].append(pbwid(row['kin']))
+                        foundkin[k].append(row['kin'])
                     for k in foundkin:
                         foundkin[k] = sorted(foundkin[k])
                     self.assertDictEqual(pinfo['kinship'], foundkin, "Kinship links for %s" % person)
-
 
     def test_possession(self):
         """Check possession assertions. Test the sources and authors/authorities while we are at it."""
@@ -652,13 +649,13 @@ class GraphImportTests(unittest.TestCase):
                     "(edition)<-[:%s]-(a3:%s)-[:%s]->(work:%s), " \
                     "(work)<-[:%s]-(a4:%s)-[:%s]->(creation:%s), " \
                     "(creation)<-[:%s]-(a5:%s)-[:%s]->(author) " \
-                    "WHERE p.uuid = '%s' RETURN poss.%s as poss, id.uri as id, src.%s as src" % (
+                    "WHERE p.uuid = '%s' RETURN poss.%s as poss, id.%s as id, src.%s as src" % (
                         # person is object property of possession
                         c.get_label('E21'), c.star_object, a, c.star_subject, c.get_label('E18'),
                         # ...according to author, who is known by an identifier
                         c.star_auth, c.star_subject, c.get_label('E15'), c.star_object, c.get_label('E42'),
                         # as we know from source extract, which belongs to the edition
-                        c.star_source, c.get_label('E33'), c.star_object, a2, c.star_subject, c.get_label('F2'),
+                        c.star_source, c.get_label('E33'), c.star_object, a2, c.star_subject, c.get_label('F3'),
                         # the edition belongs to a work
                         c.star_object, a3, c.star_subject, c.get_label('F1'),
                         # the work belongs to a creation event
@@ -666,7 +663,7 @@ class GraphImportTests(unittest.TestCase):
                         # the creation involves our author, who carried it out
                         c.star_subject, a5, c.star_object, pinfo['uuid'],
                         # Just get back the data fields we want
-                        c.get_label('P1'), c.get_label('P3')
+                        c.get_label('P1'), c.get_label('P190'), c.get_label('P3')
                     )
                 with self.graphdriver.session() as session:
                     result = session.run(q)  # At the moment we do only have one
@@ -674,7 +671,7 @@ class GraphImportTests(unittest.TestCase):
                     for row in result:
                         rowct += 1
                         poss = row['poss']
-                        author = pbwid(row['id'])
+                        author = row['id']
                         src = row['src']
                         self.assertTrue(poss in pinfo['possession'], "Test possession is correct for %s" % person)
                         (agent, reference) = pinfo['possession'][poss]
@@ -690,17 +687,16 @@ class GraphImportTests(unittest.TestCase):
         bq = "MATCH (boul:%s)<-[:%s]-(idass:%s)-[:%s]->(ident:%s), " \
              "(boul)<-[:%s]-(a:%s)-[:%s]->(inscr:%s), " \
              "(a)-[:%s]->(src), (a)-[:%s]->(auth) RETURN DISTINCT boul, ident, inscr, src, auth" % (
-            c.get_label('E22'), c.star_subject, c.get_label('E15'), c.get_label('P37'), c.get_label('E42'),
-            c.star_subject, c.get_assertion_for_predicate('P128'), c.star_object, c.get_label('E34'),
-            c.star_source, c.star_auth)
+                 c.get_label('E22'), c.star_subject, c.get_label('E15'), c.get_label('P37'), c.get_label('E42'),
+                 c.star_subject, c.get_assertion_for_predicate('P128'), c.star_object, c.get_label('E34'),
+                 c.star_source, c.star_auth)
         with self.graphdriver.session() as session:
             result = session.run(bq)
             for row in result:
                 # The boulloterion should have a descname that starts with 'Boulloterion'
                 self.assertTrue(row['boul'].get(c.get_label('P3'), '').startswith('Boulloterion of'))
                 # Its identity should be a PBW URL with some boulloterion ID
-                pbwid = row['ident'].get(c.get_label('P190'))
-                boulid = int(pbwid.replace('https://pbw2016.kdl.kcl.ac.uk/boulloterion/', ''))
+                boulid = int(row['ident'].get(c.get_label('P190')))
                 # We should be expecting this boulloterion
                 self.assertIn(boulid, self.td_boulloterions, "Boulloterion %d should exist" % boulid)
                 boulinfo = self.td_boulloterions[boulid]
@@ -730,9 +726,9 @@ class GraphImportTests(unittest.TestCase):
                 sealq = 'MATCH (boul:%s)<-[:%s]-(sealass:%s)-[:%s]->(seal:%s), ' \
                         '(seal)<-[:%s]-(collass:%s)-[:%s]->(coll:%s), ' \
                         '(sealass)-[:%s]->(auth), (collass)-[:%s]->(auth) RETURN seal, coll, auth, src' % (
-                    c.get_label('E22B'), c.star_subject, c.get_assertion_for_predicate('P108'), c.star_object,
-                    c.get_label('E22S'), c.star_object, c.get_assertion_for_predicate('P46'), c.star_subject,
-                    c.get_label('E78'), c.star_auth, c.star_auth)
+                            c.get_label('E22B'), c.star_subject, c.get_assertion_for_predicate('P108'), c.star_object,
+                            c.get_label('E22S'), c.star_object, c.get_assertion_for_predicate('P46'), c.star_subject,
+                            c.get_label('E78'), c.star_auth, c.star_auth)
                 r3 = session.run(sealq)
                 sealcolls = list(boulinfo['seals'].values())
                 for row3 in r3:
@@ -743,7 +739,6 @@ class GraphImportTests(unittest.TestCase):
                         self.fail()
                 # Check that we found all the seals
                 self.assertEqual(0, len(sealcolls))
-
 
     def test_text_sources(self):
         """Spot-check different textual sources and make sure they are set up correctly"""
@@ -756,31 +751,31 @@ class GraphImportTests(unittest.TestCase):
                 # The praktikon: work was created by author according to PBW editor
                 # Yahya: work was created by author according to editor based on *edition*
                 # All: work has edition according to editor based on edition
-                motivation = c.get_label('F2') if s == 'yahya' else c.get_label('E33')
+                motivation = c.get_label('F3') if s == 'yahya' else c.get_label('E33')
                 q = 'MATCH (work:%s)<-[:%s]-(wc1:%s)-[:%s]->(wc:%s)<-[:%s]-(wc2:%s)-[:%s]->(author:%s), ' \
                     '(wc1)-[:%s]->(authority), (wc2)-[:%s]->(authority), ' \
                     '(wc1)-[:%s]->(passage:%s), (wc2)-[:%s]->(passage), ' \
                     '(work)<-[:%s]-(wed:%s)-[:%s]->(edition:%s), (wed)-[:%s]->(editor), (wed)-[:%s]->(edition) ' \
-                    'WHERE work.%s = "%s" '\
+                    'WHERE work.%s = "%s" ' \
                     'RETURN work.%s as work, author.%s as author, authority.%s as authority, editor.%s as editor, ' \
                     'edition.%s as edition, passage.%s as passage' % (
-                    c.get_label('F1'), c.star_object, c.get_assertion_for_predicate('R16'), c.star_subject,
-                    c.get_label('F27'), c.star_subject, c.get_assertion_for_predicate('P14'), c.star_object,
-                    c.get_label('E21'), c.star_auth, c.star_auth, c.star_source, motivation, c.star_source,
-                    c.star_subject, c.get_assertion_for_predicate('R3'), c.star_object, c.get_label('F2'),
-                    c.star_auth, c.star_source, p3, sinfo.get('work'), p3, p3, p3, p3, p3, p3
-                )
+                        c.get_label('F1'), c.star_object, c.get_assertion_for_predicate('R16'), c.star_subject,
+                        c.get_label('F27'), c.star_subject, c.get_assertion_for_predicate('P14'), c.star_object,
+                        c.get_label('E21'), c.star_auth, c.star_auth, c.star_source, motivation, c.star_source,
+                        c.star_subject, c.get_assertion_for_predicate('R3'), c.star_object, c.get_label('F3'),
+                        c.star_auth, c.star_source, p3, sinfo.get('work'), p3, p3, p3, p3, p3, p3
+                    )
             elif 'work' in sinfo:
                 # The 1094 synod: work has edition according to editor based on edition
                 q = 'MATCH (work:%s)<-[:%s]-(wed:%s)-[:%s]->(edition:%s), ' \
                     '(wed)-[:%s]->(editor), (wed)-[:%s]->(edition) ' \
                     'WHERE work.%s = "%s" ' \
                     'RETURN work.%s as work, editor.%s as editor, edition.%s as edition' % (
-                    c.get_label('F1'), c.star_subject, c.get_assertion_for_predicate('R3'), c.star_object,
-                    c.get_label('F2'), c.star_auth, c.star_source,
-                    p3, sinfo.get('work'),
-                    p3, p3, p3
-                )
+                        c.get_label('F1'), c.star_subject, c.get_assertion_for_predicate('R3'), c.star_object,
+                        c.get_label('F3'), c.star_auth, c.star_source,
+                        p3, sinfo.get('work'),
+                        p3, p3, p3
+                    )
             else:
                 # The Christos Philanthropos doc: edition was created by editors according to editors based on edition.
                 # We have to match the group of editors.
@@ -789,11 +784,10 @@ class GraphImportTests(unittest.TestCase):
                     '(ec1)-[:%s]->(edition), (ec2)-[:%s]->(edition) ' \
                     'WHERE edition.%s = "%s" ' \
                     'RETURN editor.%s as editor, edition.%s as edition' % (
-                    c.get_label('F2'), c.star_object, c.get_assertion_for_predicate('R17'), c.star_subject,
-                    c.get_label('F28'), c.star_subject, c.get_assertion_for_predicate('P14'), c.star_object,
-                    c.star_auth, c.star_auth, c.star_source, c.star_source,
-                    p3, sinfo.get('edition'), p3, p3
-                )
+                        c.get_label('F3'), c.star_object, c.get_assertion_for_predicate('R17'), c.star_subject,
+                        c.get_label('F28'), c.star_subject, c.get_assertion_for_predicate('P14'), c.star_object,
+                        c.star_auth, c.star_auth, c.star_source, c.star_source,
+                        p3, sinfo.get('edition'), p3, p3)
             with self.graphdriver.session() as session:
                 # There should only be one result
                 result = session.run(q).single(strict=True)
@@ -808,10 +802,11 @@ class GraphImportTests(unittest.TestCase):
 
                 # Now check that the passages are present & correct and have the right authority
                 pq = 'MATCH (edition:%s {%s:\'%s\'})<-[%s]-(psa:%s)-[:%s]->(passage:%s), ' \
-                    '(psa)-[:%s]->(pbwed) RETURN passage.%s as passage, pbwed.%s as pbwed' % (
-                    c.get_label('F2'), p3, sinfo.get('edition'), c.star_subject, c.get_assertion_for_predicate('R15'),
-                    c.star_object, c.get_label('E33'), c.star_auth, p3, p3
-                )
+                     '(psa)-[:%s]->(pbwed) RETURN passage.%s as passage, pbwed.%s as pbwed' % (
+                         c.get_label('F3'), p3, sinfo.get('edition'), c.star_subject,
+                         c.get_assertion_for_predicate('R15'),
+                         c.star_object, c.get_label('E33'), c.star_auth, p3, p3
+                     )
                 passages = session.run(pq)
                 ct = 0
                 for row in passages:
@@ -823,20 +818,20 @@ class GraphImportTests(unittest.TestCase):
         """All the assertions in the database should be attached to DB records, linked to the single entry
         that created them."""
         c = self.constants
-        p70 = c.get_label('P70') # the documents predicate
-        f2 = c.get_label('F2')   # the DB record per assertion
-        r17 = c.get_label('R17') # linking the record to its creation
-        f28 = c.get_label('F28') # the data creation record
-        p4 = c.get_label('P4')   # created at
-        e52 = c.get_label('E52') # a particular time
-        p80 = c.get_label('P80') # with this timestamp
-        p14 = c.get_label('P14') # carried out by...
-        e21 = c.get_label('E21') # ...me.
+        p70 = c.get_label('P70')  # the documents predicate
+        f2 = c.get_label('F2')    # the DB record per assertion
+        r17 = c.get_label('R17')  # linking the record to its creation
+        f28 = c.get_label('F28')  # the data creation record
+        p4 = c.get_label('P4')    # created at
+        e52 = c.get_label('E52')  # a particular time
+        p80 = c.get_label('P80')  # with this timestamp
+        p14 = c.get_label('P14')  # carried out by...
+        e21 = c.get_label('E21')  # ...me.
         totalq = "MATCH (a) WHERE ANY (l IN labels(a) WHERE l =~ 'star__E13_.*') RETURN COUNT(a) AS numass"
         linkedq = "MATCH (a)<-[:%s]-(record:%s)<-[:%s]-(dbevent:%s)-[:%s]->(me:%s)," \
                   "(dbevent)-[:%s]->(tstamp:%s) " \
                   "RETURN count(a) as numass, count(record) as numrec, tstamp.%s as tstamp, me" % (
-            p70, f2, r17, f28, p14, e21, p4, e52, p80)
+                      p70, f2, r17, f28, p14, e21, p4, e52, p80)
         with self.graphdriver.session() as session:
             total = session.run(totalq).single()['numass']
             linked = session.run(linkedq).single(strict=True)
