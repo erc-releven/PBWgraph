@@ -78,7 +78,7 @@ def make_refrange(refrange):
         if mprefix:
             match_set.update([f"{mprefix}.{x}" for x in mrange])
         else:
-            match_set.update(f"{mrange}")
+            match_set.update([f"{x}" for x in mrange])
     return match_set
 
 

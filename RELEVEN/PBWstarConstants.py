@@ -200,15 +200,18 @@ class PBWstarConstants:
         # Initialise our group agents and the data structures we need to start
         print("Setting up PBW constants...")
         # Make our anonymous agent PBW for the un-sourced information
-        pbwcmd = "COMMAND (a:%s {%s:'Prosopography of the Byzantine World', " \
-                 "%s:'https://pbw2016.kdl.kcl.ac.uk/'}) RETURN a" % (
-            self.entitylabels.get('F11'), self.get_label('P3'), self.get_label('P1'))
-        self.pbw_agent = self._fetch_uuid_from_query(pbwcmd)
-        # and our VIAF agent for identifying PBW contributors
-        viafcmd = "COMMAND (a:%s {%s:'Virtual Internet Authority File', " \
-                  "%s:'https://viaf.org/'}) RETURN a" % (
-            self.entitylabels.get('F11'), self.get_label('P3'), self.get_label('P1'))
-        self.viaf_agent = self._fetch_uuid_from_query(viafcmd)
+        try:
+            pbwcmd = "COMMAND (a:%s {%s:'Prosopography of the Byzantine World', " \
+                     "%s:'https://pbw2016.kdl.kcl.ac.uk/'}) RETURN a" % (
+                self.entitylabels.get('F11'), self.get_label('P3'), self.get_label('P1'))
+            self.pbw_agent = self._fetch_uuid_from_query(pbwcmd)
+            # and our VIAF agent for identifying PBW contributors
+            viafcmd = "COMMAND (a:%s {%s:'Virtual Internet Authority File', " \
+                      "%s:'https://viaf.org/'}) RETURN a" % (
+                self.entitylabels.get('F11'), self.get_label('P3'), self.get_label('P1'))
+            self.viaf_agent = self._fetch_uuid_from_query(viafcmd)
+        except:
+            print("WARNING: no connection to graph database! Not fetching graph constants")
 
         # Some of these factoid types have their own controlled vocabularies.
         # Set up our structure for retaining these; we will define them when we encounter them
