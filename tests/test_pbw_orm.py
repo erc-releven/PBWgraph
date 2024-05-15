@@ -11,7 +11,7 @@ class TestConnections(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        engine = create_engine('mysql+pymysql://' + config.dbstring)
+        engine = create_engine('mysql+mysqlconnector://' + config.dbstring)
         smaker = sessionmaker(bind=engine)
         cls.session = smaker()
 

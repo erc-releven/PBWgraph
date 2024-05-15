@@ -585,7 +585,7 @@ class Factoid(Base):
             if pf.fpType == 'DescRef':
                 referent_objects.append(pf.person)
         if check_persref:
-            pattern = re.compile('<PERSREF ID="(\d+)"/>')
+            pattern = re.compile(r'<PERSREF ID="(\d+)"/>')
             persref_persons = set()
             for fpid in pattern.findall(self.engDesc):
                 this_person = self.associated_person(int(fpid))
@@ -600,7 +600,7 @@ class Factoid(Base):
 
     def replace_referents(self):
         desc = self.engDesc
-        pattern = re.compile('(<PERSREF ID="(\d+)"/>)')
+        pattern = re.compile(r'(<PERSREF ID="(\d+)"/>)')
         return re.sub(pattern, self._persref_as_str, desc)
 
 
