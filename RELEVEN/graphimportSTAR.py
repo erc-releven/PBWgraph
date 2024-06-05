@@ -3,9 +3,9 @@ import RELEVEN.PBWstarConstants
 import config
 import re
 from datetime import datetime, timezone
+from rdflib import Graph
 from sqlalchemy import create_engine, and_
 from sqlalchemy.orm import sessionmaker
-from neo4j import GraphDatabase
 from warnings import warn
 
 
@@ -72,10 +72,10 @@ class graphimportSTAR:
         engine = create_engine('mysql+pymysql://' + config.dbstring)
         smaker = sessionmaker(bind=engine)
         self.mysqlsession = smaker()
-        # Connect to the graph DB
-        driver = GraphDatabase.driver(config.graphuri, auth=(config.graphuser, config.graphpw))
+        # Start an RDF graph
+        self.g = Graph()
         # Make / retrieve the global nodes and self.constants
-        self.constants = RELEVEN.PBWstarConstants.PBWstarConstants(driver)
+        self.constants = RELEVEN.PBWstarConstants.PBWstarConstants(self.g)
 
     def collect_person_records(self):
         """Get a list of people whose floruit matches our needs"""

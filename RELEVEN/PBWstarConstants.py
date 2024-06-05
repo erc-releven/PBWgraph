@@ -1,5 +1,8 @@
+from rdflib import Literal, Namespace
+import re
 import RELEVEN.PBWSources
 from os.path import join, dirname
+from uuid import uuid4
 # This package contains a bunch of information curated from the PBW website about authority, authorship
 # and so forth. It is a huge laundry list of data and some initialiser and accessor functions for it; the
 # class requires a graph driver in order to do the initialisation.
@@ -8,9 +11,8 @@ from os.path import join, dirname
 class PBWstarConstants:
     """A class to deal with all of our constants, where the data is nicely encapsulated"""
 
-    def __init__(self, graphdriver):
-        self.graphdriver = graphdriver
-
+    def __init__(self, graph):
+        self.graph = graph
         # These are the modern scholars who put the source information into PBW records.
         # We need Michael and Tara on the outside
         self.mj = {'identifier': 'Jeffreys, Michael J.', 'viaf': '73866641'}
@@ -18,100 +20,108 @@ class PBWstarConstants:
 
         self.sourcelist = RELEVEN.PBWSources.PBWSources(join(dirname(__file__), 'pbw_sources.csv'))
 
+        self.ns = Namespace('https://r11.eu/rdf/resource/')
+        self.namespaces = {
+            'crm': Namespace('http://www.cidoc-crm.org/cidoc-crm/'),
+            'lrmoo': Namespace('http://iflastandards.info/ns/lrm/lrmoo/'),
+            'sdhss': Namespace('https://r11.eu/ns/prosopography/'),
+            'spec': Namespace('https://r11.eu/ns/spec/')
+        }
+
         self.entitylabels = {
-            'C1': 'Resource:sdhss__C1',    # Social Quality of an Actor (Embodiment)
-            'C3': 'Resource:sdhss__C3',    # Social Relationship
-            'C4': 'Resource:sdhss__C4',    # Social Relationship Type
-            'C5': 'Resource:sdhss__C5',    # Membership
-            'C7': 'Resource:sdhss__C7',    # Occupation
-            'C11': 'Resource:sdhss__C11',  # Gender
-            'C12': 'Resource:sdhss__C12',  # Social Role
-            'C13': 'Resource:sdhss__C13',  # Social Role Embodiment
-            'C21': 'Resource:sdhss__C21',  # Skill
-            'C23': 'Resource:sdhss__C23',  # Religious Identity
-            'C24': 'Resource:sdhss__C24',  # Religion or Religious Denomination
-            'C29': 'Resource:sdhss__C29',  # Know-How
-            'E13': 'Resource:crm__E13_Attribute_Assignment',
-            'E15': 'Resource:crm__E15_Identifier_Assignment',
-            'E17': 'Resource:crm__E17_Type_Assignment',
-            'E18': 'Resource:crm__E18_Physical_Thing',
-            'E21': 'Resource:crm__E21_Person',
-            'E22': 'Resource:`crm__E22_Human-Made_Object`',
-            'E22B': 'Resource:spec__Boulloterion',
-            'E22S': 'Resource:spec__Lead_Seal',
-            'E31': 'Resource:crm__E31_Document',
-            'E33': 'Resource:crm__E33_Linguistic_Object:crm__E73_Information_Object',
-            'E34': 'Resource:crm__E34_Inscription:crm__E73_Information_Object',
-            'E39': 'Resource:crm__E39_Actor',
-            'E41': 'Resource:crm__E41_Appellation',
-            'E42': 'Resource:crm__E42_Identifier',
-            'E52': 'Resource:`crm__E52_Time-Span`',
-            'E55': 'Resource:crm__E55_Type',
-            'E56': 'Resource:crm__E56_Language',
-            'E62': 'Resource:crm__E62_String',
-            'E69': 'Resource:crm__E69_Death',
-            'E73': 'Resource:crm__E73_Information_Object',
-            'E73B': 'Resource:spec__Bibliography',
-            'E74': 'Resource:crm__E74_Group',
-            'E74A': 'Resource:spec__Author_Group',
-            'E74E': 'Resource:spec__Ethnic_Group',
-            'E78': 'Resource:crm__E78_Curated_Holding',
-            'E87': 'Resource:crm__E87_Curation_Activity',
-            'F1': 'Resource:lrmoo__F1',    # Work
-            'F2': 'Resource:lrmoo__F2',    # Expression - e.g. a database record
-            'F3': 'Resource:lrmoo__F3',    # Publication - e.g. an edition or journal article
-            'F11': 'Resource:lrmoo__F11',  # Corporate Body
-            'F27': 'Resource:lrmoo__F27',  # Work Creation
-            'F28': 'Resource:lrmoo__F28',  # Expression Creation
+            'C1': 'sdhss:C1',    # Social Quality of an Actor (Embodiment)
+            'C3': 'sdhss:C3',    # Social Relationship
+            'C4': 'sdhss:C4',    # Social Relationship Type
+            'C5': 'sdhss:C5',    # Membership
+            'C7': 'sdhss:C7',    # Occupation
+            'C11': 'sdhss:C11',  # Gender
+            'C12': 'sdhss:C12',  # Social Role
+            'C13': 'sdhss:C13',  # Social Role Embodiment
+            'C21': 'sdhss:C21',  # Skill
+            'C23': 'sdhss:C23',  # Religious Identity
+            'C24': 'sdhss:C24',  # Religion or Religious Denomination
+            'C29': 'sdhss:C29',  # Know-How
+            'E13': 'crm:E13_Attribute_Assignment',
+            'E15': 'crm:E15_Identifier_Assignment',
+            'E17': 'crm:E17_Type_Assignment',
+            'E18': 'crm:E18_Physical_Thing',
+            'E21': 'crm:E21_Person',
+            'E22': 'crm:E22_Human-Made_Object',
+            'E22B': 'spec:Boulloterion',
+            'E22S': 'spec:Lead_Seal',
+            'E31': 'crm:E31_Document',
+            'E33': 'crm:E33_Linguistic_Object',
+            'E34': 'crm:E34_Inscription',
+            'E39': 'crm:E39_Actor',
+            'E41': 'crm:E41_Appellation',
+            'E42': 'crm:E42_Identifier',
+            'E52': 'crm:E52_Time-Span',
+            'E55': 'crm:E55_Type',
+            'E56': 'crm:E56_Language',
+            'E62': 'crm:E62_String',
+            'E69': 'crm:E69_Death',
+            'E73': 'crm:E73_Information_Object',
+            'E73B': 'spec:Bibliography',
+            'E74': 'crm:E74_Group',
+            'E74A': 'spec:Author_Group',
+            'E74E': 'spec:Ethnic_Group',
+            'E78': 'crm:E78_Curated_Holding',
+            'E87': 'crm:E87_Curation_Activity',
+            'F1': 'lrmoo:F1_Work',    # Work
+            'F2': 'lrmoo:F2_Expression',    # Expression - e.g. a database record
+            'F3': 'lrmoo:F3_Manifestation',    # Publication - e.g. an edition or journal article
+            'F11': 'lrmoo:F11_Corporate_Body',  # Corporate Body
+            'F27': 'lrmoo:F27_Work_Creation',  # Work Creation
+            'F28': 'lrmoo:F28_Expression_Creation',  # Expression Creation
         }
 
         self.predicates = {
-            'P1': 'crm__P1_is_identified_by',
-            'P2': 'crm__P2_has_type',
-            'P3': 'crm__P3_has_note',
-            'P4': '`crm__P4_has_time-span`',
-            'P14': 'crm__P14_carried_out_by',
-            'P16': 'crm__P16_used_specific_object',
-            'P17': 'crm__P17_was_motivated_by',
-            'P37': 'crm__P37_assigned',
-            'P41': 'crm__P41_classified',
-            'P42': 'crm__P42_assigned',
-            'P46': 'crm__P46_is_composed_of',
-            'P48': 'crm__P48_has_preferred_identifier',
-            'P51': 'crm__P51_has_former_or_current_owner',
-            'P70': 'crm__P70_documents',
-            'P80': 'crm__P80_end_is_qualified_by',
-            'P94': 'crm__P94_has_created',
-            'P100': 'crm__P100_was_death_of',
-            'P102': 'crm__P102_has_title',
-            'P107': 'crm__P107_has_current_or_former_member',
-            'P108': 'crm__P108_has_produced',
-            'P127': 'crm__P127_has_broader_term',
-            'P128': 'crm__P128_carries',
-            'P140': 'crm__P140_assigned_attribute_to',
-            'P141': 'crm__P141_assigned',
-            'P147': 'crm__P147_curated',
-            'P148': 'crm__P148_has_component',
-            'P165': 'crm__P165_incorporates',
-            'P177': 'crm__P177_assigned_property_type',
-            'P190': 'crm__P190_has_symbolic_content',
-            'R3': 'lrmoo__R3',     # is realised in
-            'R5': 'lrmoo__R5',     # has component
-            'R15': 'lrmoo__R15',   # has fragment
-            'R16': 'lrmoo__R16',   # created [work]
-            'R17': 'lrmoo__R17',   # created [expression]
-            'R76': 'lrmoo__R76',   # is derivative of
-            'SP13': 'sdhss__P13',  # pertains to [person, social quality]
-            'SP14': 'sdhss__P14',  # has social quality
-            'SP16': 'sdhss__P16',  # has relationship type
-            'SP17': 'sdhss__P17',  # has relationship source
-            'SP18': 'sdhss__P18',  # has relationship target
-            'SP26': 'sdhss__P26',  # is embodiment by [person, social role]
-            'SP33': 'sdhss__P33',  # is embodiment of [social role]
-            'SP35': 'sdhss__P35',  # is defined by [person, religious identity]
-            'SP36': 'sdhss__P36',  # pertains to [religious identity]
-            'SP37': 'sdhss__P37',  # concerns [know-how]
-            'SP38': 'sdhss__P38'   # has skill
+            'P1': 'crm:P1_is_identified_by',
+            'P2': 'crm:P2_has_type',
+            'P3': 'crm:P3_has_note',
+            'P4': 'crm:P4_has_time-span',
+            'P14': 'crm:P14_carried_out_by',
+            'P16': 'crm:P16_used_specific_object',
+            'P17': 'crm:P17_was_motivated_by',
+            'P37': 'crm:P37_assigned',
+            'P41': 'crm:P41_classified',
+            'P42': 'crm:P42_assigned',
+            'P46': 'crm:P46_is_composed_of',
+            'P48': 'crm:P48_has_preferred_identifier',
+            'P51': 'crm:P51_has_former_or_current_owner',
+            'P70': 'crm:P70_documents',
+            'P80': 'crm:P80_end_is_qualified_by',
+            'P94': 'crm:P94_has_created',
+            'P100': 'crm:P100_was_death_of',
+            'P102': 'crm:P102_has_title',
+            'P107': 'crm:P107_has_current_or_former_member',
+            'P108': 'crm:P108_has_produced',
+            'P127': 'crm:P127_has_broader_term',
+            'P128': 'crm:P128_carries',
+            'P140': 'crm:P140_assigned_attribute_to',
+            'P141': 'crm:P141_assigned',
+            'P147': 'crm:P147_curated',
+            'P148': 'crm:P148_has_component',
+            'P165': 'crm:P165_incorporates',
+            'P177': 'crm:P177_assigned_property_type',
+            'P190': 'crm:P190_has_symbolic_content',
+            'R3': 'lrmoo:R3_is_realised_in',     # is realised in
+            'R5': 'lrmoo:R5_has_component',     # has component
+            'R15': 'lrmoo:R15_has_fragment',   # has fragment
+            'R16': 'lrmoo:R16_created',   # created [work]
+            'R17': 'lrmoo:R17_created',   # created [expression]
+            'R76': 'lrmoo:R76_is_derivative_of',   # is derivative of
+            'SP13': 'sdhss:P13',  # pertains to [person, social quality]
+            'SP14': 'sdhss:P14',  # has social quality
+            'SP16': 'sdhss:P16',  # has relationship type
+            'SP17': 'sdhss:P17',  # has relationship source
+            'SP18': 'sdhss:P18',  # has relationship target
+            'SP26': 'sdhss:P26',  # is embodiment by [person, social role]
+            'SP33': 'sdhss:P33',  # is embodiment of [social role]
+            'SP35': 'sdhss:P35',  # is defined by [person, religious identity]
+            'SP36': 'sdhss:P36',  # pertains to [religious identity]
+            'SP37': 'sdhss:P37',  # concerns [know-how]
+            'SP38': 'sdhss:P38'   # has skill
         }
 
         self.prednodes = dict()
@@ -194,24 +204,42 @@ class PBWstarConstants:
         self.star_subject = self.predicates['P140']
         self.star_predicate = self.predicates['P177']
         self.star_object = self.predicates['P141']
-        self.star_source = self.predicates['P17']
+        self.star_based = self.predicates['P17']
         self.star_auth = self.predicates['P14']
+        self.star_source = self.predicates['P70']
 
         # Initialise our group agents and the data structures we need to start
         print("Setting up PBW constants...")
-        # Make our anonymous agent PBW for the un-sourced information
-        try:
-            pbwcmd = "COMMAND (a:%s {%s:'Prosopography of the Byzantine World', " \
-                     "%s:'https://pbw2016.kdl.kcl.ac.uk/'}) RETURN a" % (
-                self.entitylabels.get('F11'), self.get_label('P3'), self.get_label('P1'))
-            self.pbw_agent = self._fetch_uuid_from_query(pbwcmd)
-            # and our VIAF agent for identifying PBW contributors
-            viafcmd = "COMMAND (a:%s {%s:'Virtual Internet Authority File', " \
-                      "%s:'https://viaf.org/'}) RETURN a" % (
-                self.entitylabels.get('F11'), self.get_label('P3'), self.get_label('P1'))
-            self.viaf_agent = self._fetch_uuid_from_query(viafcmd)
-        except:
-            print("WARNING: no connection to graph database! Not fetching graph constants")
+        # Ensure existence of our external authorities
+        f11s = [{'key': 'pbw',
+                 'title':Literal('Prosopography of the Byzantine World', 'en'),
+                 'uri':Literal('https://pbw2016.kdl.kcl.ac.uk/', 'en')},
+                {'key': 'viaf',
+                 'title':Literal('Virtual Internet Authority File', 'en'),
+                 'uri':Literal('https://viaf.org/', 'en')},
+                {'key': 'orcid',
+                 'title':Literal('OrcID', 'en'),
+                 'uri': Literal('https://orcid.org/', 'en')}]
+        for ent in f11s:
+            f11_query = f"""
+            ?a a lrmoo:F11_Corporate_Body ;
+                crm:P3_has_note {ent['title'].n3()} ;
+                crm:P1_is_identified_by {ent['uri'].n3()} ."""
+            res = graph.query("SELECT DISTINCT ?a WHERE {" + f11_query + "}", initNs=self.namespaces)
+            f11_uri = None
+            if len(res):
+                for row in res:  # this should iterate only once
+                    f11_uri = row[0]
+                    break
+            else:
+                # Create it.
+                new_uris = self.mint_uris_for_query(f11_query)
+                graph.update("INSERT DATA {" + f11_query + "}", initNs=self.namespaces, initBindings= new_uris)
+                # TODO should we re-query to verify that it got there, or trust in exception handling?
+                f11_uri = new_uris['a']
+            # Store it in self.[key]_agent, e.g. self.pbw_agent
+            self.__setattr__(f"{ent['key']}_agent", f11_uri)
+
 
         # Some of these factoid types have their own controlled vocabularies.
         # Set up our structure for retaining these; we will define them when we encounter them
@@ -285,27 +313,31 @@ class PBWstarConstants:
         """Takes a predicate key and returns the qualified assertion class which implies that predicate.
         This will throw an exception if no predicate is defined for the key."""
         fqname = self.predicates[p]
-        (nsstr, name) = fqname.replace('`', '').split('__')
+        (nsstr, name) = fqname.split(':')
         code = name.split('_')[0]
-        return f"Resource:star__E13_{nsstr}_{code}"
+        return f"star:E13_{nsstr}_{code}"
 
     # Accessors / creators for our controlled vocabularies
     def _find_or_create_cv_entry(self, category, nodeclass, label):
-        if label in self.cv[category]:
-            return self.cv[category][label]
-        # We have to create the node, possibly attaching it to a superclass
-        dataprop = self.get_label('P1')
-        nodeq = "(cventry:%s {%s:\"%s\"})" % (nodeclass, dataprop, label)
-        nq = "COMMAND %s" % nodeq
-        # if superlabel is not None:
-        #     nq = "MERGE (super:%s {%s:\"%s\"}) WITH super COMMAND %s-[:%s]->(super) " % (
-        #         self.get_label('E55'), dataprop, superlabel, nodeq, self.get_label('P2'))
-        nq += " RETURN cventry"
-        uuid = self._fetch_uuid_from_query(nq)
-        if uuid is None:
-            raise Exception('UUID for %s label (%s) not found' % (label, category))
-        self.cv[category][label] = uuid
-        return uuid
+        # If we haven't made this label yet, do it
+        if label not in self.cv[category]:
+            # We have to create the node, possibly attaching it to a superclass
+            dataprop = self.get_label('P1')
+            litlabel = Literal(label, 'en')
+            sparql = f"""
+            ?cventry a {nodeclass} ;
+                {dataprop} {litlabel.n3()} ."""
+            res = self.graph.query("SELECT DISTINCT ?cventry WHERE {" + sparql + "}", initNs=self.namespaces)
+            if len(res):
+                for row in res:
+                    self.cv[category][label] = row[0]
+            else:
+                new_uris = self.mint_uris_for_query(sparql)
+                self.graph.update("INSERT DATA {" + sparql + "}", initNs=self.namespaces, initBindings = new_uris)
+                self.cv[category][label] = new_uris['cventry']
+
+        # Return the label we have
+        return self.cv[category][label]
 
     def get_gender(self, gender):
         return self._find_or_create_cv_entry('Gender', self.get_label('C11'), gender)
@@ -343,15 +375,11 @@ class PBWstarConstants:
         """Return true if the given floruit tag falls within RELEVEN's range"""
         return floruit in self.allowed
 
-    def _fetch_uuid_from_query(self, q):
-        """Helper function to create one node if it doesn't already exist and return the UUID that gets
-        auto-generated upon commit. The query passed in should have COMMAND where the node is match/created,
-        and should RETURN the node whose UUID is wanted."""
-        matchq = q.replace("COMMAND", "MATCH")
-        createq = q.replace("COMMAND", "CREATE")
-        with self.graphdriver.session() as session:
-            uuid = session.run("%s.uuid AS theid" % matchq).single()
-            if uuid is None:
-                session.run(createq)
-                uuid = session.run("%s.uuid AS theid" % matchq).single()
-            return uuid['theid']
+    def mint_uris_for_query(self, q):
+        """Generate a URI for every variable in the given query string, and return the bindings."""
+        minted = {}
+        for m in re.finditer(r'\?(\w+)', q):
+            var = m.group(1)
+            if var not in minted:
+                minted[var] = self.ns[str(uuid4())]
+        return minted
