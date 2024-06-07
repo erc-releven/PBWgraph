@@ -1,4 +1,5 @@
 from rdflib import Literal, Namespace
+from warnings import warn
 import re
 import RELEVEN.PBWSources
 from os.path import join, dirname
@@ -22,111 +23,117 @@ class PBWstarConstants:
 
         self.ns = Namespace('https://r11.eu/rdf/resource/')
         self.namespaces = {
-            'crm': Namespace('http://www.cidoc-crm.org/cidoc-crm/'),
+            'crm':   Namespace('http://www.cidoc-crm.org/cidoc-crm/'),
             'lrmoo': Namespace('http://iflastandards.info/ns/lrm/lrmoo/'),
+            'pbw':   Namespace('https://pbw2016.kdl.kcl.ac.uk/'),
             'sdhss': Namespace('https://r11.eu/ns/prosopography/'),
-            'spec': Namespace('https://r11.eu/ns/spec/')
+            'spec':  Namespace('https://r11.eu/ns/spec/'),
+            'star':  Namespace('https://r11.eu/ns/star/'),
+            'data':  self.ns
         }
+        for k, v in self.namespaces.items():
+            self.graph.bind(k, v, override=True)
 
+        # The classes we are using, keyed by their short forms.
         self.entitylabels = {
-            'C1': 'sdhss:C1',    # Social Quality of an Actor (Embodiment)
-            'C3': 'sdhss:C3',    # Social Relationship
-            'C4': 'sdhss:C4',    # Social Relationship Type
-            'C5': 'sdhss:C5',    # Membership
-            'C7': 'sdhss:C7',    # Occupation
-            'C11': 'sdhss:C11',  # Gender
-            'C12': 'sdhss:C12',  # Social Role
-            'C13': 'sdhss:C13',  # Social Role Embodiment
-            'C21': 'sdhss:C21',  # Skill
-            'C23': 'sdhss:C23',  # Religious Identity
-            'C24': 'sdhss:C24',  # Religion or Religious Denomination
-            'C29': 'sdhss:C29',  # Know-How
-            'E13': 'crm:E13_Attribute_Assignment',
-            'E15': 'crm:E15_Identifier_Assignment',
-            'E17': 'crm:E17_Type_Assignment',
-            'E18': 'crm:E18_Physical_Thing',
-            'E21': 'crm:E21_Person',
-            'E22': 'crm:E22_Human-Made_Object',
-            'E22B': 'spec:Boulloterion',
-            'E22S': 'spec:Lead_Seal',
-            'E31': 'crm:E31_Document',
-            'E33': 'crm:E33_Linguistic_Object',
-            'E34': 'crm:E34_Inscription',
-            'E39': 'crm:E39_Actor',
-            'E41': 'crm:E41_Appellation',
-            'E42': 'crm:E42_Identifier',
-            'E52': 'crm:E52_Time-Span',
-            'E55': 'crm:E55_Type',
-            'E56': 'crm:E56_Language',
-            'E62': 'crm:E62_String',
-            'E69': 'crm:E69_Death',
-            'E73': 'crm:E73_Information_Object',
-            'E73B': 'spec:Bibliography',
-            'E74': 'crm:E74_Group',
-            'E74A': 'spec:Author_Group',
-            'E74E': 'spec:Ethnic_Group',
-            'E78': 'crm:E78_Curated_Holding',
-            'E87': 'crm:E87_Curation_Activity',
-            'F1': 'lrmoo:F1_Work',    # Work
-            'F2': 'lrmoo:F2_Expression',    # Expression - e.g. a database record
-            'F3': 'lrmoo:F3_Manifestation',    # Publication - e.g. an edition or journal article
-            'F11': 'lrmoo:F11_Corporate_Body',  # Corporate Body
-            'F27': 'lrmoo:F27_Work_Creation',  # Work Creation
-            'F28': 'lrmoo:F28_Expression_Creation',  # Expression Creation
+            'C1': self.namespaces['sdhss']['C1'],    # Social Quality of an Actor (Embodiment)
+            'C3': self.namespaces['sdhss']['C3'],    # Social Relationship
+            'C4': self.namespaces['sdhss']['C4'],    # Social Relationship Type
+            'C5': self.namespaces['sdhss']['C5'],    # Membership
+            'C7': self.namespaces['sdhss']['C7'],    # Occupation
+            'C11': self.namespaces['sdhss']['C11'],  # Gender
+            'C12': self.namespaces['sdhss']['C12'],  # Social Role
+            'C13': self.namespaces['sdhss']['C13'],  # Social Role Embodiment
+            'C21': self.namespaces['sdhss']['C21'],  # Skill
+            'C23': self.namespaces['sdhss']['C23'],  # Religious Identity
+            'C24': self.namespaces['sdhss']['C24'],  # Religion or Religious Denomination
+            'C29': self.namespaces['sdhss']['C29'],  # Know-How
+            'E13': self.namespaces['crm']['E13_Attribute_Assignment'],
+            'E15': self.namespaces['crm']['E15_Identifier_Assignment'],
+            'E17': self.namespaces['crm']['E17_Type_Assignment'],
+            'E18': self.namespaces['crm']['E18_Physical_Thing'],
+            'E21': self.namespaces['crm']['E21_Person'],
+            'E22': self.namespaces['crm']['E22_Human-Made_Object'],
+            'E22B': self.namespaces['spec']['Boulloterion'],
+            'E22S': self.namespaces['spec']['Lead_Seal'],
+            'E31': self.namespaces['crm']['E31_Document'],
+            'E33': self.namespaces['crm']['E33_Linguistic_Object'],
+            'E34': self.namespaces['crm']['E34_Inscription'],
+            'E39': self.namespaces['crm']['E39_Actor'],
+            'E41': self.namespaces['crm']['E41_Appellation'],
+            'E42': self.namespaces['crm']['E42_Identifier'],
+            'E52': self.namespaces['crm']['E52_Time-Span'],
+            'E55': self.namespaces['crm']['E55_Type'],
+            'E56': self.namespaces['crm']['E56_Language'],
+            'E62': self.namespaces['crm']['E62_String'],
+            'E69': self.namespaces['crm']['E69_Death'],
+            'E73': self.namespaces['crm']['E73_Information_Object'],
+            'E73B': self.namespaces['spec']['Bibliography'],
+            'E74': self.namespaces['crm']['E74_Group'],
+            'E74A': self.namespaces['spec']['Author_Group'],
+            'E74E': self.namespaces['spec']['Ethnic_Group'],
+            'E78': self.namespaces['crm']['E78_Curated_Holding'],
+            'E87': self.namespaces['crm']['E87_Curation_Activity'],
+            'F1': self.namespaces['lrmoo']['F1_Work'],    # Work
+            'F2': self.namespaces['lrmoo']['F2_Expression'],    # Expression - e.g. a database record
+            'F3': self.namespaces['lrmoo']['F3_Manifestation'],    # Publication - e.g. an edition or journal article
+            'F11': self.namespaces['lrmoo']['F11_Corporate_Body'],  # Corporate Body
+            'F27': self.namespaces['lrmoo']['F27_Work_Creation'],  # Work Creation
+            'F28': self.namespaces['lrmoo']['F28_Expression_Creation'],  # Expression Creation
         }
 
+        # The properties we are using, keyed by their short forms.
         self.predicates = {
-            'P1': 'crm:P1_is_identified_by',
-            'P2': 'crm:P2_has_type',
-            'P3': 'crm:P3_has_note',
-            'P4': 'crm:P4_has_time-span',
-            'P14': 'crm:P14_carried_out_by',
-            'P16': 'crm:P16_used_specific_object',
-            'P17': 'crm:P17_was_motivated_by',
-            'P37': 'crm:P37_assigned',
-            'P41': 'crm:P41_classified',
-            'P42': 'crm:P42_assigned',
-            'P46': 'crm:P46_is_composed_of',
-            'P48': 'crm:P48_has_preferred_identifier',
-            'P51': 'crm:P51_has_former_or_current_owner',
-            'P70': 'crm:P70_documents',
-            'P80': 'crm:P80_end_is_qualified_by',
-            'P94': 'crm:P94_has_created',
-            'P100': 'crm:P100_was_death_of',
-            'P102': 'crm:P102_has_title',
-            'P107': 'crm:P107_has_current_or_former_member',
-            'P108': 'crm:P108_has_produced',
-            'P127': 'crm:P127_has_broader_term',
-            'P128': 'crm:P128_carries',
-            'P140': 'crm:P140_assigned_attribute_to',
-            'P141': 'crm:P141_assigned',
-            'P147': 'crm:P147_curated',
-            'P148': 'crm:P148_has_component',
-            'P165': 'crm:P165_incorporates',
-            'P177': 'crm:P177_assigned_property_type',
-            'P190': 'crm:P190_has_symbolic_content',
-            'R3': 'lrmoo:R3_is_realised_in',     # is realised in
-            'R5': 'lrmoo:R5_has_component',     # has component
-            'R15': 'lrmoo:R15_has_fragment',   # has fragment
-            'R16': 'lrmoo:R16_created',   # created [work]
-            'R17': 'lrmoo:R17_created',   # created [expression]
-            'R76': 'lrmoo:R76_is_derivative_of',   # is derivative of
-            'SP13': 'sdhss:P13',  # pertains to [person, social quality]
-            'SP14': 'sdhss:P14',  # has social quality
-            'SP16': 'sdhss:P16',  # has relationship type
-            'SP17': 'sdhss:P17',  # has relationship source
-            'SP18': 'sdhss:P18',  # has relationship target
-            'SP26': 'sdhss:P26',  # is embodiment by [person, social role]
-            'SP33': 'sdhss:P33',  # is embodiment of [social role]
-            'SP35': 'sdhss:P35',  # is defined by [person, religious identity]
-            'SP36': 'sdhss:P36',  # pertains to [religious identity]
-            'SP37': 'sdhss:P37',  # concerns [know-how]
-            'SP38': 'sdhss:P38'   # has skill
+            'P1': self.namespaces['crm']['P1_is_identified_by'],
+            'P2': self.namespaces['crm']['P2_has_type'],
+            'P3': self.namespaces['crm']['P3_has_note'],
+            'P4': self.namespaces['crm']['P4_has_time-span'],
+            'P14': self.namespaces['crm']['P14_carried_out_by'],
+            'P16': self.namespaces['crm']['P16_used_specific_object'],
+            'P17': self.namespaces['crm']['P17_was_motivated_by'],
+            'P37': self.namespaces['crm']['P37_assigned'],
+            'P41': self.namespaces['crm']['P41_classified'],
+            'P42': self.namespaces['crm']['P42_assigned'],
+            'P46': self.namespaces['crm']['P46_is_composed_of'],
+            'P48': self.namespaces['crm']['P48_has_preferred_identifier'],
+            'P51': self.namespaces['crm']['P51_has_former_or_current_owner'],
+            'P70': self.namespaces['crm']['P70_documents'],
+            'P80': self.namespaces['crm']['P80_end_is_qualified_by'],
+            'P94': self.namespaces['crm']['P94_has_created'],
+            'P100': self.namespaces['crm']['P100_was_death_of'],
+            'P102': self.namespaces['crm']['P102_has_title'],
+            'P107': self.namespaces['crm']['P107_has_current_or_former_member'],
+            'P108': self.namespaces['crm']['P108_has_produced'],
+            'P127': self.namespaces['crm']['P127_has_broader_term'],
+            'P128': self.namespaces['crm']['P128_carries'],
+            'P140': self.namespaces['crm']['P140_assigned_attribute_to'],
+            'P141': self.namespaces['crm']['P141_assigned'],
+            'P147': self.namespaces['crm']['P147_curated'],
+            'P148': self.namespaces['crm']['P148_has_component'],
+            'P165': self.namespaces['crm']['P165_incorporates'],
+            'P177': self.namespaces['crm']['P177_assigned_property_type'],
+            'P190': self.namespaces['crm']['P190_has_symbolic_content'],
+            'R3': self.namespaces['lrmoo']['R3_is_realised_in'],     # is realised in
+            'R5': self.namespaces['lrmoo']['R5_has_component'],     # has component
+            'R15': self.namespaces['lrmoo']['R15_has_fragment'],   # has fragment
+            'R16': self.namespaces['lrmoo']['R16_created'],   # created [work]
+            'R17': self.namespaces['lrmoo']['R17_created'],   # created [expression]
+            'R76': self.namespaces['lrmoo']['R76_is_derivative_of'],   # is derivative of
+            'SP13': self.namespaces['sdhss']['P13'],  # pertains to [person, social quality]
+            'SP14': self.namespaces['sdhss']['P14'],  # has social quality
+            'SP16': self.namespaces['sdhss']['P16'],  # has relationship type
+            'SP17': self.namespaces['sdhss']['P17'],  # has relationship source
+            'SP18': self.namespaces['sdhss']['P18'],  # has relationship target
+            'SP26': self.namespaces['sdhss']['P26'],  # is embodiment by [person, social role]
+            'SP33': self.namespaces['sdhss']['P33'],  # is embodiment of [social role]
+            'SP35': self.namespaces['sdhss']['P35'],  # is defined by [person, religious identity]
+            'SP36': self.namespaces['sdhss']['P36'],  # pertains to [religious identity]
+            'SP37': self.namespaces['sdhss']['P37'],  # concerns [know-how]
+            'SP38': self.namespaces['sdhss']['P38']   # has skill
         }
 
-        self.prednodes = dict()
-
-        self.allowed = {
+        # The floruit strings for the people we want to include
+        self.eleventh_century = {
             'E / M XI',
             'L XI',
             'M XI',
@@ -202,44 +209,40 @@ class PBWstarConstants:
 
         # Define our STAR model predicates
         self.star_subject = self.predicates['P140']
-        self.star_predicate = self.predicates['P177']
+        self.star_subj_l = self.get_label('P140')
         self.star_object = self.predicates['P141']
+        self.star_obj_l = self.get_label('P141')
         self.star_based = self.predicates['P17']
+        self.star_based_l = self.get_label('P17')
         self.star_auth = self.predicates['P14']
+        self.star_auth_l = self.get_label('P14')
         self.star_source = self.predicates['P70']
+        self.star_src_l = self.get_label('P70')
 
         # Initialise our group agents and the data structures we need to start
         print("Setting up PBW constants...")
         # Ensure existence of our external authorities
+        self.pbw_agent = None
+        self.viaf_agent = None
+        self.orcid_agent = None
         f11s = [{'key': 'pbw',
-                 'title':Literal('Prosopography of the Byzantine World', 'en'),
-                 'uri':Literal('https://pbw2016.kdl.kcl.ac.uk/', 'en')},
+                 'title': Literal('Prosopography of the Byzantine World', 'en'),
+                 'uri': Literal('https://pbw2016.kdl.kcl.ac.uk/', 'en')},
                 {'key': 'viaf',
-                 'title':Literal('Virtual Internet Authority File', 'en'),
-                 'uri':Literal('https://viaf.org/', 'en')},
+                 'title': Literal('Virtual Internet Authority File', 'en'),
+                 'uri': Literal('https://viaf.org/', 'en')},
                 {'key': 'orcid',
-                 'title':Literal('OrcID', 'en'),
+                 'title': Literal('OrcID', 'en'),
                  'uri': Literal('https://orcid.org/', 'en')}]
         for ent in f11s:
             f11_query = f"""
-            ?a a lrmoo:F11_Corporate_Body ;
-                crm:P3_has_note {ent['title'].n3()} ;
-                crm:P1_is_identified_by {ent['uri'].n3()} ."""
-            res = graph.query("SELECT DISTINCT ?a WHERE {" + f11_query + "}", initNs=self.namespaces)
-            f11_uri = None
-            if len(res):
-                for row in res:  # this should iterate only once
-                    f11_uri = row[0]
-                    break
-            else:
-                # Create it.
-                new_uris = self.mint_uris_for_query(f11_query)
-                graph.update("INSERT DATA {" + f11_query + "}", initNs=self.namespaces, initBindings= new_uris)
-                # TODO should we re-query to verify that it got there, or trust in exception handling?
-                f11_uri = new_uris['a']
+            ?a a {self.get_label('F11')} ;
+                {self.get_label('P3')} {ent['title'].n3()} ;
+                {self.get_label('P1')} {ent['uri'].n3()} ."""
+            uris = self.ensure_entities_existence(f11_query)
+            f11_uri = uris['a']
             # Store it in self.[key]_agent, e.g. self.pbw_agent
             self.__setattr__(f"{ent['key']}_agent", f11_uri)
-
 
         # Some of these factoid types have their own controlled vocabularies.
         # Set up our structure for retaining these; we will define them when we encounter them
@@ -302,15 +305,15 @@ class PBWstarConstants:
         return self.sourcelist.sourceref(factoid.source, factoid.sourceRef)
 
     def get_label(self, lbl):
-        """Return the fully-qualified entity or predicate label given the short name.
+        """Return the namespaced entity (class) or predicate string given the short name.
         We want this to throw an exception if nothing is found."""
         try:
-            return self.entitylabels[lbl]
+            return self.entitylabels[lbl].n3(self.graph.namespace_manager)
         except KeyError:
-            return self.predicates[lbl]
+            return self.predicates[lbl].n3(self.graph.namespace_manager)
 
     def get_assertion_for_predicate(self, p):
-        """Takes a predicate key and returns the qualified assertion class which implies that predicate.
+        """Takes a predicate key and returns the qualified assertion class string which implies that predicate.
         This will throw an exception if no predicate is defined for the key."""
         fqname = self.predicates[p]
         (nsstr, name) = fqname.split(':')
@@ -327,14 +330,8 @@ class PBWstarConstants:
             sparql = f"""
             ?cventry a {nodeclass} ;
                 {dataprop} {litlabel.n3()} ."""
-            res = self.graph.query("SELECT DISTINCT ?cventry WHERE {" + sparql + "}", initNs=self.namespaces)
-            if len(res):
-                for row in res:
-                    self.cv[category][label] = row[0]
-            else:
-                new_uris = self.mint_uris_for_query(sparql)
-                self.graph.update("INSERT DATA {" + sparql + "}", initNs=self.namespaces, initBindings = new_uris)
-                self.cv[category][label] = new_uris['cventry']
+            res = self.ensure_entities_existence(sparql)
+            self.cv[category][label] = res['cventry']
 
         # Return the label we have
         return self.cv[category][label]
@@ -373,7 +370,7 @@ class PBWstarConstants:
 
     def inrange(self, floruit):
         """Return true if the given floruit tag falls within RELEVEN's range"""
-        return floruit in self.allowed
+        return floruit in self.eleventh_century
 
     def mint_uris_for_query(self, q):
         """Generate a URI for every variable in the given query string, and return the bindings."""
@@ -383,3 +380,21 @@ class PBWstarConstants:
             if var not in minted:
                 minted[var] = self.ns[str(uuid4())]
         return minted
+
+    def ensure_entities_existence(self, sparql):
+        res = self.graph.query("SELECT DISTINCT * WHERE {" + sparql + "}")
+        if len(res):
+            # We should hopefully have only one row...
+            if len(res) > 1:
+                warn(f"More than one row returned for SPARQL expression:\n{sparql}")
+            # In any case return the variables from the first row as a dictionary.
+            for row in res:
+                return row.asdict()
+        else:
+            # We have to create this assertion set. Mint the URIs first
+            new_uris = self.mint_uris_for_query(sparql)
+            q = sparql
+            for k, v in new_uris.items():
+                q = q.replace(f'?{k}', v.n3(self.graph.namespace_manager))
+            self.graph.update("INSERT DATA {" + q + "}")
+            return new_uris

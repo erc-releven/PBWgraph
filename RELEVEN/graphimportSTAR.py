@@ -3,7 +3,7 @@ import RELEVEN.PBWstarConstants
 import config
 import re
 from datetime import datetime, timezone
-from rdflib import Graph
+from rdflib import Graph, Literal
 from sqlalchemy import create_engine, and_
 from sqlalchemy.orm import sessionmaker
 from warnings import warn
@@ -69,13 +69,18 @@ class graphimportSTAR:
 
     def __init__(self):
         # Connect to the SQL DB
-        engine = create_engine('mysql+pymysql://' + config.dbstring)
+        engine = create_engine('mysql+mysqlconnector://' + config.dbstring)
         smaker = sessionmaker(bind=engine)
         self.mysqlsession = smaker()
         # Start an RDF graph
         self.g = Graph()
         # Make / retrieve the global nodes and self.constants
         self.constants = RELEVEN.PBWstarConstants.PBWstarConstants(self.g)
+
+    def _urify(self, label):
+        """Utility function to turn STAR predicates into real URIref objects"""
+        p, c = label.split(':')
+        return self.constants.namespaces[p][c]
 
     def collect_person_records(self):
         """Get a list of people whose floruit matches our needs"""
@@ -135,7 +140,8 @@ class graphimportSTAR:
         return "COMMAND %s " % ", ".join(aqparts)
 
     def gender_handler(self, sqlperson, graphperson):
-        orig = 'person/%d' % sqlperson.personKey
+        src = f'pbw:person/{sqlperson.personKey}'
+        c = self.constants
         pbw_sex = sqlperson.sex
         if pbw_sex == 'Mixed':  # we have already excluded Anonymi
             pbw_sex = 'Unknown'
@@ -150,59 +156,60 @@ class graphimportSTAR:
             pbw_sex = 'Male'
         if pbw_sex != "Unknown":
             # print("...setting gender assignment to %s%s" % (pbw_sex, " (maybe)" if uncertain else ""))
-            # Make the event tied to this person
-            genderassertion = _matchid('p', graphperson)
-            genderassertion += _matchid('s', self.constants.get_gender(pbw_sex))
-            genderassertion += _matchid('pbw', self.constants.pbw_agent)
-            genderassertion += "WITH p, s, pbw "
-            genderassertion += self.create_assertion_query(orig, 'ga:%s' % self.constants.get_label('E17'),
-                                                            'P41', 'p', 'pbw', None, 'a1')
-            genderassertion += self.create_assertion_query(orig, 'ga', 'P42', 's', 'pbw', None, 'a2')
-            genderassertion += "RETURN a1, a2"
-            # print(genderassertion)
-            with self.constants.graphdriver.session() as session:
-                result = session.run(genderassertion.replace('COMMAND', 'MATCH')).single()
-                if result is None:
-                    session.run(genderassertion.replace('COMMAND', 'CREATE'))
+            # Create the SPARQL expression
+            sparql = f"""
+            ?gass a {c.get_label('E17')} .
+            ?a1 a {c.get_assertion_for_predicate('P41')} ;
+                {c.star_subj_l} ?gass ;
+                {c.star_obj_l} {graphperson} ;
+                {c.star_auth_l} {self.constants.pbw_agent.n3()} .
+            ?a2 a star:E13_crm_P37 ;
+                {c.star_subj_l} ?gass ;
+                {c.star_obj_l} {self.constants.get_gender(pbw_sex).n3()} ;
+                {c.star_auth_l} {self.constants.pbw_agent.n3()} .
+            {src} a {c.get_label('E31')} ;
+                {c.get_label('P70')} ?a1, ?a2 .
+            """
+            # Check and create it if necessary
+            c.ensure_entities_existence(sparql)
 
     def identifier_handler(self, sqlperson, graphperson):
         """The identifier in this context is the 'origName' field, thus an identifier assigned by PBW
         not on the basis of any particular source. We turn this into an Appellation assertion"""
-        orig = 'person/%d' % sqlperson.personKey
+        src = f'pbw:person/{sqlperson.personKey}'
+        c = self.constants
         # Strip any parenthetical from the nameOL field
         withparen = re.search(r'(.*)\s+\(.*\)', sqlperson.nameOL)
         if withparen is not None:
             appellation = withparen.group(1)
         else:
             appellation = sqlperson.nameOL.rstrip()
-        idassertion = _matchid('p', graphperson)
-        idassertion += _matchid('pbw', self.constants.pbw_agent)
-        idassertion += "MERGE (app:%s {%s: \"%s\"}) " % (
-            self.constants.get_label('E41'), self.constants.get_label('P190'), appellation)
-        idassertion += "WITH p, pbw, app "
-        idassertion += self.create_assertion_query(orig, 'p', 'P1', 'app', 'pbw', None)
-        idassertion += "RETURN a"
-        with self.constants.graphdriver.session() as session:
-            result = session.run(idassertion.replace('COMMAND', 'MATCH')).single()
-            if result is None:
-                session.run(idassertion.replace('COMMAND', 'CREATE'))
+
+        # Create the SPARQL expression
+        sparql = f"""
+        ?appellation a crm:E41 ;
+            crm:P190 {Literal(appellation, lang='en')} .
+        ?a1 a star:P1 ;
+            {c.star_subj_l} {graphperson.n3()} ;
+            {c.star_obj_l} ?appellation ;
+            {c.star_auth_l} {c.pbw_agent.n3()} .
+        {src} a {c.get_label('E31')} ;
+            {c.get_label('P70')} ?a1 .
+        """
+        # Check and create it if necessary
+        c.ensure_entities_existence(sparql)
 
     def find_or_create_event(self, person, eventclass, predicate):
         """Helper function to find the relevant event for event-based factoids"""
-        query = _matchid('pers', person)
-        query += "MATCH (a:%s)-[:%s]->(event:%s) " % (self.constants.get_assertion_for_predicate(predicate),
-                                                      self.constants.star_subject, eventclass)
-        query += "MATCH (a)-[:%s]->(pers) " % self.constants.star_object
-        query += "RETURN DISTINCT event"  # There may well be multiple assertions about this event
-        with self.constants.graphdriver.session() as session:
-            result = session.run(query).single()
-            if result is None:
-                # If we don't have an event of this class tied to this person yet, create a new one,
-                # look it up again for its UUID, and return it for use in the assertion being made about it.
-                session.run("CREATE (event:%s {justcreated:true}) RETURN event" % eventclass)
-                result = session.run("MATCH (event:%s {justcreated:true}) REMOVE event.justcreated RETURN event"
-                                     % eventclass).single()
-            return result['event'].get('uuid')
+        c = self.constants
+        sparql = f"""
+        ?a a {c.get_assertion_for_predicate(predicate)} ;
+            {c.star_subj_l} ?event ;
+            {c.star_obj_l} {person.n3()} .
+        ?event a {eventclass.n3()} .
+        """
+        res = c.ensure_entities_existence(sparql)
+        return res['event']
 
     def get_source_and_agent(self, factoid):
         """Returns a node that represents the source for this factoid. Creates the network of nodes and
@@ -213,13 +220,13 @@ class graphimportSTAR:
         sourcekey = self.constants.source(factoid)
         if self.constants.authorities(sourcekey) is None:
             if sourcekey != 'Seals' or factoid.boulloterion is None:
-                warn("No boulloterion found for seal-sourced factoid %d; skipping" % factoid.factoidKey
+                warn(f"No boulloterion found for seal-sourced factoid {factoid.factoidKey}; skipping"
                      if sourcekey == 'Seals'
-                     else "Source %s of factoid %d not known; skipping" % (factoid.source, factoid.factoidKey))
+                     else f"Source {factoid.source} of factoid {factoid.factoidKey} not known; skipping")
                 return None, None
         if factoid.boulloterion is not None:
             if len(factoid.boulloterion.publication) == 0:
-                warn("Boulloterion %d has empty publication list; skipping" % factoid.boulloterion.boulloterionKey)
+                warn(f"Boulloterion {factoid.boulloterion.boulloterionKey} has empty publication list; skipping")
                 return None, None
             agentnode = self.get_boulloterion_authority(factoid.boulloterion)
             sourcenode = self.get_boulloterion_inscription(factoid.boulloterion, agentnode)
@@ -244,17 +251,30 @@ class graphimportSTAR:
     def get_boulloterion(self, boulloterion, pbweditor):
         """Helper function to find a boulloterion with a given ID. Creates its seals and sources
         if it is a new boulloterion."""
-        orig = 'boulloterion/%d' % boulloterion.boulloterionKey
-        # boulloterion is an E22 Human-Made Object, with an identifier assigned by PBW
-        keystr = "%d" % boulloterion.boulloterionKey
-        btitle = "Boulloterion of %s" % boulloterion.title
+        src = f'pbw:boulloterion/{boulloterion.boulloterionKey}'
+        c = self.constants
+        # boulloterion is a subclass of E22 Human-Made Object, with an identifier assigned by PBW
+        keystr = str(boulloterion.boulloterionKey)
+        btitle = f"Boulloterion of {boulloterion.title}"
         boul_node = self._find_or_create_identified_entity(
             self.constants.get_label('E22B'), self.constants.pbw_agent, keystr, btitle)
+        # If the boulloterion does not yet have an assertion that it carries any inscription, it
+        # will need to be created with its inscription, its seals, and its source list
+        exists = (self._urify(c.get_assertion_for_predicate('P128')), c.star_subject, boul_node) in self.g
+        if exists:
+            return boul_node
+
+        # Make the assertion(s) concerning its inscription
+        sparql = f"""
+        ?inscription a {c.get_label('E34')}, {c.get_label('E33')} ;
+            {c.get_label('P190')} {boulloterion.origLText} .
+        ?a1 a {c.get_assertion_for_predicate('P128')} ;
+            {c.star_subj_l} {boul_node.n3()} ;
+            {c.star_obj_l} ?inscription ;
+            {c.star_auth_l} {pbweditor.n3()} ;
+            {c.star_src_l} something .
+        """
         # Does it have any assertions yet concerning its inscription?
-        testq = "MATCH (boul)<-[:%s]-(a:%s) WHERE boul.uuid = '%s' RETURN a" % (
-            self.constants.star_subject, self.constants.get_assertion_for_predicate('P128'), boul_node)
-        with self.constants.graphdriver.session() as session:
-            exists = session.run(testq).values()
         if len(exists) == 0:
             # It does not. We have some creating to do.
             q = _matchid('pbweditor', pbweditor)
@@ -346,7 +366,7 @@ class graphimportSTAR:
             latinBib = source.latinBib if source.bibKey == 816 else re_encode(source.latinBib)
             sn = "(src%d:%s {%s:'%s', %s:'%s'})" % (
                 pubct, f3, self.constants.get_label('P1'), shortName,
-                self.constants.get_label('P102'), escape_text(latinBib))
+                self.constants.get_label('P3'), escape_text(latinBib))
             source_nodes.append(sn)
             mquery += "MERGE %s " % sn
             pubct += 1
@@ -558,39 +578,38 @@ class graphimportSTAR:
             return result['expr.uuid']
 
     def _find_or_create_identified_entity(self, etype, agent, identifier, dname):
-        """Return an identified entity. This can be a Boulloterion (E22 subclass), an E21 Person, an E39 Agent,
+        """Return an identified entity URIRef. This can be a Boulloterion (E22 subclass), an E21 Person, an E39 Agent,
         or an E74 Group depending on context. It is labeled with the identifier via an E15 Identifier Assignment
         carried out by the given agent, with dname becoming our preferred human-readable identifier."""
-        if etype == self.constants.get_label('E22B'):
-            url = 'https://pbw2016.kdl.kcl.ac.uk/boulloterion/%s/' % identifier
-        elif agent == self.constants.pbw_agent:
-            url = 'https://pbw2016.kdl.kcl.ac.uk/person/%s/' % identifier.replace(' ', '/')
+        c = self.constants
+        if etype == c.get_label('E22B'):
+            url = f'https://pbw2016.kdl.kcl.ac.uk/boulloterion/{identifier}/'
+        elif agent == c.pbw_agent:
+            url = f'https://pbw2016.kdl.kcl.ac.uk/person/{identifier.replace(" ", "/")}/'
         else:
-            url = 'https://viaf.org/viaf/%s/' % identifier
-        # We can't merge with comma statements, so we have to do it with successive one-liners.
-        # Start the merge from the specific information we have, which is the agent and the identifier itself.
-        # E15:idass -[P14 carried out by]-> coll
-        # E15:idass -[P37 assigned]-> E42:idlabel {uri:"url"}
-        # E15:idass -[P140 assigned to]-> etype:p -[P3 has note]-> "dname"
-        nodelookup = _matchid('coll', agent)
-        # Add the secret 'pbwid' attribute to ensure uniqueness of the thing; we have some boulloterions
-        # with identical descriptions
-        nodelookup += "MERGE (ident:%s {%s:'%s',%s:'%s'}) " \
-                      "MERGE (p:%s {%s:'%s', pbwid:'%s'}) " \
-                      "MERGE (coll)<-[:%s]-(idass:%s)-[:%s]->(ident)  " \
-                      "MERGE (idass)-[:%s]->(p) RETURN p" % \
-                      (self.constants.get_label('E42'), self.constants.get_label('P190'), identifier,
-                       self.constants.get_label('P3'), url,
-                       etype, self.constants.get_label('P3'), escape_text(dname), identifier,
-                       self.constants.get_label('P14'), self.constants.get_label('E15'),
-                       self.constants.get_label('P37'),
-                       self.constants.get_label('P140') )
-        with self.constants.graphdriver.session() as session:
-            graph_entity = session.run(nodelookup).single()['p']
-            if 'uuid' not in graph_entity:
-                # do it again to get the UUID that was set
-                graph_entity = session.run(nodelookup).single()['p']
-        return graph_entity.get('uuid')
+            url = f'https://viaf.org/viaf/{identifier}/'
+
+        # The entity should have its display name as a crm:P3 note
+        entitystr = f"?entity a {etype} "
+        if dname is not None:
+            entitystr += f"; {c.get_label('P3')} {Literal(dname, lang='en')} "
+        entitystr += '.'
+
+        # Construct the identifier assignment that should exist
+        sparql = f"""
+        ?ident a {c.get_label('E42')} ;
+            {c.get_label('P190')} {identifier} ;
+            {c.get_label('P3')} {url} .
+        {entitystr}
+        ?idass a {c.get_label('E15')} ;
+            {c.star_subject} ?entity ;
+            {c.get_label('P37')} ?ident ;
+            {c.star_auth} {agent} .
+        """
+
+        # Ensure its existence and return the entity in question
+        res = c.ensure_entities_existence(sparql)
+        return res['entity']
 
     def find_or_create_pbwperson(self, sqlperson):
         return self._find_or_create_identified_entity(
