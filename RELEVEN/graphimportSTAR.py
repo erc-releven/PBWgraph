@@ -1,10 +1,12 @@
+import click
+
 import pbw
 import RELEVEN.PBWstarConstants
 import config
 import re
 from datetime import datetime, timezone
 from rdflib import Graph, Literal
-from sqlalchemy import create_engine, and_
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from warnings import warn
 
@@ -140,7 +142,7 @@ class graphimportSTAR:
         return "COMMAND %s " % ", ".join(aqparts)
 
     def gender_handler(self, sqlperson, graphperson):
-        src = f'pbw:person/{sqlperson.personKey}'
+        pbwdoc = f'pbw:person/{sqlperson.personKey}'
         c = self.constants
         pbw_sex = sqlperson.sex
         if pbw_sex == 'Mixed':  # we have already excluded Anonymi
@@ -161,22 +163,21 @@ class graphimportSTAR:
             ?gass a {c.get_label('E17')} .
             ?a1 a {c.get_assertion_for_predicate('P41')} ;
                 {c.star_subj_l} ?gass ;
-                {c.star_obj_l} {graphperson} ;
+                {c.star_obj_l} {graphperson.n3()} ;
                 {c.star_auth_l} {self.constants.pbw_agent.n3()} .
             ?a2 a star:E13_crm_P37 ;
                 {c.star_subj_l} ?gass ;
                 {c.star_obj_l} {self.constants.get_gender(pbw_sex).n3()} ;
                 {c.star_auth_l} {self.constants.pbw_agent.n3()} .
-            {src} a {c.get_label('E31')} ;
-                {c.get_label('P70')} ?a1, ?a2 .
             """
             # Check and create it if necessary
-            c.ensure_entities_existence(sparql)
+            res = c.ensure_entities_existence(sparql)
+            c.document(pbwdoc, res['a1'], res['a2'])
 
     def identifier_handler(self, sqlperson, graphperson):
         """The identifier in this context is the 'origName' field, thus an identifier assigned by PBW
         not on the basis of any particular source. We turn this into an Appellation assertion"""
-        src = f'pbw:person/{sqlperson.personKey}'
+        pbwdoc = f'pbw:person/{sqlperson.personKey}'
         c = self.constants
         # Strip any parenthetical from the nameOL field
         withparen = re.search(r'(.*)\s+\(.*\)', sqlperson.nameOL)
@@ -193,11 +194,10 @@ class graphimportSTAR:
             {c.star_subj_l} {graphperson.n3()} ;
             {c.star_obj_l} ?appellation ;
             {c.star_auth_l} {c.pbw_agent.n3()} .
-        {src} a {c.get_label('E31')} ;
-            {c.get_label('P70')} ?a1 .
         """
         # Check and create it if necessary
-        c.ensure_entities_existence(sparql)
+        res = c.ensure_entities_existence(sparql)
+        c.document(pbwdoc, res['a1'])
 
     def find_or_create_event(self, person, eventclass, predicate):
         """Helper function to find the relevant event for event-based factoids"""
@@ -212,7 +212,8 @@ class graphimportSTAR:
         return res['event']
 
     def get_source_and_agent(self, factoid):
-        """Returns a node that represents the source for this factoid. Creates the network of nodes and
+        """Returns a pair of entities that represent the documentary source and the agent for this factoid.
+        Creates the network of nodes and
         relationships to describe that source, if necessary. The source will either be an E34 Inscription from
         a physical E22 Human-Made Object (the boulloterion) or an E33 Linguistic Object, i.e. a passage from a
         Publication (the written primary source)."""
@@ -250,91 +251,84 @@ class graphimportSTAR:
 
     def get_boulloterion(self, boulloterion, pbweditor):
         """Helper function to find a boulloterion with a given ID. Creates its seals and sources
-        if it is a new boulloterion."""
-        src = f'pbw:boulloterion/{boulloterion.boulloterionKey}'
+        if it is a new boulloterion. Returns the boulloterion and its inscription."""
+        pbwdoc = f'pbw:boulloterion/{boulloterion.boulloterionKey}'
         c = self.constants
         # boulloterion is a subclass of E22 Human-Made Object, with an identifier assigned by PBW
         keystr = str(boulloterion.boulloterionKey)
         btitle = f"Boulloterion of {boulloterion.title}"
-        boul_node = self._find_or_create_identified_entity(
-            self.constants.get_label('E22B'), self.constants.pbw_agent, keystr, btitle)
-        # If the boulloterion does not yet have an assertion that it carries any inscription, it
-        # will need to be created with its inscription, its seals, and its source list
-        exists = (self._urify(c.get_assertion_for_predicate('P128')), c.star_subject, boul_node) in self.g
-        if exists:
-            return boul_node
-
-        # Make the assertion(s) concerning its inscription
-        sparql = f"""
-        ?inscription a {c.get_label('E34')}, {c.get_label('E33')} ;
-            {c.get_label('P190')} {boulloterion.origLText} .
+        boul_node = self.find_or_create_boulloterion(keystr, btitle)
+        # See if the boulloterion already exists with an inscription
+        sparql_check = f"""
         ?a1 a {c.get_assertion_for_predicate('P128')} ;
             {c.star_subj_l} {boul_node.n3()} ;
             {c.star_obj_l} ?inscription ;
-            {c.star_auth_l} {pbweditor.n3()} ;
-            {c.star_src_l} something .
+            {c.star_auth_l} {pbweditor.n3()} .
         """
-        # Does it have any assertions yet concerning its inscription?
-        if len(exists) == 0:
-            # It does not. We have some creating to do.
-            q = _matchid('pbweditor', pbweditor)
-            q += _matchid('boul', boul_node)
-            # Get/create the list of sources, if we have one
-            source_node = self.get_boulloterion_sourcelist(boulloterion)
-            if source_node is not None:
-                q += _matchid('src', source_node)
-            # Create the inscription node
-            q += "MERGE (inscription:%s {%s:\"%s\"}) " % (
-                self.constants.get_label('E34'), self.constants.get_label('P190'), boulloterion.origLText)
-            # Create the seal(s) that belong to it; these are E22s that belong to
-            # E78 Curated Holdings (the collections).
-            for i, seal in enumerate(boulloterion.seals):
-                # n.b. I had to correct the collectionKey of seal 4990
-                coll = seal.collection.collectionName
-                # The curated holding
-                q += "MERGE (coll%d:%s {%s:\"%s\"}) " % (
-                    i, self.constants.get_label('E78'), self.constants.get_label('P1'), coll)
-                # The seal. Make a unique ID from collectionKey.boulloterionKey
-                seal_id = "%d.%d.%d" % (seal.collectionKey, seal.boulloterionKey, seal.collectionRef)
-                q += "MERGE (seal%d:%s {%s:\"%s\"}) " % (
-                    i, self.constants.get_label('E22S'), self.constants.get_label('P3'), seal_id)
-            # Now assert that the seal belongs to the collection and that the boulloterion produced
-            # the seals. These both depend on the PBW editor, and we can't name a specific source for
-            # either assertion based on the PBW data.
-            for i in range(len(boulloterion.seals)):
-                q += self.create_assertion_query(
-                    orig, "coll%d" % i, 'P46', "seal%d" % i, 'pbweditor', None, 'cs%d' % i)
-                q += self.create_assertion_query(orig, 'boul', 'P108', 'seal%d' % i, 'pbweditor', None, 'bs%d' % i)
-            # Finally, assert based on the sources that the boulloterion carries the inscription
-            q += self.create_assertion_query(orig, 'boul', 'P128', 'inscription', 'pbweditor',
-                                              'src' if source_node else None)
-            q += "RETURN boul.uuid"
-            with self.constants.graphdriver.session() as session:
-                result = session.run(q.replace('COMMAND', 'CREATE')).single()
-                # Sanity check
-                if result['boul.uuid'] != boul_node:
-                    raise Exception("Boulloterion metadata not created!")
-        return boul_node
+        res = self.g.query("SELECT ?inscription WHERE { " + sparql_check + "}")
+        if len(res):
+            return boul_node, res['inscription']
+
+        # If the boulloterion does not yet have an assertion that it carries any inscription, it
+        # will need to be created with its inscription, its seals, and its source list
+        source_node = self.get_boulloterion_sourcelist(boulloterion)
+        # Get the sources that PBW used for this boulloterion
+        # If there are sources, we want to have an appropriate leg in the P128 and L1 assertions
+        if source_node is not None:
+            source_line = f""" ;
+            {c.star_src_l} {source_node.n3()}"""
+        else:
+            source_line = ''
+        # Make the assertion(s) concerning its inscription. TODO for the cleanup change E73 to E33
+        sparql = f"""
+        ?inscription a {c.get_label('E34')}, {c.get_label('E73')} ;
+            {c.get_label('P190')} {boulloterion.origLText} .
+        ?a a {c.get_assertion_for_predicate('P128')} ;
+            {c.star_subj_l} {boul_node.n3()} ;
+            {c.star_obj_l} ?inscription ;
+            {c.star_auth_l} {pbweditor.n3()}{source_line} .
+        """
+
+        # Create the seals that belong to this boulloterion; assert that they
+        # belong to their collection and that they came from this boulloterion.
+        for i, seal in enumerate(boulloterion.seals):
+            coll = self.find_or_create_seal_collection(seal.collection.collectionName)
+            seal_id = "%d.%d.%d" % (seal.collectionKey, seal.boulloterionKey, seal.collectionRef)
+            sparql += f"""
+        ?seal{i} a {c.get_label('E22S')} ;
+            {c.get_label('P3')} "{seal_id}" .
+        ?a{i}c a {c.get_assertion_for_predicate('P46')} ;
+            {c.star_subj_l} {coll.n3()} ;
+            {c.star_obj_l} ?seal{i} ;
+            {c.star_auth_l} {pbweditor.n3()} .
+        ?a{i}b a {c.get_assertion_for_predicate('L1')}
+            {c.star_subj_l} {boul_node.n3()} ;
+            {c.star_obj_l} ?seal{i} ;
+            {c.star_auth_l} {pbweditor.n3()} .
+            """  # TODO After the reconciliation, add the source_line to the L1 assertion
+
+        # Possible optimization: We have already established that this boulloterion (and therefore the
+        # inscription and seals) don't exist yet, so just run the statement as an update
+        # For now, do it the slow way
+        res = c.ensure_entities_existence(sparql)
+        # Get the documentation
+        assertionkeys = ['a']
+        assertionkeys.extend([f'a{n}c'] for n in range(len(boulloterion.seals)))
+        assertionkeys.extend([f'a{n}b'] for n in range(len(boulloterion.seals)))
+        c.document(pbwdoc, *[res[x] for x in assertionkeys])
+        # Return the boulloterion and inscription
+        return boul_node, res['inscription']
 
     def get_boulloterion_inscription(self, boulloterion, pbweditor):
-        # This factoid is taken from one or more seal inscription. Let's pull that out into CRM objects.
+        # This factoid is taken from one or more seal inscriptions. Let's pull that out into CRM objects.
         # If the boulloterion has no associated publications, we shouldn't use it.
-        orig = 'boulloterion/%d' % boulloterion.boulloterionKey
         if len(boulloterion.publication) == 0 and \
                 boulloterion.boulloterionKey not in self.constants.boulloterion_sources:
             warn("No published source found for boulloterion %d; skipping this factoid" % boulloterion.boulloterionKey)
             return None
         # Get (create if necessary) the boulloterion node. This will also create the inscription.
-        boul_node = self.get_boulloterion(boulloterion, pbweditor)
-        # Now find the assertion in question: that it P128 carried an E34 Inscription
-        qm = _matchid('boul', boul_node)
-        # We haven't pre-defined 'agent' because we don't need to set or query it for the match.
-        qm += self.create_assertion_query(orig, 'boul', 'P128', 'inscription', 'agent', None)
-        qm += " RETURN inscription.uuid as iid"
-        qm = qm.replace('COMMAND', 'MATCH')
-        with self.constants.graphdriver.session() as session:
-            result = session.run(qm).single()
-            return result['iid']
+        boul_node, inscription = self.get_boulloterion(boulloterion, pbweditor)
+        return inscription
 
     def get_boulloterion_sourcelist(self, boulloterion):
         """A helper function to create the list of publications where the seals allegedly produced by a
@@ -342,10 +336,11 @@ class graphimportSTAR:
         publication) or a Bibliography that represents a collection of Expressions. We do not
         try to isolate individual references here; anyone interested in that can follow the link back
         to the original boulloterion description."""
+        c = self.constants
         # Extract the bibliography and page / object ref for each publication
         pubs = dedupe([x.bibSource for x in boulloterion.publication])
         if len(pubs) == 0:
-            extrapub, ref = self.constants.boulloterion_sources.get(boulloterion.boulloterionKey, (-1, None))
+            extrapub, ref = c.boulloterion_sources.get(boulloterion.boulloterionKey, (-1, None))
             if extrapub < 0:
                 # We only have the seal catalogues as sources, and those attach to the seals.
                 return None
@@ -353,53 +348,26 @@ class graphimportSTAR:
                 pubs = [self.mysqlsession.query(pbw.Bibliography).filter_by(bibKey=extrapub).scalar()]
 
         # Get some labels
-        f3 = self.constants.get_label('F3')
-        e73b = self.constants.get_label('E73B')
-        p165 = self.constants.get_label('P165')
-        pubct = 0
-        mquery = ""
         source_nodes = []
         for source in pubs:
             # Make sure with 'merge' that each bibliography node exists
             # Fix the encoding for the entries we didn't add
-            shortName = source.shortName if source.bibKey == 816 else re_encode(source.shortName)
-            latinBib = source.latinBib if source.bibKey == 816 else re_encode(source.latinBib)
-            sn = "(src%d:%s {%s:'%s', %s:'%s'})" % (
-                pubct, f3, self.constants.get_label('P1'), shortName,
-                self.constants.get_label('P3'), escape_text(latinBib))
-            source_nodes.append(sn)
-            mquery += "MERGE %s " % sn
-            pubct += 1
-        if pubct > 1:
-            # Check to see whether we have a matching group with only these publication nodes.
-            parts = []
-            retvar = "srcgrp"
-            mquery += "WITH %s " % ", ".join(["src%d" % x for x in range(pubct)])
-            # This size syntax taken blindly from
-            # https://stackoverflow.com/questions/68785613/neo4j-4-3-deprecation-of-size-function-and-pattern-comprehension
-            mquery += "MATCH (srcgrp:%s) WHERE size([(srcgrp)-[:%s]->(:%s) | srcgrp]) = %d " % (e73b, p165, f3, pubct)
-            for n in range(pubct):
-                parts.append("(srcgrp)-[:%s]->(src%d)" % (p165, n))
-            mquery += "MATCH " + ", ".join(parts) + " "
+            short_name = source.shortName if source.bibKey == 816 else re_encode(source.shortName)
+            latin_bib = source.latinBib if source.bibKey == 816 else re_encode(source.latinBib)
+            sn = f"""
+            ?src a {c.get_label('F3')} ;
+                {c.get_label('P1')} "{short_name}" ;
+                {c.get_label('P3')} "{escape_text(latin_bib)}" .
+            """
+            res = c.ensure_entities_existence(sn)
+            source_nodes.append(res['src'])
+        if len(source_nodes) > 1:
+            # Find or create a matching bibliography/publication list with only these publication nodes.
+            return c.ensure_egroup_existence('E73B', 'P165', source_nodes)
+
         else:
-            # We simply return the one node we created
-            retvar = "src0"
-        mquery += "RETURN %s" % retvar
-        with self.constants.graphdriver.session() as session:
-            ret = session.run(mquery).single()
-            if ret is None:
-                # The plural sources (now) exist, but the source group doesn't. Create it
-                createparts = ["(srcgrp:%s)" % e73b]
-                for j in range(pubct):
-                    createparts.append("(srcgrp)-[:%s]->(src%d)" % (p165, j))
-                cquery = "MATCH " + ", ".join(source_nodes) + " "
-                cquery += "CREATE " + ", ".join(createparts) + " "
-                cquery += "RETURN srcgrp"
-                ret = session.run(cquery).single()
-            if 'uuid' not in ret[retvar]:
-                # We have to go fishing for the thing again; we reuse the MATCH / MERGE statements.
-                ret = session.run(mquery).single()
-            return ret[retvar].get('uuid')
+            # There was only a single source. We just return it.
+            return source_nodes[0]
 
     def get_text_authority(self, fsource):
         """Return the authority (either a text author or someone else, e.g. the editor of the print edition) for the
@@ -425,89 +393,84 @@ class graphimportSTAR:
         """Return an E33 Linguistic Object of the source reference for this factoid, ensuring that the correct
         assertions for the expression of the whole source work and its authorship."""
         # Get (possibly creating) the expression of the entire source
+        c = self.constants
+        pbwdoc = f'pbw:factoid/{factoid.factoidKey}'
         wholesource = self.get_source_work_expression(factoid)
         if wholesource is None:
             return None
         # In this context, the agent is the PBW editor for this source.
         sourcekey = self.constants.source(factoid)
         agent = self.get_authority_node(self.constants.authorities(sourcekey))
-        # First see whether this source reference already exists
-        srcref_node = "(sourceref:%s {%s:'%s', %s:'%s'})" % (
-            self.constants.get_label('E33'), self.constants.get_label('P3'),
-            escape_text(self.constants.sourceref(factoid)),
-            self.constants.get_label('P190'), escape_text(factoid.origLDesc))
-        qm = _matchid('expr', wholesource)
-        qm += "MATCH %s " % srcref_node
-        qm += self.create_assertion_query(None, 'expr', 'R15', 'sourceref', 'agent', None)
-        qm += " RETURN sourceref.uuid as sid"
-        qm = qm.replace('COMMAND', 'MATCH')
-        with self.constants.graphdriver.session() as session:
-            result = session.run(qm).single()
-            if result is not None:
-                return result['sid']
-
-        # In this case, we have to create the assertion.
-        qc = _matchid('expr', wholesource)
-        qc += _matchid('agent', agent)
-        qc += "COMMAND %s " % srcref_node
-        qc += "WITH expr, sourceref, agent "
-        # The agent (whoever worked on the source) asserts that the reference is from the given source.
-        qc += self.create_assertion_query(None, "expr", "R15", "sourceref", "agent", None)
-        qc += "RETURN sourceref"
-        # To run it right, run it twice
-        with self.constants.graphdriver.session() as session:
-            session.run(qc.replace('COMMAND', 'CREATE'))
-            result = session.run(qm).single()
-            return result['sid']
+        sparql = f"""
+        ?sourceref a {c.get_label('E33')} ;
+            {c.get_label('P3')} '{escape_text(c.sourceref(factoid))}' ;
+            {c.get_label('P190')} '{escape_text(factoid.origLDesc)}' .
+        ?a a {c.get_assertion_for_predicate('R15')} ;
+            {c.star_subj_l} {wholesource.n3()} ;
+            {c.star_obj_l} ?sourceref ;
+            {c.star_auth_l} {agent.n3()} .
+        """
+        res = c.ensure_entities_existence(sparql)
+        c.document(pbwdoc, res['a'])
+        return res['sourcref']
 
     def get_source_work_expression(self, factoid):
         # Ensure the existence of the work and, if it has a declared author, link the author to it via
         # a CREATION event, asserted by the author.
-
-        sourcekey = self.constants.source(factoid)
-        workinfo = self.constants.sourceinfo(sourcekey)
-        pbw_authority = self.get_authority_node(self.constants.authorities(sourcekey))
+        c = self.constants
+        sourcekey = c.source(factoid)
+        workinfo = c.sourceinfo(sourcekey) # The work is really a spec:TextExpression
+        pbw_authority = self.get_authority_node(c.authorities(sourcekey))
         editors = self.get_authority_node(workinfo.get('editor'))
-        # The work identifier is the 'work' key, or else the PBW source ID string.
-        workid = workinfo.get('work')
-        # The expression identifier is the 'expression' key (a citation to the edition).
-        exprid = workinfo.get('expression')
+        # The primary source identifier is the 'work' key, or else the PBW source ID string.
+        text_id = workinfo.get('work')
+        # The edition identifier is the 'expression' key (a citation to the edition).
+        edition_id = workinfo.get('expression') # The expression is really a spec:Publication
 
         # Check that we have the information on this source
-        if editors is None or exprid is None:
+        if editors is None or edition_id is None:
             print("Cannot ingest factoid with source %s until work/edition info is specified" % sourcekey)
             return None
 
-        # First see if the expression already exists. We cheat here by setting a 'pbwid' on the
-        # expression for easy lookup.
-        expression = "(expr:%s {%s: \"%s\", pbwid: \"%s\"})" % (
-            self.constants.get_label('F3'), self.constants.get_label('P3'), escape_text(exprid), sourcekey)
-        mquery = "MATCH %s RETURN expr.uuid" % expression
-        with self.constants.graphdriver.session() as session:
-            result = session.run(mquery).single()
-            if result is not None:
-                return result['expr.uuid']
+        # Keep track of the assertions we may have created
+        assertions_set = []
+        afact_src = None
+        # Express the expression
+        sparql = f"""
+        ?expr a {c.get_label('F3P')};
+            {c.get_label('P3')} "{escape_text(edition_id)} . """
 
-        if workid is None:
+        if text_id is None:
             # We are dealing with a secondary source. Assert an expression creation instead of a
             # work creation, with the editors; we will have to go back later and say that this
             # depended on another work (the primary source).
-            q = _matchid('editors', editors)
-            q += "CREATE %s " % expression
-            q += self.create_assertion_query(None, 'ec:%s' % self.constants.get_label('F28'), 'R17', 'expr', 'editors',
-                                              'expr', 'e1')
-            q += self.create_assertion_query(None, 'ec', 'P14', 'editors', 'editors', 'expr', 'e2')
+            # TODO remove the 'based' leg after reconciliation
+            sparql += f"""
+        ?ec a {c.get_label('F28')} .
+        ?a1 a {c.get_assertion_for_predicate('R17')} ;
+            {c.star_subj_l} ?ec ;
+            {c.star_obj_l} ?expr ;
+            {c.star_auth_l} {editors.n3()} ;
+            {c.star_based_l} ?expr .
+        ?a2 a {c.get_assertion_for_predicate('P14')} ;
+            {c.star_subj_l} ?ec ;
+            {c.star_obj_l} {editors.n3()} ;
+            {c.star_auth_l} {editors.n3()} ;
+            {c.star_based_l} ?expr . """
+            assertions_set.extend(['a1', 'a2'])
         else:
             # We are dealing with a primary source, so we need to make a bunch of assertions.
             # First, the editors assert that the edition (that is, the expression) belongs to
             # the work; this is based on, well, the edition.
-            q = _matchid('editors', editors)
-            q += "MERGE (work:%s {%s: \"%s\"}) " % (
-                self.constants.get_label('F1'), self.constants.get_label('P3'), workid)
-            q += "CREATE %s " % expression
-            q += "WITH editors, work, expr "
-            q += self.create_assertion_query(None, 'work', 'R3', 'expr', 'editors', 'expr')
-
+            sparql += f"""
+            ?work a {c.get_label('F2T')} ;
+                {c.get_label('P3')} "{text_id}" .
+            ?a1 a {c.get_label('R3')} ;
+                {c.star_subj_l} ?work ;
+                {c.star_obj_l} ?expr ;
+                {c.star_auth_l} {editors.n3()} ;
+                {c.star_based_l} ?expr . """
+            assertions_set.append('a1')
             # Now we need to see if authorship has to be asserted.
             author = self.get_author_node(self.constants.author(sourcekey))
             if author is not None:
@@ -516,12 +479,12 @@ class graphimportSTAR:
                 # Otherwise, the authority (for now) is the editor.
                 # If we don't have a specific reference for the claim, we just use the edition (again).
                 aship_authority = editors
-                aship_source = 'expr'
-                aship_srefnode = None
+                aship_source = '?expr'
                 if 'factoid' in workinfo:
                     # Pull in the authorship factoid that describes the authorship of this work
                     afact = self.mysqlsession.query(pbw.Factoid).filter_by(factoidKey=workinfo['factoid']).scalar()
-                    asourcekey = self.constants.source(afact)
+                    afact_src = f'pbw:factoid/{afact.factoidKey}'
+                    asourcekey = c.source(afact)
                     if asourcekey != sourcekey:
                         print("HELP: Not dealing with %s authorship factoid from different work %s" % (
                             sourcekey, asourcekey))
@@ -541,41 +504,52 @@ class graphimportSTAR:
                         aship_authority = author if afact.factoidType == 'Authorship' else pbw_authority
                         # We have to make a sourceref expression node, connected to this expression, for
                         # the factoid source
-                        aship_srefnode = "(srcref:%s {%s:'%s', %s:'%s'})" % (
-                            self.constants.get_label('E33'), self.constants.get_label('P3'),
-                            escape_text(afact.sourceRef),
-                            self.constants.get_label('P190'), escape_text(afact.origLDesc))
-                        aship_source = 'srcref'
+                        sparql += f"""
+            ?srcref a {c.get_label('E33')} ;
+                {c.get_label('P3')} "{escape_text(afact.sourceRef)}" ;
+                {c.get_label('P190')} "{escape_text(afact.origLDesc)}" . """
+                    aship_source = '?srcref'
                 elif 'provenance' in workinfo:
                     # We have a page number. This makes our authorship authority the editor(s), with the source
                     # being the passage in this very edition.
-                    aship_srefnode = "(srcref:%s {%s:'%s'})" % (
-                        self.constants.get_label('E33'), self.constants.get_label('P3'), workinfo['provenance'])
-                    aship_source = 'srcref'
-                # On to the assertion that the author authored the work
-                if aship_authority == editors:
-                    q += "WITH editors AS reporter, work, expr "
-                else:
-                    # If the authorship authority is the author or the PBW editor, we have to fish them out.
-                    q += "WITH work, expr "
-                    q += _matchid('reporter', aship_authority)
-                q += _matchid('author', author)
-                if aship_srefnode:
+                    sparql += f"""
+            ?srcref a {c.get_label('E33')} ;
+                {c.get_label('P3')} "{workinfo['provenance']}" . """
+                    aship_source = '?srcref'
+
+                #
+                if aship_source == '?srcref':
                     # It is the PBW editor who says that a particular passage belongs to the respective edition.
                     # n.b. We will need to fix/change this manually for non-factoid provenance!
-                    q += _matchid('pbweditor', pbw_authority)
-                    q += "MERGE %s " % aship_srefnode
-                    q += self.create_assertion_query(None, 'expr', 'R15', aship_source, 'pbweditor', None, 'wc0')
-                q += self.create_assertion_query(None, 'wc:%s' % self.constants.get_label('F27'),
-                                                  'R16', 'work', 'reporter', aship_source, 'wc1')
-                q += self.create_assertion_query(None, 'wc', 'P14', 'author', 'reporter', aship_source, 'wc2')
+                    sparql += f"""
+                    ?a2 a {c.get_assertion_for_predicate('R15')} ;
+                        {c.star_subj_l} ?expr ;
+                        {c.star_obj_l} {aship_source} ;
+                        {c.star_auth_l} {pbw_authority.n3()} ."""
+                    assertions_set.append('a2')
+
+                # We have now dealt with extracting information from some relevant authorship factoid, if it exists.
+                # Move on to the assertion that the author authored the work
+                sparql += f"""
+                ?wc a {c.get_label('F27')} .
+                ?a3 a {c.get_assertion_for_predicate('R16')} ;
+                    {c.star_subj_l} ?wc ;
+                    {c.star_obj_l} ?work ;
+                    {c.star_auth_l} {aship_authority.n3()} ;
+                    {c.star_based_l} {aship_source} .
+                ?a4 a {c.get_assertion_for_predicate('P14')} ;
+                    {c.star_subj_l} ?work ;
+                    {c.star_obj_l} {author.n3()} ;
+                    {c.star_auth_l} {aship_authority.n3()} ;
+                    {c.star_based_l} {aship_source} .
+                """
+                assertions_set.extend(['a3', 'a4'])
+
         # Whatever we just made, return the expression, which is what we are after.
-        q += "RETURN expr"
-        with self.constants.graphdriver.session() as session:
-            session.run(q.replace('COMMAND', 'CREATE'))
-            result = session.run(mquery).single()
-            # This will barf if the above didn't create anything
-            return result['expr.uuid']
+        res = c.ensure_entities_existence(sparql)
+        if afact_src:
+            c.document(afact_src, *assertions_set)
+        return res['expr']
 
     def _find_or_create_identified_entity(self, etype, agent, identifier, dname):
         """Return an identified entity URIRef. This can be a Boulloterion (E22 subclass), an E21 Person, an E39 Agent,
@@ -620,6 +594,19 @@ class graphimportSTAR:
         return self._find_or_create_identified_entity(
             self.constants.get_label('E21'), self.constants.viaf_agent, viafid, name)
 
+    def find_or_create_boulloterion(self, keystr, btitle):
+        return self._find_or_create_identified_entity(
+            self.constants.get_label('E22B'), self.constants.pbw_agent, keystr, btitle)
+
+    def find_or_create_seal_collection(self, collname):
+        c = self.constants
+        sparql = f"""
+        ?collection a {c.get_label('E78')} ;
+            {c.get_label('P1')} "{collname}" .
+        """
+        res = c.ensure_entities_existence(sparql)
+        return res['collection']
+
     def get_author_node(self, authorlist):
         """Return the E21 Person node for the author of a text, or a group of authors if authorship was composite"""
         if authorlist is None or len(authorlist) == 0:
@@ -657,29 +644,12 @@ class graphimportSTAR:
         return self._find_or_create_authority_group(scholars)
 
     def _find_or_create_authority_group(self, members):
-        gc = []  # group connection parts
-        ll = []  # label parts
-        i = 1
-        q = ''  # main query
-        for m in members:
-            lvar = "m%d" % i
-            q += _matchid(lvar, m)
-            gc.append("(group)-[:%s]->(m%d)" % (self.constants.get_label('P107'), i))
-            ll.append("m%d.%s" % (i, self.constants.get_label('P3')))
-            i += 1
-        # We've matched the nodes, now make the group label
-        q += "WITH %s, %s as glabel " % (', '.join(["m%d" % x for x in range(1, i)]), ' + "; " + '.join(ll))
-        # Since this is a group with symmetrical membership, we have to add a 'DISTINCT' in order to avoid getting
-        # mirrored orders of the group
-        q += "COMMAND (group:%s {%s:glabel}), %s " \
-             "RETURN group" % (self.constants.get_label('E74A'), self.constants.get_label('P3'), ", ".join(gc))
-        with self.constants.graphdriver.session() as session:
-            g = session.run(q.replace('COMMAND', 'MATCH')).single()
-            if g is None:
-                # Run it twice to get the UUID assigned
-                session.run(q.replace('COMMAND', 'CREATE'))
-                g = session.run(q.replace('COMMAND', 'MATCH')).single()
-            return g['group'].get('uuid')
+        if len(members) < 2:
+            warn(f"Tried to create authority group with {len(members)} member(s)!")
+            return None
+
+        c = self.constants
+        return c.ensure_egroup_existence('E74A', 'P107', members)
 
     def appellation_handler(self, sourcenode, agent, factoid, graphperson):
         """This handler deals with Second Name factoids and also Alternative Name factoids.
@@ -688,9 +658,8 @@ class graphimportSTAR:
         Greek. The Alternative Name factoids should exclusively use the information in the
         base factoid."""
         orig = "factoid/%d" % factoid.factoidKey
-        appassertion = _matchid('p', graphperson)
-        appassertion += _matchid('agent', agent)
-        appassertion += _matchid('source', sourcenode)
+        c = self.constants
+
         name_en = None
         if factoid.factoidType == 'Alternative Name':
             # We need to do some data cleaning here, since the engDesc is not particularly clean.
@@ -734,16 +703,18 @@ class graphimportSTAR:
                 olang = _get_source_lang(factoid) or 'grc'
             print("Adding second name %s (%s '%s')" % (name_en, olang, name_ol))
 
-        content = '["%s@en","%s@%s"]' % (escape_text(name_en), escape_text(name_ol), olang)
-        appassertion += "MERGE (n:%s {%s:%s}) " % (
-            self.constants.get_label('E41'), self.constants.get_label('P190'), content)
-        appassertion += "WITH p, agent, source, n "
-        appassertion += self.create_assertion_query(orig, 'p', 'P1', 'n', 'agent', 'source')
-        appassertion += "RETURN a"
-        with self.constants.graphdriver.session() as session:
-            result = session.run(appassertion.replace('COMMAND', 'MATCH')).single()
-            if result is None:
-                session.run(appassertion.replace('COMMAND', 'CREATE'))
+        sparql = f"""
+        ?appel a {c.get_label('E41')} ;
+            {c.get_label('P190')} {Literal(name_en, 'en')} ;
+            {c.get_label('P190')} {Literal(name_ol, olang)} .
+        ?a1 a {c.get_label('P1')} ;
+            {c.star_subj_l} {graphperson.n3()} ;
+            {c.star_obj_l} ?appel ;
+            {c.star_auth_l} {agent.n3()} ;
+            {c.star_based_l} {sourcenode.n3()} .
+        """
+        res = c.ensure_entities_existence(sparql)
+        c.document(orig, res['a1'])
 
     def description_handler(self, sourcenode, agent, factoid, graphperson):
         """Record the descriptions given in the sources as P3 data-property assertions."""

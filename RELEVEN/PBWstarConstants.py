@@ -76,7 +76,9 @@ class PBWstarConstants:
             'E87': self.namespaces['crm']['E87_Curation_Activity'],
             'F1': self.namespaces['lrmoo']['F1_Work'],    # Work
             'F2': self.namespaces['lrmoo']['F2_Expression'],    # Expression - e.g. a database record
-            'F3': self.namespaces['lrmoo']['F3_Manifestation'],    # Publication - e.g. an edition or journal article
+            'F2T': self.namespaces['spec']['Text_Expression'],  # Text Expression - e.g.
+            'F3': self.namespaces['lrmoo']['F3_Manifestation'],    # Manifestation
+            'F3P': self.namespaces['spec']['Publication'],  # Publication - e.g. an edition or journal article
             'F11': self.namespaces['lrmoo']['F11_Corporate_Body'],  # Corporate Body
             'F27': self.namespaces['lrmoo']['F27_Work_Creation'],  # Work Creation
             'F28': self.namespaces['lrmoo']['F28_Expression_Creation'],  # Expression Creation
@@ -381,20 +383,56 @@ class PBWstarConstants:
                 minted[var] = self.ns[str(uuid4())]
         return minted
 
-    def ensure_entities_existence(self, sparql):
-        res = self.graph.query("SELECT DISTINCT * WHERE {" + sparql + "}")
-        if len(res):
-            # We should hopefully have only one row...
-            if len(res) > 1:
-                warn(f"More than one row returned for SPARQL expression:\n{sparql}")
-            # In any case return the variables from the first row as a dictionary.
-            for row in res:
-                return row.asdict()
+    def ensure_entities_existence(self, sparql, force_create=False):
+        if not force_create:
+            res = self.graph.query("SELECT DISTINCT * WHERE {" + sparql + "}", initNs=self.namespaces)
+            if len(res):
+                # We should hopefully have only one row...
+                if len(res) > 1:
+                    warn(f"More than one row returned for SPARQL expression:\n{sparql}")
+                # In any case return the variables from the first row as a dictionary.
+                for row in res:
+                    return row.asdict()
         else:
-            # We have to create this assertion set. Mint the URIs first
+            # Either force_create was specified or res had zero length.
             new_uris = self.mint_uris_for_query(sparql)
             q = sparql
             for k, v in new_uris.items():
                 q = q.replace(f'?{k}', v.n3(self.graph.namespace_manager))
-            self.graph.update("INSERT DATA {" + q + "}")
+            self.graph.update("INSERT DATA {" + q + "}", initNs=self.namespaces)
             return new_uris
+
+    def ensure_egroup_existence(self, gclass, glink, members):
+        mvalues = '\n'.join([f"({x.n3()})" for x in members])
+        sparql = f"""
+        SELECT ?egroup WHERE {{
+            VALUES (?member) {{
+        {mvalues}
+            }}
+            ?egroup a {self.get_label(gclass)} ;
+                {self.get_label(glink)} ?member .
+        }}
+        GROUP BY ?egroup
+        HAVING (COUNT(?member) = {len(members)})
+        """
+        res = self.graph.query(sparql)
+        if len(res) == 0:
+            # We need to create the group and its members
+            mlist = ', '.join([x.n3() for x in members])
+            sparql = f"""
+        ?egroup a {c.get_label(gclass)} ;
+            {c.get_label(glink)} {mlist} .
+            """
+            res = self.ensure_entities_existence(sparql, force_create=True)
+
+        # Either way, return the entity group
+        return res['egroup']
+
+    def document(self, pbwpage, *assertions):
+        """Make the E31 link between the pbwpage and whatever assertions we just pulled from it."""
+        # Since we don't have to mint any new URIs in this query, we can just run it as an INSERT.
+        sparql = f"""
+        {pbwpage} a {self.get_label('E31')} ;
+            {self.get_label('P70')} {','.join([x.n3() for x in assertions])} .
+        """
+        self.graph.update("INSERT DATA {" + sparql + "}", initNs=self.namespaces)
