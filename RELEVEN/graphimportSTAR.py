@@ -865,43 +865,21 @@ class graphimportSTAR:
         database creation event."""
         c = self.constants
         tla = self.get_authority_node([self.constants.ta])
-        timestamp = datetime.now(timezone.utc).isoformat()
-        sparql = f"""
+        # Create the database record
+        dbr_q = f"""
         ?dbr a {c.get_label('F28')} ;
-            {c.get_label('P14')} {tla.n3()} ;
-            {c.get_label('P4')} {Literal(timestamp)} .
+            {c.get_label('P14')} {tla.n3()} .
         """
-        with self.constants.graphdriver.session() as session:
-            # NOTE we will have to remove the a.origsource attribute later
-            findnewassertions = "MATCH (tla) WHERE tla.uuid = '%s' " \
-                                "CREATE (dbr:%s)-[:%s {role:'recorder'}]->(tla), " \
-                                "(dbr)-[:%s]->(ts:%s {%s: datetime('%s')}) " \
-                                "WITH tla, dbr " \
-                                "MATCH (a) WHERE a.origsource IS NOT NULL AND NOT (a)<-[:%s]-(:%s) " \
-                                "MERGE (orig:%s {uri:a.origsource}) " \
-                                "CREATE (a)<-[:%s]-(d:%s:%s)<-[:%s]-(dbr), (d)-[:%s]->(orig) " \
-                                "REMOVE a.origsource " \
-                                "RETURN dbr, count(d) as newrecords" % (tla,
-                                                                        f28, p14,
-                                                                        p4, e52, p80, timestamp,
-                                                                        p70, e31,
-                                                                        f2,
-                                                                        p70, e31, f2, r17, r76)
-            result = session.run(findnewassertions).single()
-            new_assertions = result.get('newrecords', 0)
-            print("*** Created %d new assertions ***" % new_assertions)
-            if new_assertions == 0:
-                # go back and delete the db record
-                session.run('MATCH (dbr) WHERE dbr.timestamp = "%s" DELETE dbr' % timestamp)
-            else:
-                # make sure the URI is set for all nodes and remove their UUIDs
-                result = session.run('MATCH (n:Resource) WHERE n.uri IS NULL '
-                                     'SET n.uri = "https://r11.eu/rdf/resource/" + n.uuid '
-                                     'REMOVE n.uuid RETURN COUNT(n) AS nct').single()
-                if not result:
-                    warn("Something went wrong setting URIs!")
-                # clean out the convenience properties
-                session.run('MATCH (n:Resource) REMOVE n.pbwid REMOVE n.prefix')
+        res = c.ensure_entities_existence(dbr_q)
+        # dbr = res['dbr']
+        #
+        # # Find all assertions that haven't been created by a different software run
+        # sparql_check = f"""SELECT ?a WHERE {{
+        # ?a a {c.get_label('E13')} .
+        # MINUS
+        # """
+        # timestamp = datetime.now(timezone.utc).isoformat()
+
 
     def process_persons(self):
         """Go through the relevant person records and process them for factoids"""

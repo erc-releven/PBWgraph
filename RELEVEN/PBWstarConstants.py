@@ -24,6 +24,7 @@ class PBWstarConstants:
         self.ns = Namespace('https://r11.eu/rdf/resource/')
         self.namespaces = {
             'crm':   Namespace('http://www.cidoc-crm.org/cidoc-crm/'),
+            'crmdig': Namespace('http://www.ics.forth.gr/isl/CRMdig/'),
             'lrmoo': Namespace('http://iflastandards.info/ns/lrm/lrmoo/'),
             'pbw':   Namespace('https://pbw2016.kdl.kcl.ac.uk/'),
             'sdhss': Namespace('https://r11.eu/ns/prosopography/'),
@@ -48,6 +49,7 @@ class PBWstarConstants:
             'C23': self.namespaces['sdhss']['C23'],  # Religious Identity
             'C24': self.namespaces['sdhss']['C24'],  # Religion or Religious Denomination
             'C29': self.namespaces['sdhss']['C29'],  # Know-How
+            'D10': self.namespaces['crmdig']['D10_Software_Execution'],
             'E13': self.namespaces['crm']['E13_Attribute_Assignment'],
             'E15': self.namespaces['crm']['E15_Identifier_Assignment'],
             'E17': self.namespaces['crm']['E17_Type_Assignment'],
@@ -101,6 +103,8 @@ class PBWstarConstants:
             'P51': self.namespaces['crm']['P51_has_former_or_current_owner'],
             'P70': self.namespaces['crm']['P70_documents'],
             'P80': self.namespaces['crm']['P80_end_is_qualified_by'],
+            'P82a': self.namespaces['crm']['P82a_begin_of_the_begin'],
+            'P82b': self.namespaces['crm']['P82b_end_of_the_end'],
             'P94': self.namespaces['crm']['P94_has_created'],
             'P100': self.namespaces['crm']['P100_was_death_of'],
             'P102': self.namespaces['crm']['P102_has_title'],
@@ -115,6 +119,7 @@ class PBWstarConstants:
             'P165': self.namespaces['crm']['P165_incorporates'],
             'P177': self.namespaces['crm']['P177_assigned_property_type'],
             'P190': self.namespaces['crm']['P190_has_symbolic_content'],
+            'L11': self.namespaces['crmdig']['L11_had_output'],
             'R3': self.namespaces['lrmoo']['R3_is_realised_in'],     # is realised in
             'R5': self.namespaces['lrmoo']['R5_has_component'],     # has component
             'R15': self.namespaces['lrmoo']['R15_has_fragment'],   # has fragment
@@ -420,8 +425,8 @@ class PBWstarConstants:
             # We need to create the group and its members
             mlist = ', '.join([x.n3() for x in members])
             sparql = f"""
-        ?egroup a {c.get_label(gclass)} ;
-            {c.get_label(glink)} {mlist} .
+        ?egroup a {self.get_label(gclass)} ;
+            {self.get_label(glink)} {mlist} .
             """
             res = self.ensure_entities_existence(sparql, force_create=True)
 
