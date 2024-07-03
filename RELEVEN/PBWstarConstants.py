@@ -50,6 +50,7 @@ class PBWstarConstants:
             'C24': self.namespaces['sdhss']['C24'],  # Religion or Religious Denomination
             'C29': self.namespaces['sdhss']['C29'],  # Know-How
             'D10': self.namespaces['crmdig']['D10_Software_Execution'],
+            'D14': self.namespaces['crmdig']['D14_Software'],
             'E13': self.namespaces['crm']['E13_Attribute_Assignment'],
             'E15': self.namespaces['crm']['E15_Identifier_Assignment'],
             'E17': self.namespaces['crm']['E17_Type_Assignment'],
@@ -119,7 +120,10 @@ class PBWstarConstants:
             'P165': self.namespaces['crm']['P165_incorporates'],
             'P177': self.namespaces['crm']['P177_assigned_property_type'],
             'P190': self.namespaces['crm']['P190_has_symbolic_content'],
+            'L1': self.namespaces['spec']['L1_was_used_to_produce'],
             'L11': self.namespaces['crmdig']['L11_had_output'],
+            'L12': self.namespaces['crmdig']['L12_happened_on_device'],
+            'L23': self.namespaces['crmdig']['L23_used_software_or_firmware'],
             'R3': self.namespaces['lrmoo']['R3_is_realised_in'],     # is realised in
             'R5': self.namespaces['lrmoo']['R5_has_component'],     # has component
             'R15': self.namespaces['lrmoo']['R15_has_fragment'],   # has fragment

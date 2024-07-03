@@ -1,11 +1,9 @@
-import click
-
 import pbw
 import RELEVEN.PBWstarConstants
 import config
 import re
-from datetime import datetime, timezone
-from rdflib import Graph, Literal
+from datetime import datetime
+from rdflib import Graph, Literal, XSD
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from warnings import warn
@@ -69,13 +67,17 @@ class graphimportSTAR:
     constants = None
     mysqlsession = None
 
-    def __init__(self):
+    def __init__(self, origgraph=None, starttime=None):
+        # Record the start time if it was passed
+        self.starttime = starttime
         # Connect to the SQL DB
         engine = create_engine('mysql+mysqlconnector://' + config.dbstring)
         smaker = sessionmaker(bind=engine)
         self.mysqlsession = smaker()
-        # Start an RDF graph
+        # Start an RDF graph, parsing what we started with
         self.g = Graph()
+        if origgraph is not None:
+            self.g.parse(origgraph)
         # Make / retrieve the global nodes and self.constants
         self.constants = RELEVEN.PBWstarConstants.PBWstarConstants(self.g)
 
@@ -101,7 +103,7 @@ class graphimportSTAR:
         #     and_(pbw.Person.name.in_(debugnames), pbw.Person.mdbCode.in_(debugcodes))
         # ).all()
 
-    def create_assertion_sparql(self, label, type, subj, obj, auth, src=None):
+    def create_assertion_sparql(self, label, ptype, subj, obj, auth, src=None):
         """Create the SPARQL query that corresponds to an assertion with the given parameters.
            Note that the object might be a list of literals."""
         c = self.constants
@@ -109,11 +111,11 @@ class graphimportSTAR:
         if hasattr(subj, 'n3'):
             subject = subj.n3()
         sparql = f"""
-        ?{label} a {c.get_assertion_for_predicate(type)} ;
+        ?{label} a {c.get_assertion_for_predicate(ptype)} ;
             {c.star_subj_l} {subject} ;
         """
         # Deal with the object
-        if type(obj) == list:
+        if ptype(obj) == list:
             # Ensure that the list are all literals
             disallowed = [x for x in obj if not isinstance(x, Literal)]
             if len(disallowed):
@@ -122,10 +124,10 @@ class graphimportSTAR:
             for o in obj:
                 sparql += f"            {c.star_obj_l} {o.n3()} ;\n"
         else:
-            object = obj
+            objec_t = obj
             if hasattr(obj, 'n3'):
-                object = obj.n3()
-            sparql += f"            {c.star_obj_l} {object} ;\n"
+                objec_t = obj.n3()
+            sparql += f"            {c.star_obj_l} {objec_t} ;\n"
         # The assertion might or might not have a source
         if src:
             basis = src
@@ -372,13 +374,13 @@ class graphimportSTAR:
         # a CREATION event, asserted by the author.
         c = self.constants
         sourcekey = c.source(factoid)
-        workinfo = c.sourceinfo(sourcekey) # The work is really a spec:TextExpression
+        workinfo = c.sourceinfo(sourcekey)  # The work is really a spec:TextExpression
         pbw_authority = self.get_authority_node(c.authorities(sourcekey))
         editors = self.get_authority_node(workinfo.get('editor'))
         # The primary source identifier is the 'work' key, or else the PBW source ID string.
         text_id = workinfo.get('work')
         # The edition identifier is the 'expression' key (a citation to the edition).
-        edition_id = workinfo.get('expression') # The expression is really a spec:Publication
+        edition_id = workinfo.get('expression')  # The expression is really a spec:Publication
 
         # Check that we have the information on this source
         if editors is None or edition_id is None:
@@ -715,10 +717,10 @@ class graphimportSTAR:
         # (grouping:label) [:whopred] person
         # (grouping) [:whichpred] rnode
         pbwdoc = f"pbw:factoid/{factoid.factoidKey}"
-        sparql = """
+        sparql = f"""
         ?designation a {label} . """
         sparql += self.create_assertion_sparql('a1', whopred, '?designation', graphperson, agent, sourcenode)
-        sparql == self.create_assertion_sparql('a2', whichpred, '?designation', des, agent, sourcenode)
+        sparql += self.create_assertion_sparql('a2', whichpred, '?designation', des, agent, sourcenode)
         res = self.constants.ensure_entities_existence(sparql)
         self.constants.document(pbwdoc, res['a1'], res['a2'])
 
@@ -781,7 +783,6 @@ class graphimportSTAR:
         sparql += self.create_assertion_sparql('a2', 'SP37', '?lskill', lkhid, agent, sourcenode)
         res = c.ensure_entities_existence(sparql)
         c.document(pbwdoc, res['a1'], res['a2'])
-
 
     def _find_or_create_kinship(self, graphperson, graphkin):
         # See if there is an existing kinship group of any sort with the person as source and their
@@ -866,20 +867,39 @@ class graphimportSTAR:
         c = self.constants
         tla = self.get_authority_node([self.constants.ta])
         # Create the database record
+        timenow = datetime.now()
         dbr_q = f"""
+        ?thisurl a {c.get_label('E42')} ;
+            {c.get_label('P190')} "https://github.com/erc-releven/PBWgraph/RELEVEN/graphimportSTAR.py" .
+        ?this a {c.get_label('D14')} ;
+            {c.get_label('P1')} ?thisurl .
+        ?tstamp a {c.get_label('E52')} ;
+            {c.get_label('P82a')} {Literal(self.starttime, datatype=XSD.dateTimeStamp)} ;
+            {c.get_label('P82b')} {Literal(timenow, datatype=XSD.dateTimeStamp)} .
         ?dbr a {c.get_label('F28')} ;
-            {c.get_label('P14')} {tla.n3()} .
+            {c.get_label('P14')} {tla.n3()} ;
+            {c.get_label('P4')} ?tstamp .
         """
-        res = c.ensure_entities_existence(dbr_q)
-        # dbr = res['dbr']
-        #
-        # # Find all assertions that haven't been created by a different software run
-        # sparql_check = f"""SELECT ?a WHERE {{
-        # ?a a {c.get_label('E13')} .
-        # MINUS
-        # """
-        # timestamp = datetime.now(timezone.utc).isoformat()
+        res = c.ensure_entities_existence(dbr_q, force_create=True)
+        dbr = res['dbr']
 
+        # Find all assertions with real UUIDs that haven't been created by a different software run.
+        # WissKI-created assertions don't have UUIDs.
+        sparql_check = f"""
+        select distinct ?a where {{
+            ?a a ?type .
+            ?type rdfs:subClassOf {c.get_label('E13')} .
+            MINUS {{
+                ?d a {c.get_label('E31')} ;
+                    {c.get_label('P70')} ?a .
+            }}
+            FILTER(regex(STR(?a), ""/\\w{8}-\\w{4}-\\w{4}-\\w{4}-\\w{12}$""))
+        }}
+        """
+        res = self.g.query(sparql_check)
+        # These assertions must therefore have been produced by this run.
+        for row in res:
+            self.g.add((dbr, c.get_label('L11'), row['a']))
 
     def process_persons(self):
         """Go through the relevant person records and process them for factoids"""
@@ -963,7 +983,8 @@ class graphimportSTAR:
 if __name__ == '__main__':
     starttime = datetime.now()
     # Process the person records
-    gimport = graphimportSTAR()
+    gimport = graphimportSTAR(origgraph='statements.ttl', starttime=starttime)
     gimport.process_persons()
+    gimport.g.serialize(f'statements_{starttime.isoformat().split(".")[0].replace(":", "-")}.ttl')
     duration = datetime.now() - starttime
     print("Done! Ran in %s" % str(duration))
