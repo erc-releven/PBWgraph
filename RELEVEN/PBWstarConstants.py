@@ -1,9 +1,13 @@
-from rdflib import Literal, Namespace
+from rdflib import Literal, Namespace, RDF
 from warnings import warn
 import re
 import RELEVEN.PBWSources
 from os.path import join, dirname
 from uuid import uuid4
+
+import pbw
+
+
 # This package contains a bunch of information curated from the PBW website about authority, authorship
 # and so forth. It is a huge laundry list of data and some initialiser and accessor functions for it; the
 # class requires a graph driver in order to do the initialisation.
@@ -219,15 +223,10 @@ class PBWstarConstants:
         }
 
         # Define our STAR model predicates
-        self.star_subject = self.predicates['P140']
         self.star_subj_l = self.get_label('P140')
-        self.star_object = self.predicates['P141']
         self.star_obj_l = self.get_label('P141')
-        self.star_based = self.predicates['P17']
         self.star_based_l = self.get_label('P17')
-        self.star_auth = self.predicates['P14']
         self.star_auth_l = self.get_label('P14')
-        self.star_source = self.predicates['P70']
         self.star_src_l = self.get_label('P70')
 
         # Initialise our group agents and the data structures we need to start
@@ -237,14 +236,14 @@ class PBWstarConstants:
         self.viaf_agent = None
         self.orcid_agent = None
         f11s = [{'key': 'pbw',
-                 'title': Literal('Prosopography of the Byzantine World', 'en'),
-                 'uri': Literal('https://pbw2016.kdl.kcl.ac.uk/', 'en')},
+                 'title': Literal('Prosopography of the Byzantine World'),
+                 'uri': Literal('https://pbw2016.kdl.kcl.ac.uk/')},
                 {'key': 'viaf',
-                 'title': Literal('Virtual Internet Authority File', 'en'),
-                 'uri': Literal('https://viaf.org/', 'en')},
+                 'title': Literal('Virtual Internet Authority File'),
+                 'uri': Literal('https://viaf.org/')},
                 {'key': 'orcid',
-                 'title': Literal('OrcID', 'en'),
-                 'uri': Literal('https://orcid.org/', 'en')}]
+                 'title': Literal('OrcID'),
+                 'uri': Literal('https://orcid.org/')}]
         for ent in f11s:
             f11_query = f"""
             ?a a {self.get_label('F11')} ;
@@ -323,10 +322,18 @@ class PBWstarConstants:
         except KeyError:
             return self.predicates[lbl].n3(self.graph.namespace_manager)
 
+    def pbw_uri(self, resource):
+        if type(resource) == pbw.Factoid:
+            return self.namespaces['pbw'][f"factoid/{resource.factoidKey}"]
+        elif type(resource) == pbw.Boulloterion:
+            return self.namespaces['pbw'][f"boulloterion/{resource.boulloterionKey}"]
+        else:
+            raise ValueError(f"PBW URI requested for something that is neither factoid nor boulloterion: {resource}")
+
     def get_assertion_for_predicate(self, p):
         """Takes a predicate key and returns the qualified assertion class string which implies that predicate.
         This will throw an exception if no predicate is defined for the key."""
-        fqname = self.predicates[p]
+        fqname = self.predicates[p].n3(self.graph.namespace_manager)
         (nsstr, name) = fqname.split(':')
         code = name.split('_')[0]
         return f"star:E13_{nsstr}_{code}"
@@ -393,6 +400,7 @@ class PBWstarConstants:
         return minted
 
     def ensure_entities_existence(self, sparql, force_create=False):
+        print("SPARQL is:" + sparql)
         if not force_create:
             res = self.graph.query("SELECT DISTINCT * WHERE {" + sparql + "}", initNs=self.namespaces)
             if len(res):
@@ -402,14 +410,14 @@ class PBWstarConstants:
                 # In any case return the variables from the first row as a dictionary.
                 for row in res:
                     return row.asdict()
-        else:
-            # Either force_create was specified or res had zero length.
-            new_uris = self.mint_uris_for_query(sparql)
-            q = sparql
-            for k, v in new_uris.items():
-                q = q.replace(f'?{k}', v.n3(self.graph.namespace_manager))
-            self.graph.update("INSERT DATA {" + q + "}", initNs=self.namespaces)
-            return new_uris
+
+        # Either force_create was specified or res had zero length.
+        new_uris = self.mint_uris_for_query(sparql)
+        q = sparql
+        for k, v in new_uris.items():
+            q = q.replace(f'?{k}', v.n3(self.graph.namespace_manager))
+        self.graph.update("INSERT DATA {" + q + "}", initNs=self.namespaces)
+        return new_uris
 
     def ensure_egroup_existence(self, gclass, glink, members):
         mvalues = '\n'.join([f"({x.n3()})" for x in members])
@@ -435,13 +443,11 @@ class PBWstarConstants:
             res = self.ensure_entities_existence(sparql, force_create=True)
 
         # Either way, return the entity group
-        return res['egroup']
+        return res.get('egroup')
 
     def document(self, pbwpage, *assertions):
         """Make the E31 link between the pbwpage and whatever assertions we just pulled from it."""
-        # Since we don't have to mint any new URIs in this query, we can just run it as an INSERT.
-        sparql = f"""
-        {pbwpage} a {self.get_label('E31')} ;
-            {self.get_label('P70')} {','.join([x.n3() for x in assertions])} .
-        """
-        self.graph.update("INSERT DATA {" + sparql + "}", initNs=self.namespaces)
+        # Since we don't have to mint any new URIs in this query, we can just add them normally.
+        self.graph.add((pbwpage, RDF.type, self.entitylabels['E31']))
+        for a in assertions:
+            self.graph.add((pbwpage, self.predicates['P70'], a))

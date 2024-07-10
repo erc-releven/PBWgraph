@@ -1,10 +1,11 @@
+import argparse
 import pbw
 import RELEVEN.PBWstarConstants
 import config
 import re
 from datetime import datetime
 from rdflib import Graph, Literal, XSD
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, and_
 from sqlalchemy.orm import sessionmaker
 from warnings import warn
 
@@ -67,9 +68,11 @@ class graphimportSTAR:
     constants = None
     mysqlsession = None
 
-    def __init__(self, origgraph=None, starttime=None):
-        # Record the start time if it was passed
-        self.starttime = starttime
+    def __init__(self, origgraph=None, testmode=False):
+        # Set the testing flag
+        self.testmode = testmode
+        # Record the starting time
+        self.starttime = datetime.now()
         # Connect to the SQL DB
         engine = create_engine('mysql+mysqlconnector://' + config.dbstring)
         smaker = sessionmaker(bind=engine)
@@ -88,6 +91,14 @@ class graphimportSTAR:
 
     def collect_person_records(self):
         """Get a list of people whose floruit matches our needs"""
+        if self.testmode:
+            # Debugging / testing: restrict the list of relevant people
+            debugnames = ['Anna', 'Apospharios', 'Bagrat', 'Balaleca', 'Gagik', 'Herve', 'Ioannes', 'Konstantinos',
+                          'Liparites']
+            debugcodes = [62, 64, 68, 101, 102, 110]
+            return self.mysqlsession.query(pbw.Person).filter(
+                and_(pbw.Person.name.in_(debugnames), pbw.Person.mdbCode.in_(debugcodes))
+            ).all()
         relevant = [x for x in self.mysqlsession.query(pbw.Person).all()
                     if self.constants.inrange(x.floruit) and len(x.factoids) > 0]
         # Add the corner cases that we want to include: two emperors and a hegoumenos early in his career
@@ -95,13 +106,6 @@ class graphimportSTAR:
             relevant.append(self.mysqlsession.query(pbw.Person).filter_by(name=name, mdbCode=code).scalar())
         print("Found %d relevant people" % len(relevant))
         return relevant
-        # # Debugging / testing: restrict the list of relevant people
-        # debugnames = ['Anna', 'Apospharios', 'Bagrat', 'Balaleca', 'Gagik', 'Herve', 'Ioannes', 'Konstantinos',
-        #               'Liparites']
-        # debugcodes = [62, 64, 68, 101, 102, 110]
-        # return self.mysqlsession.query(pbw.Person).filter(
-        #     and_(pbw.Person.name.in_(debugnames), pbw.Person.mdbCode.in_(debugcodes))
-        # ).all()
 
     def create_assertion_sparql(self, label, ptype, subj, obj, auth, src=None):
         """Create the SPARQL query that corresponds to an assertion with the given parameters.
@@ -115,19 +119,19 @@ class graphimportSTAR:
             {c.star_subj_l} {subject} ;
         """
         # Deal with the object
-        if ptype(obj) == list:
+        if type(obj) == list:
             # Ensure that the list are all literals
             disallowed = [x for x in obj if not isinstance(x, Literal)]
             if len(disallowed):
                 warn("Object can only be a list if it is a list of literals")
                 return None
             for o in obj:
-                sparql += f"            {c.star_obj_l} {o.n3()} ;\n"
+                sparql += f"    {c.star_obj_l} {o.n3()} ;\n"
         else:
             objec_t = obj
             if hasattr(obj, 'n3'):
                 objec_t = obj.n3()
-            sparql += f"            {c.star_obj_l} {objec_t} ;\n"
+            sparql += f"    {c.star_obj_l} {objec_t} ;\n"
         # The assertion might or might not have a source
         if src:
             basis = src
@@ -138,14 +142,13 @@ class graphimportSTAR:
         authority = auth
         if hasattr(auth, 'n3'):
             authority = auth.n3()
-        sparql += f"""
-            {c.star_auth_l} {authority} .
+        sparql += f"""            {c.star_auth_l} {authority} .
         """
         return sparql
 
     def gender_handler(self, sqlperson, graphperson):
-        pbwdoc = f'pbw:person/{sqlperson.personKey}'
         c = self.constants
+        pbwdoc = c.namespaces['pbw'][f"person/{sqlperson.personKey}"]
         pbw_sex = sqlperson.sex
         if pbw_sex == 'Mixed':  # we have already excluded Anonymi
             pbw_sex = 'Unknown'
@@ -172,8 +175,8 @@ class graphimportSTAR:
     def identifier_handler(self, sqlperson, graphperson):
         """The identifier in this context is the 'origName' field, thus an identifier assigned by PBW
         not on the basis of any particular source. We turn this into an Appellation assertion"""
-        pbwdoc = f'pbw:person/{sqlperson.personKey}'
         c = self.constants
+        pbwdoc = c.namespaces['pbw'][f"person/{sqlperson.personKey}"]
         # Strip any parenthetical from the nameOL field
         withparen = re.search(r'(.*)\s+\(.*\)', sqlperson.nameOL)
         if withparen is not None:
@@ -184,7 +187,7 @@ class graphimportSTAR:
         # Create the SPARQL expression
         sparql = f"""
         ?appellation a crm:E41 ;
-            crm:P190 {Literal(appellation, lang='en')} .
+            crm:P190 {Literal(appellation, lang='en').n3()} .
         """
         sparql += self.create_assertion_sparql('a1', 'P1', graphperson, '?appellation', c.pbw_agent)
         # Check and create it if necessary
@@ -232,8 +235,8 @@ class graphimportSTAR:
     def get_boulloterion(self, boulloterion, pbweditor):
         """Helper function to find a boulloterion with a given ID. Creates its seals and sources
         if it is a new boulloterion. Returns the boulloterion and its inscription."""
-        pbwdoc = f'pbw:boulloterion/{boulloterion.boulloterionKey}'
         c = self.constants
+        pbwdoc = c.pbw_uri(boulloterion)
         # boulloterion is a subclass of E22 Human-Made Object, with an identifier assigned by PBW
         keystr = str(boulloterion.boulloterionKey)
         btitle = f"Boulloterion of {boulloterion.title}"
@@ -252,7 +255,7 @@ class graphimportSTAR:
         # Make the assertion(s) concerning its inscription. TODO for the cleanup change E73 to E33
         sparql = f"""
         ?inscription a {c.get_label('E34')}, {c.get_label('E73')} ;
-            {c.get_label('P190')} {boulloterion.origLText} . """
+            {c.get_label('P190')} {Literal(boulloterion.origLText, _get_source_lang(boulloterion.origLang)).n3()} . """
         sparql += self.create_assertion_sparql('a', 'P128', boul_node, '?inscription', pbweditor, source_node)
 
         # Create the seals that belong to this boulloterion; assert that they
@@ -309,14 +312,13 @@ class graphimportSTAR:
         # Get some labels
         source_nodes = []
         for source in pubs:
-            # Make sure with 'merge' that each bibliography node exists
             # Fix the encoding for the entries we didn't add
             short_name = source.shortName if source.bibKey == 816 else re_encode(source.shortName)
             latin_bib = source.latinBib if source.bibKey == 816 else re_encode(source.latinBib)
             sn = f"""
             ?src a {c.get_label('F3')} ;
-                {c.get_label('P1')} "{short_name}" ;
-                {c.get_label('P3')} "{escape_text(latin_bib)}" .
+                {c.get_label('P1')} {Literal(short_name).n3()} ;
+                {c.get_label('P3')} {Literal(latin_bib).n3()} .
             """
             res = c.ensure_entities_existence(sn)
             source_nodes.append(res['src'])
@@ -353,7 +355,7 @@ class graphimportSTAR:
         assertions for the expression of the whole source work and its authorship."""
         # Get (possibly creating) the expression of the entire source
         c = self.constants
-        pbwdoc = f'pbw:factoid/{factoid.factoidKey}'
+        pbwdoc = c.pbw_uri(factoid)
         wholesource = self.get_source_work_expression(factoid)
         if wholesource is None:
             return None
@@ -367,7 +369,7 @@ class graphimportSTAR:
         sparql += self.create_assertion_sparql('a', 'R15', wholesource, '?sourceref', agent)
         res = c.ensure_entities_existence(sparql)
         c.document(pbwdoc, res['a'])
-        return res['sourcref']
+        return res['sourceref']
 
     def get_source_work_expression(self, factoid):
         # Ensure the existence of the work and, if it has a declared author, link the author to it via
@@ -393,7 +395,7 @@ class graphimportSTAR:
         # Express the expression
         sparql = f"""
         ?expr a {c.get_label('F3P')};
-            {c.get_label('P3')} "{escape_text(edition_id)} . """
+            {c.get_label('P3')} {Literal(edition_id).n3()} . """
 
         if text_id is None:
             # We are dealing with a secondary source. Assert an expression creation instead of a
@@ -410,8 +412,8 @@ class graphimportSTAR:
             # First, the editors assert that the edition (that is, the expression) belongs to
             # the work; this is based on, well, the edition.
             sparql += f"""
-            ?work a {c.get_label('F2T')} ;
-                {c.get_label('P3')} "{text_id}" . """
+        ?work a {c.get_label('F2T')} ;
+            {c.get_label('P3')} "{text_id}" . """
             sparql += self.create_assertion_sparql('a1', 'R3', '?work', '?expr', editors, '?expr')
             assertions_set.append('a1')
             # Now we need to see if authorship has to be asserted.
@@ -426,7 +428,7 @@ class graphimportSTAR:
                 if 'factoid' in workinfo:
                     # Pull in the authorship factoid that describes the authorship of this work
                     afact = self.mysqlsession.query(pbw.Factoid).filter_by(factoidKey=workinfo['factoid']).scalar()
-                    afact_src = f'pbw:factoid/{afact.factoidKey}'
+                    afact_src = c.pbw_uri(afact)
                     asourcekey = c.source(afact)
                     if asourcekey != sourcekey:
                         print("HELP: Not dealing with %s authorship factoid from different work %s" % (
@@ -448,16 +450,16 @@ class graphimportSTAR:
                         # We have to make a sourceref expression node, connected to this expression, for
                         # the factoid source
                         sparql += f"""
-            ?srcref a {c.get_label('E33')} ;
-                {c.get_label('P3')} "{escape_text(afact.sourceRef)}" ;
-                {c.get_label('P190')} "{escape_text(afact.origLDesc)}" . """
+        ?srcref a {c.get_label('E33')} ;
+            {c.get_label('P3')} {Literal(afact.sourceRef).n3()} ;
+            {c.get_label('P190')} {Literal(afact.origLDesc, _get_source_lang(afact)).n3()} . """
                     aship_source = '?srcref'
                 elif 'provenance' in workinfo:
                     # We have a page number. This makes our authorship authority the editor(s), with the source
                     # being the passage in this very edition.
                     sparql += f"""
-            ?srcref a {c.get_label('E33')} ;
-                {c.get_label('P3')} "{workinfo['provenance']}" . """
+        ?srcref a {c.get_label('E33')} ;
+            {c.get_label('P3')} {Literal(workinfo['provenance']).n3()} . """
                     aship_source = '?srcref'
 
                 #
@@ -470,7 +472,7 @@ class graphimportSTAR:
                 # We have now dealt with extracting information from some relevant authorship factoid, if it exists.
                 # Move on to the assertion that the author authored the work
                 sparql += f"""
-                ?wc a {c.get_label('F27')} . """
+        ?wc a {c.get_label('F27')} . """
                 sparql += self.create_assertion_sparql('a3', 'R16', '?wc', '?work', aship_authority, aship_source)
                 sparql += self.create_assertion_sparql('a4', 'P14', '?wc', author, aship_authority, aship_source)
                 assertions_set.extend(['a3', 'a4'])
@@ -478,7 +480,7 @@ class graphimportSTAR:
         # Whatever we just made, return the expression, which is what we are after.
         res = c.ensure_entities_existence(sparql)
         if afact_src:
-            c.document(afact_src, *assertions_set)
+            c.document(afact_src, *[res[x] for x in assertions_set])
         return res['expr']
 
     def _find_or_create_identified_entity(self, etype, agent, identifier, dname):
@@ -496,19 +498,19 @@ class graphimportSTAR:
         # The entity should have its display name as a crm:P3 note
         entitystr = f"?entity a {etype} "
         if dname is not None:
-            entitystr += f";\n            {c.get_label('P3')} {Literal(dname, lang='en')} "
+            entitystr += f";\n            {c.get_label('P3')} {Literal(dname, lang='en').n3()} "
         entitystr += '.'
 
         # Construct the identifier assignment that should exist
         sparql = f"""
         ?ident a {c.get_label('E42')} ;
-            {c.get_label('P190')} {identifier} ;
-            {c.get_label('P3')} {url} .
+            {c.get_label('P190')} {Literal(identifier).n3()} ;
+            {c.get_label('P3')} {Literal(url).n3()} .
         {entitystr}
         ?idass a {c.get_label('E15')} ;
-            {c.star_subject} ?entity ;
+            {c.star_subj_l} ?entity ;
             {c.get_label('P37')} ?ident ;
-            {c.star_auth} {agent.n3()} .
+            {c.star_auth_l} {agent.n3()} .
         """
 
         # Ensure its existence and return the entity in question
@@ -587,8 +589,8 @@ class graphimportSTAR:
         to a canonical version of the name in the FamilyName table, which is probably usually
         Greek. The Alternative Name factoids should exclusively use the information in the
         base factoid."""
-        pbwdoc = f"pbw:factoid/{factoid.factoidKey}"
         c = self.constants
+        pbwdoc = c.pbw_uri(factoid)
 
         name_en = None
         if factoid.factoidType == 'Alternative Name':
@@ -635,16 +637,16 @@ class graphimportSTAR:
 
         sparql = f"""
         ?appel a {c.get_label('E41')} ;
-            {c.get_label('P190')} {Literal(name_en, 'en')} ;
-            {c.get_label('P190')} {Literal(name_ol, olang)} . """
+            {c.get_label('P190')} {Literal(name_en, 'en').n3()} ;
+            {c.get_label('P190')} {Literal(name_ol, olang).n3()} . """
         sparql += self.create_assertion_sparql('a1', 'P1', graphperson, '?appel', agent, sourcenode)
         res = c.ensure_entities_existence(sparql)
         c.document(pbwdoc, res['a1'])
 
     def description_handler(self, sourcenode, agent, factoid, graphperson):
         """Record the descriptions given in the sources as P3 data-property assertions."""
-        pbwdoc = f"pbw:factoid/{factoid.factoidKey}"
         c = self.constants
+        pbwdoc = c.pbw_uri(factoid)
 
         olang = _get_source_lang(factoid) or 'grc'
         descriptions = [Literal(factoid.replace_referents(), 'en'), Literal(factoid.origLDesc, olang)]
@@ -656,8 +658,8 @@ class graphimportSTAR:
         # Each factoid is its own set of assertions pertaining to the single death of a person.
         # When there are multiple sources, we will have to review them for consistency and make
         # proxies for the death event as necessary.
-        pbwdoc = f"pbw:factoid/{factoid.factoidKey}"
         c = self.constants
+        pbwdoc = c.pbw_uri(factoid)
 
         # Create the new assertion that says the death happened. Start by gathering all our existing
         # nodes and reified predicates:
@@ -691,16 +693,18 @@ class graphimportSTAR:
         if deathdate:
             sparql += f"""
         ?deathdate a {c.get_label('E52')} ;
-            {c.get_label('P80')} {Literal(deathdate)} . """
+            {c.get_label('P80')} {Literal(deathdate).n3()} . """
             sparql += self.create_assertion_sparql('a2', 'P4', '?de', '?deathdate', agent, sourcenode)
 
         res = c.ensure_entities_existence(sparql)
-        c.document(pbwdoc, res['a1'], res['a2'])
+        c.document(pbwdoc, res['a1'])
+        if deathdate:
+            c.document(pbwdoc, res['a2'])
 
     def ethnicity_handler(self, sourcenode, agent, factoid, graphperson):
         """Assign a group membership for the given ethnicity to the person"""
         c = self.constants
-        pbwdoc = f"pbw:factoid/{factoid.factoidKey}"
+        pbwdoc = c.pbw_uri(factoid)
         if factoid.ethnicityInfo is None or factoid.ethnicityInfo.ethnicity is None:
             # We can't assign any ethnicity without the ethnicity info
             warn("Empty ethnicity factoid found: id %s" % factoid.factoidKey)
@@ -716,13 +720,14 @@ class graphimportSTAR:
                                            whichpred):
         # (grouping:label) [:whopred] person
         # (grouping) [:whichpred] rnode
-        pbwdoc = f"pbw:factoid/{factoid.factoidKey}"
+        c = self.constants
+        pbwdoc = c.pbw_uri(factoid)
         sparql = f"""
         ?designation a {label} . """
         sparql += self.create_assertion_sparql('a1', whopred, '?designation', graphperson, agent, sourcenode)
         sparql += self.create_assertion_sparql('a2', whichpred, '?designation', des, agent, sourcenode)
-        res = self.constants.ensure_entities_existence(sparql)
-        self.constants.document(pbwdoc, res['a1'], res['a2'])
+        res = c.ensure_entities_existence(sparql)
+        c.document(pbwdoc, res['a1'], res['a2'])
 
     def religion_handler(self, sourcenode, agent, factoid, graphperson):
         """Assign a group membership for the given religious confession to the person"""
@@ -768,8 +773,8 @@ class graphimportSTAR:
 
     def languageskill_handler(self, sourcenode, agent, factoid, graphperson):
         """Assign a language skill to the person"""
-        pbwdoc = "pbw:factoid/{factoid.factoidKey}"
         c = self.constants
+        pbwdoc = c.pbw_uri(factoid)
         if factoid.languageSkill is None:
             return
         # Language know-how ID
@@ -800,7 +805,7 @@ class graphimportSTAR:
         res = self.g.query(sparql_check)
         if len(res):
             # We found a kinship between these two people. Return it
-            return res['kstate']
+            return res.get('kstate')
         else:
             return None
 
@@ -809,8 +814,8 @@ class graphimportSTAR:
         # (rel:C3 Social Relationship) [pt:P16 has type] (kt:C4 Kinship type)
         # (rel) [src:P17 has source] (p:E21 person)
         # (rel) [trg:P18 has target] (p:E21 kin)
-        pbwdoc = f"pbw:factoid/{factoid.factoidKey}"
         c = self.constants
+        pbwdoc = c.pbw_uri(factoid)
         if factoid.kinshipType is None:
             warn("Empty kinship factoid found: id %d" % factoid.factoidKey)
             return
@@ -844,19 +849,19 @@ class graphimportSTAR:
         """Ensure the existence of an E18 Physical Thing (we don't have any more category info about
         the possessions). For now, we assume that a possession with an identical description is, in fact,
         the same possession."""
-        pbwdoc = f"pbw:factoid/{factoid.factoidKey}"
         c = self.constants
+        pbwdoc = c.pbw_uri(factoid)
 
         # Give the possession its description, which comes out of the factoid's engDesc
         sparql = f"""
         ?possession a {c.get_label('E18')} ;
-            {c.get_label('P1')} {Literal(factoid.replace_referents())} ."""
+            {c.get_label('P1')} {Literal(factoid.replace_referents()).n3()} ."""
         # Assert ownership of the possession
         sparql += self.create_assertion_sparql('a1', 'P51', '?possession', graphperson, agent, sourcenode)
         if factoid.possession is not None and factoid.possession != '':
             # Give the assertion a note, if such note exists in the poorly-named PossessionFactoid.possessionName field
             sparql += f"""
-        ?a1 {c.get_label('P3')} {Literal(factoid.possession)}"""
+        ?a1 {c.get_label('P3')} {Literal(factoid.possession).n3()}"""
         res = c.ensure_entities_existence(sparql)
         c.document(pbwdoc, res['a1'])
 
@@ -870,12 +875,12 @@ class graphimportSTAR:
         timenow = datetime.now()
         dbr_q = f"""
         ?thisurl a {c.get_label('E42')} ;
-            {c.get_label('P190')} "https://github.com/erc-releven/PBWgraph/RELEVEN/graphimportSTAR.py" .
+            {c.get_label('P190')} {Literal("https://github.com/erc-releven/PBWgraph/RELEVEN/graphimportSTAR.py").n3()} .
         ?this a {c.get_label('D14')} ;
             {c.get_label('P1')} ?thisurl .
         ?tstamp a {c.get_label('E52')} ;
-            {c.get_label('P82a')} {Literal(self.starttime, datatype=XSD.dateTimeStamp)} ;
-            {c.get_label('P82b')} {Literal(timenow, datatype=XSD.dateTimeStamp)} .
+            {c.get_label('P82a')} {Literal(self.starttime, datatype=XSD.dateTimeStamp).n3()} ;
+            {c.get_label('P82b')} {Literal(timenow, datatype=XSD.dateTimeStamp).n3()} .
         ?dbr a {c.get_label('F28')} ;
             {c.get_label('P14')} {tla.n3()} ;
             {c.get_label('P4')} ?tstamp .
@@ -885,6 +890,7 @@ class graphimportSTAR:
 
         # Find all assertions with real UUIDs that haven't been created by a different software run.
         # WissKI-created assertions don't have UUIDs.
+        uuid_regex = r"/\\w{8}-\\w{4}-\\w{4}-\\w{4}-\\w{12}$"
         sparql_check = f"""
         select distinct ?a where {{
             ?a a ?type .
@@ -893,7 +899,7 @@ class graphimportSTAR:
                 ?d a {c.get_label('E31')} ;
                     {c.get_label('P70')} ?a .
             }}
-            FILTER(regex(STR(?a), ""/\\w{8}-\\w{4}-\\w{4}-\\w{4}-\\w{12}$""))
+            FILTER(regex(STR(?a), "{uuid_regex}"))
         }}
         """
         res = self.g.query(sparql_check)
@@ -981,10 +987,20 @@ class graphimportSTAR:
 
 # If we are running as main, execute the script
 if __name__ == '__main__':
-    starttime = datetime.now()
+    # Get the options
+    parser = argparse.ArgumentParser(
+        prog="graphimportSTAR",
+        description="Convert PBW factoids to STAR assertions"
+    )
+    parser.add_argument('-t', '--testing', action='store_true',
+                        help="Run in testing mode with limited data")
+    parser.add_argument('-g', '--graph',
+                        help="Graph containing existing STAR assertions, if any")
+    args = parser.parse_args()
     # Process the person records
-    gimport = graphimportSTAR(origgraph='statements.ttl', starttime=starttime)
+    gimport = graphimportSTAR(origgraph=args.graph, testmode=args.testing)
     gimport.process_persons()
-    gimport.g.serialize(f'statements_{starttime.isoformat().split(".")[0].replace(":", "-")}.ttl')
-    duration = datetime.now() - starttime
+    # Write the output to a timestamped file
+    gimport.g.serialize(f'statements_{gimport.starttime.isoformat().split(".")[0].replace(":", "-")}.ttl')
+    duration = datetime.now() - gimport.starttime
     print("Done! Ran in %s" % str(duration))
