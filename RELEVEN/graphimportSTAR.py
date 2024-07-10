@@ -871,41 +871,42 @@ class graphimportSTAR:
         database creation event."""
         c = self.constants
         tla = self.get_authority_node([self.constants.ta])
-        # Create the database record
-        timenow = datetime.now()
-        dbr_q = f"""
-        ?thisurl a {c.get_label('E42')} ;
-            {c.get_label('P190')} {Literal("https://github.com/erc-releven/PBWgraph/RELEVEN/graphimportSTAR.py").n3()} .
-        ?this a {c.get_label('D14')} ;
-            {c.get_label('P1')} ?thisurl .
-        ?tstamp a {c.get_label('E52')} ;
-            {c.get_label('P82a')} {Literal(self.starttime, datatype=XSD.dateTimeStamp).n3()} ;
-            {c.get_label('P82b')} {Literal(timenow, datatype=XSD.dateTimeStamp).n3()} .
-        ?dbr a {c.get_label('F28')} ;
-            {c.get_label('P14')} {tla.n3()} ;
-            {c.get_label('P4')} ?tstamp .
-        """
-        res = c.ensure_entities_existence(dbr_q, force_create=True)
-        dbr = res['dbr']
-
-        # Find all assertions with real UUIDs that haven't been created by a different software run.
-        # WissKI-created assertions don't have UUIDs.
-        uuid_regex = r"/\\w{8}-\\w{4}-\\w{4}-\\w{4}-\\w{12}$"
+        # Find all assertions that haven't been created by a different software run.
+        # We are assuming that assertions and only assertions have P140 predicates.
         sparql_check = f"""
         select distinct ?a where {{
-            ?a a ?type .
-            ?type rdfs:subClassOf {c.get_label('E13')} .
+            ?a {c.star_subj_l} ?subject .
             MINUS {{
                 ?d a {c.get_label('E31')} ;
                     {c.get_label('P70')} ?a .
             }}
-            FILTER(regex(STR(?a), "{uuid_regex}"))
         }}
         """
         res = self.g.query(sparql_check)
-        # These assertions must therefore have been produced by this run.
-        for row in res:
-            self.g.add((dbr, c.get_label('L11'), row['a']))
+        # Filter for assertions with a UUID rather than a WissKI identifier. These are the ones that should have
+        # been created on this run.
+        new_assertions = [row['a'] for row in res
+                          if re.search(r"/\w{8}-\w{4}-\w{4}-\w{4}-\w{12}$", row['a'].toPython())]
+        if len(new_assertions):
+            # Create the database record
+            timenow = datetime.now()
+            dbr_q = f"""
+            ?thisurl a {c.get_label('E42')} ;
+                {c.get_label('P190')} {Literal("https://github.com/erc-releven/PBWgraph/RELEVEN/graphimportSTAR.py").n3()} .
+            ?this a {c.get_label('D14')} ;
+                {c.get_label('P1')} ?thisurl .
+            ?tstamp a {c.get_label('E52')} ;
+                {c.get_label('P82a')} {Literal(self.starttime, datatype=XSD.dateTimeStamp).n3()} ;
+                {c.get_label('P82b')} {Literal(timenow, datatype=XSD.dateTimeStamp).n3()} .
+            ?dbr a {c.get_label('F28')} ;
+                {c.get_label('P14')} {tla.n3()} ;
+                {c.get_label('P4')} ?tstamp .
+            """
+            res = c.ensure_entities_existence(dbr_q, force_create=True)
+            dbr = res['dbr']
+
+            for a in new_assertions:
+                self.g.add((dbr, c.predicates['L11'], a))
 
     def process_persons(self):
         """Go through the relevant person records and process them for factoids"""
