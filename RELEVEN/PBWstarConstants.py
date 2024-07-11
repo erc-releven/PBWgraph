@@ -400,7 +400,7 @@ class PBWstarConstants:
         return minted
 
     def ensure_entities_existence(self, sparql, force_create=False):
-        print("SPARQL is:" + sparql)
+        # print("SPARQL is:" + sparql)
         if not force_create:
             res = self.graph.query("SELECT DISTINCT * WHERE {" + sparql + "}", initNs=self.namespaces)
             if len(res):

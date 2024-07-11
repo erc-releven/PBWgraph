@@ -2,9 +2,10 @@ import argparse
 import pbw
 import RELEVEN.PBWstarConstants
 import config
+import functools
 import re
 from datetime import datetime
-from rdflib import Graph, Literal, XSD
+from rdflib import Graph, Literal, XSD, RDF
 from sqlalchemy import create_engine, and_
 from sqlalchemy.orm import sessionmaker
 from warnings import warn
@@ -79,10 +80,21 @@ class graphimportSTAR:
         self.mysqlsession = smaker()
         # Start an RDF graph, parsing what we started with
         self.g = Graph()
+        loaded = False
         if origgraph is not None:
-            self.g.parse(origgraph)
+            try:
+                self.g.parse(origgraph)
+                loaded = True
+            except FileNotFoundError:
+                pass
         # Make / retrieve the global nodes and self.constants
         self.constants = RELEVEN.PBWstarConstants.PBWstarConstants(self.g)
+        # How many assertions do we have to start with?
+        if loaded:
+            res = self.g.triples((None, self.constants.predicates['P140'], None))
+            ct = functools.reduce(lambda x, y: x + 1, res, 0)
+            print(f"Using graph {origgraph} with {ct} existing assertions.")
+
 
     def _urify(self, label):
         """Utility function to turn STAR predicates into real URIref objects"""
@@ -877,8 +889,8 @@ class graphimportSTAR:
         select distinct ?a where {{
             ?a {c.star_subj_l} ?subject .
             MINUS {{
-                ?d a {c.get_label('E31')} ;
-                    {c.get_label('P70')} ?a .
+                ?l a {c.get_label('D10')} ;
+                    {c.get_label('L11')} ?a .
             }}
         }}
         """
@@ -888,6 +900,7 @@ class graphimportSTAR:
         new_assertions = [row['a'] for row in res
                           if re.search(r"/\w{8}-\w{4}-\w{4}-\w{4}-\w{12}$", row['a'].toPython())]
         if len(new_assertions):
+            print(f"Recording {len(new_assertions)} new assertions in the graph.")
             # Create the database record
             timenow = datetime.now()
             dbr_q = f"""
@@ -898,15 +911,18 @@ class graphimportSTAR:
             ?tstamp a {c.get_label('E52')} ;
                 {c.get_label('P82a')} {Literal(self.starttime, datatype=XSD.dateTimeStamp).n3()} ;
                 {c.get_label('P82b')} {Literal(timenow, datatype=XSD.dateTimeStamp).n3()} .
-            ?dbr a {c.get_label('F28')} ;
+            ?dbr a {c.get_label('D10')} ;
                 {c.get_label('P14')} {tla.n3()} ;
-                {c.get_label('P4')} ?tstamp .
+                {c.get_label('P4')} ?tstamp ;
+                {c.get_label('L23')} ?this .
             """
             res = c.ensure_entities_existence(dbr_q, force_create=True)
             dbr = res['dbr']
 
             for a in new_assertions:
                 self.g.add((dbr, c.predicates['L11'], a))
+        else:
+            print("No new assertions created on this run.")
 
     def process_persons(self):
         """Go through the relevant person records and process them for factoids"""
@@ -1002,6 +1018,9 @@ if __name__ == '__main__':
     gimport = graphimportSTAR(origgraph=args.graph, testmode=args.testing)
     gimport.process_persons()
     # Write the output to a timestamped file
-    gimport.g.serialize(f'statements_{gimport.starttime.isoformat().split(".")[0].replace(":", "-")}.ttl')
+    filename = args.graph
+    if filename is None:
+        filename = f'statements_{gimport.starttime.isoformat().split(".")[0].replace(":", "-")}.ttl'
+    gimport.g.serialize(filename)
     duration = datetime.now() - gimport.starttime
     print("Done! Ran in %s" % str(duration))
