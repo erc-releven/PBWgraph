@@ -2,10 +2,10 @@ import argparse
 import pbw
 import RELEVEN.PBWstarConstants
 import config
-import functools
 import re
 from datetime import datetime
-from rdflib import Graph, Literal, XSD, RDF
+from functools import reduce
+from rdflib import Graph, Literal, XSD
 from sqlalchemy import create_engine, and_
 from sqlalchemy.orm import sessionmaker
 from warnings import warn
@@ -92,7 +92,7 @@ class graphimportSTAR:
         # How many assertions do we have to start with?
         if loaded:
             res = self.g.triples((None, self.constants.predicates['P140'], None))
-            ct = functools.reduce(lambda x, y: x + 1, res, 0)
+            ct = reduce(lambda x, y: x + 1, res, 0)
             print(f"Using graph {origgraph} with {ct} existing assertions.")
 
 
@@ -128,7 +128,7 @@ class graphimportSTAR:
             subject = subj.n3()
         sparql = f"""
         ?{label} a {c.get_assertion_for_predicate(ptype)} ;
-            {c.star_subj_l} {subject} ;
+            {c.star_subject} {subject} ;
         """
         # Deal with the object
         if type(obj) == list:
@@ -138,23 +138,23 @@ class graphimportSTAR:
                 warn("Object can only be a list if it is a list of literals")
                 return None
             for o in obj:
-                sparql += f"    {c.star_obj_l} {o.n3()} ;\n"
+                sparql += f"    {c.star_object} {o.n3()} ;\n"
         else:
             objec_t = obj
             if hasattr(obj, 'n3'):
                 objec_t = obj.n3()
-            sparql += f"    {c.star_obj_l} {objec_t} ;\n"
+            sparql += f"    {c.star_object} {objec_t} ;\n"
         # The assertion might or might not have a source
         if src:
             basis = src
             if hasattr(src, 'n3'):
                 basis = src.n3()
-            sparql += f"            {c.star_based_l} {basis} ; \n"
+            sparql += f"            {c.star_based} {basis} ; \n"
         # ...but it should always have an authority.
         authority = auth
         if hasattr(auth, 'n3'):
             authority = auth.n3()
-        sparql += f"""            {c.star_auth_l} {authority} .
+        sparql += f"""            {c.star_auth} {authority} .
         """
         return sparql
 
@@ -520,9 +520,9 @@ class graphimportSTAR:
             {c.get_label('P3')} {Literal(url).n3()} .
         {entitystr}
         ?idass a {c.get_label('E15')} ;
-            {c.star_subj_l} ?entity ;
+            {c.star_subject} ?entity ;
             {c.get_label('P37')} ?ident ;
-            {c.star_auth_l} {agent.n3()} .
+            {c.star_auth} {agent.n3()} .
         """
 
         # Ensure its existence and return the entity in question
@@ -691,8 +691,8 @@ class graphimportSTAR:
         sparql = f"""
         ?de a {c.get_label('E69')} .
         ?a0 a {c.get_assertion_for_predicate('P100')} ;
-            {c.star_subj_l} ?de ;
-            {c.star_obj_l} {graphperson.n3()} .
+            {c.star_subject} ?de ;
+            {c.star_object} {graphperson.n3()} .
         """
 
         # Get the description of the death in English and the original language
@@ -809,11 +809,11 @@ class graphimportSTAR:
         sparql_check = f"""select distinct ?kstate where {{
         ?kstate a {c.get_label('C3')} .
         ?a1 a {c.get_assertion_for_predicate('SP17')} ;
-            {c.star_subj_l} ?kstate ;
-            {c.star_obj_l} {graphperson.n3()} .
+            {c.star_subject} ?kstate ;
+            {c.star_object} {graphperson.n3()} .
         ?a2 a star:E13_sdhss_P18 ;
-            {c.star_subj_l} ?kstate ;
-            {c.star_obj_l} {graphkin.n3()} . }}"""
+            {c.star_subject} ?kstate ;
+            {c.star_object} {graphkin.n3()} . }}"""
         res = self.g.query(sparql_check)
         if len(res):
             # We found a kinship between these two people. Return it
@@ -887,7 +887,7 @@ class graphimportSTAR:
         # We are assuming that assertions and only assertions have P140 predicates.
         sparql_check = f"""
         select distinct ?a where {{
-            ?a {c.star_subj_l} ?subject .
+            ?a {c.star_subject} ?subject .
             MINUS {{
                 ?l a {c.get_label('D10')} ;
                     {c.get_label('L11')} ?a .

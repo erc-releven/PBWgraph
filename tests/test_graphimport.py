@@ -1,16 +1,23 @@
+import os
 import unittest
-import RELEVEN.PBWstarConstants
-import config
-from collections import defaultdict
-from neo4j import GraphDatabase
+from collections import Counter, defaultdict
+from functools import reduce
+from rdflib import Graph, RDF, Literal
+from rdflib.exceptions import UniquenessError
+from RELEVEN import PBWstarConstants, graphimportSTAR
+from sqlalchemy.exc import DatabaseError
+from tempfile import NamedTemporaryFile
 
 
 def pburi(x):
     return f"https://pbw2016.kdl.kcl.ac.uk/person/{x}/"
 
 
-class GraphImportTests(unittest.TestCase):
+def count_result(res):
+    return reduce(lambda x, y: x + 1, res, 0)
 
+
+class GraphImportTests(unittest.TestCase):
     graphdriver = None
     constants = None
     # Data keys are gender, identifier (appellation), second-name appellation, alternate-name appellation,
@@ -81,7 +88,8 @@ class GraphImportTests(unittest.TestCase):
                                    'nephew (son of brother)': ['Michael 7'],
                                    'relative by marriage': ['Nikephoros 101']
                                    },
-                       'possession': {'Palace in Bithynia at foot of Mount Sophon': ['Nikephoros 117', '173.7-8, 179.15']}},
+                       'possession': {
+                           'Palace in Bithynia at foot of Mount Sophon': ['Nikephoros 117', '173.7-8, 179.15']}},
         'Ioannes 68': {'gender': ['Eunuch'], 'identifier': 'τοῦ Ὀρφανοτρόφου',
                        'death': {'count': 4, 'dated': 1},
                        'legalrole': {'Praipositos': 1, 'Orphanotrophos': 12, 'Synkletikos': 1, 'Monk': 7},
@@ -324,7 +332,7 @@ class GraphImportTests(unittest.TestCase):
             'pbwed': 'Papacostas, Tassos',
             'passages': 3
         },
-        
+
         # Source with author but no factoid
         'kecharitomene_typikon': {
             'work': 'Kecharitomene typikon',
@@ -374,67 +382,81 @@ class GraphImportTests(unittest.TestCase):
     }
 
     def setUp(self):
-        self.graphdriver = GraphDatabase.driver(config.graphuri, auth=(config.graphuser, config.graphpw))
-        self.constants = RELEVEN.PBWstarConstants.PBWstarConstants(self.graphdriver)
-        # Get the UUIDs for each of our test people
+        # Make sure our triples file exists
+        testfile = 'statements-test.ttl'
+        if not os.path.isfile(testfile):
+            gimport = graphimportSTAR.graphimportSTAR(origgraph=testfile, testmode=True)
+            try:
+                gimport.process_persons()
+            except DatabaseError:
+                self.fail("Cannot run tests without a MySQL connection or an existing triples file with test data.")
+            self.constants = gimport.constants
+        else:
+            g = Graph()
+            self.constants = PBWstarConstants.PBWstarConstants(g)
+
         c = self.constants
-        q = 'MATCH (id:%s)<-[:%s]-(idass:%s)-[:%s]->(person:%s), (idass)-[:%s]->(agent:%s) ' \
-            'WHERE id.%s IN %s ' \
-            'AND agent.%s = "Prosopography of the Byzantine World" ' \
-            'RETURN id.%s as ident, person.uuid as uuid' % (
-                c.get_label('E42'), c.get_label('P37'), c.get_label('E15'), c.get_label('P140'), c.get_label('E21'),
-                c.get_label('P14'), c.get_label('F11'), c.get_label('P190'),
-                list(self.td_people.keys()), c.get_label('P3'), c.get_label('P190'))
-        with self.graphdriver.session() as session:
-            result = session.run(q)
-            self.assertIsNotNone(result)
-            for record in result:
-                idval = record['ident']
-                self.td_people[idval]['uuid'] = record['uuid']
+        # Get the URIs for each of our test people
+        for p in self.td_people.keys():
+            # Chain through to find the person from the ID
+            try:
+                e42 = c.graph.value(None, c.predicates['P190'], Literal(p), any=False)
+                self.assertIsNotNone(e42)
+                e15 = c.graph.value(None, c.predicates['P37'], e42, any=False)
+                self.assertIsNotNone(e15)
+                puri = c.graph.value(e15, c.predicates['P140'], any=False)
+                self.assertIsNotNone(puri)
+                self.td_people[p]['uri'] = puri.n3()
+            except UniquenessError:
+                self.fail("ID should lead to unique person")
 
     # TODO add extra assertions for the eunuchs and K62
     def test_gender(self):
         """Test that each person has the gender assignments we expect"""
         c = self.constants
+        sparql = f"""
+select ?p_uri ?gender where {{
+    ?a1 a {c.get_assertion_for_predicate('P41')} ;
+        {c.star_subject} ?ga ;
+        {c.star_object} ?p_uri ;
+        {c.star_auth} {c.pbw_agent.n3()} .
+    ?a2 a {c.get_assertion_for_predicate('P42')} ;
+        {c.star_subject} ?ga ;
+        {c.star_object} [a {c.get_label('C11')} ; {c.get_label('P1')} ?gender ] ;
+        {c.star_auth} {c.pbw_agent.n3()} .
+}}"""
+        res = c.graph.query(sparql)
+        # Save the results for lookup
+        genders = dict()
+        for row in res:
+            genders[row['p_uri']] = row['gender']
+        # Check that they are correct
         for person, pinfo in self.td_people.items():
-            q = "MATCH (p:%s)<-[:%s]-(a1:%s)-[:%s]->(ga:%s)<-[:%s]-(a2:%s)-[:%s]->(gender:%s) " \
-                "WHERE p.uuid = '%s' RETURN p.%s as descname, gender.%s as gender" \
-                % (c.get_label('E21'), c.star_object, c.get_assertion_for_predicate('P41'), c.star_subject,
-                   c.get_label('E17'), c.star_subject, c.get_assertion_for_predicate('P42'), c.star_object,
-                   c.get_label('C11'), pinfo['uuid'], c.get_label('P3'), c.get_label('P1'))
-            with self.graphdriver.session() as session:
-                result = session.run(q)
-                self.assertIsNotNone(result)
-                self.assertListEqual(pinfo['gender'], sorted(result.value('gender')),
-                                     "Test gender for %s" % person)
+            p_uri = pinfo['uri']
+            self.assertIsNotNone(genders.get(p_uri))
+            self.assertEqual(genders[p_uri], pinfo['gender'], f"Test gender for {person}")
 
     # The identifier is the name as PBW has it in the original language.
     def test_identifier(self):
         """Test that each person has the main appellation given in the PBW database"""
         c = self.constants
+        sparql = f"""
+select ?p_uri ?mainid where {{
+    ?a1 a {c.get_assertion_for_predicate('P1')} ;
+        {c.star_subject} ?p_uri ;
+        {c.star_object} [a {c.get_label('E41')} ; {c.get_label('P190')} ?mainid ] ;
+        {c.star_auth} {c.pbw_agent.n3()} .
+}}"""
+        res = c.graph.query(sparql)
+        # Save the results for lookup
+        identifiers = dict()
+        for row in res:
+            identifiers[row['p_uri']] = row['mainid']
+        # Check that they are correct
         for person, pinfo in self.td_people.items():
-            # We want the appellation that was assigned by the generic PBW agent, not any of
-            # the sourced ones
-            pbwagent = '%s {%s: "Prosopography of the Byzantine World"}' % (c.get_label('F11'), c.get_label('P3'))
-            q = "MATCH (p:%s)<-[:%s]-(a:%s)-[:%s]->(id:%s), (a)-[:%s]->(pbw:%s) WHERE p.uuid = '%s' " \
-                "RETURN id.%s AS id" \
-                % (c.get_label('E21'), c.star_subject, c.get_assertion_for_predicate('P1'), c.star_object,
-                   c.get_label('E41'), c.star_auth, pbwagent, pinfo['uuid'], c.get_label('P190'))
-            with self.graphdriver.session() as session:
-                result = session.run(q).single(strict=True)
-                self.assertIsNotNone(result)
-                self.assertEqual(pinfo['identifier'], result['id'], "Test identifier for %s" % person)
-
-    def _check_dict_equiv(self, reference, nodelist, key, message):
-        returned = dict()
-        for node in nodelist:
-            # Fortunately for us all the appellations are Greek
-            thename = node.get(key)
-            if thename in returned:
-                returned[thename] += 1
-            else:
-                returned[thename] = 1
-        self.assertDictEqual(reference, returned, message)
+            p_uri = pinfo['uri']
+            self.assertIsNotNone(identifiers.get(p_uri))
+            self.assertEqual(pinfo['identifier'], identifiers['uri'], f"Test identifier for {person}")
 
     def test_appellation(self):
         """Test that each person has the second or alternative names assigned, as sourced assertions"""
@@ -446,20 +468,21 @@ class GraphImportTests(unittest.TestCase):
             if 'altname' in pinfo:
                 names.update(pinfo['altname'])
             if len(names) > 0:
-                q = "MATCH (p:%s)<-[:%s]-(a:%s)-[:%s]->(appel:%s), (a)-[:%s]->(src) " \
-                    "WHERE p.uuid = '%s' RETURN appel" \
-                    % (c.get_label('E21'), c.star_subject, c.get_assertion_for_predicate('P1'), c.star_object,
-                       c.get_label('E41'), c.star_source, pinfo['uuid'])
-                with self.graphdriver.session() as session:
-                    result = session.run(q).value('appel')
-                    self.assertIsNotNone(result)
-                    # Check that the Greek appellations exist
-                    found_appels = defaultdict(int)
-                    for row in result:
-                        for appel in row[c.get_label('P190')]:
-                            if appel.endswith('@grc'):
-                                found_appels[appel.rstrip('@grc')] += 1
-                    self.assertDictEqual(names, found_appels)
+                sparql = f"""
+select ?appellation where {{
+    ?a1 a {c.get_assertion_for_predicate('P1')} ;
+        {c.star_subject} {pinfo['uri']} ;
+        {c.star_object} [a {c.get_label('E41')} ; {c.get_label('P190')} ?appellation ] ;
+        {c.star_based} ?src .
+}}"""
+                res = c.graph.query(sparql)
+                found_appels = defaultdict(int)
+                for row in res:
+                    for appel in row['appellation']:
+                        # Fortunately for us all the appellations are Greek
+                        self.assertEqual(appel.language, 'grc')
+                        found_appels[appel.toPython()] += 1
+                self.assertDictEqual(names, found_appels)
 
     def test_death(self):
         """Test that each person has at most one death event, since they all only died once. Also
@@ -467,21 +490,22 @@ class GraphImportTests(unittest.TestCase):
         c = self.constants
         # Look for all death events and see who they are about
         deathevents = dict()
-        q = "MATCH (de:%s)<-[:%s]-(a:%s)-[:%s]->(person:%s) RETURN DISTINCT person.uuid, de.uuid" \
-            % (c.get_label('E69'), c.star_subject, c.get_assertion_for_predicate('P100'),
-               c.star_object, c.get_label('E21'))
-        with self.graphdriver.session() as session:
-            result = session.run(q)
-            for row in result:
-                p = row['person.uuid']
-                de = row['de.uuid']
-                # Each person should have max one death event
-                self.assertIsNone(deathevents.get(p))
-                deathevents[p] = de
+        sparql = f"""
+select ?person ?de where {{
+    ?a a {c.get_assertion_for_predicate('P100')} ;
+        {c.star_subject} ?de ;
+        {c.star_object} ?person .
+}}"""
+        res = c.graph.query(sparql)
+        for row in res:
+            person = row['person']
+            de = row['de']
+            self.assertIsNone(deathevents.get(person), f"{self.get_pbw_id(person)} should not die twice")
+            deathevents[person] = de
 
         for person, pinfo in self.td_people.items():
             # Check if the person should have a death event.
-            devent = deathevents.get(pinfo['uuid'])
+            devent = deathevents.get(pinfo['uri'])
             ddescpred = c.get_assertion_for_predicate('P3')
             ddatepred = c.get_assertion_for_predicate('P4')
             if 'death' not in pinfo:
@@ -492,26 +516,33 @@ class GraphImportTests(unittest.TestCase):
                 self.assertIsNotNone(devent)
                 # See if we have the expected info about the death event in question.
                 # Each event should have N description assertions, each with a P3 attribute.
-                q = "MATCH (de:%s)<-[:%s]-(a:%s) WHERE de.uuid = '%s' AND a.%s IS NOT NULL RETURN a" \
-                    % (c.get_label('E69'), c.star_subject, ddescpred, devent, c.get_label('P141'))
-                with self.graphdriver.session() as session:
-                    result = session.run(q).value('a')
-                    self.assertEqual(pinfo['death']['count'], len(result), "Death count for %s" % person)
+                sparql = f"""
+select ?desc ?src where {{
+    ?a a {ddescpred} ;
+        {c.star_subject} {devent.n3()} ;
+        {c.star_object} ?desc .
+}}"""
+                res = c.graph.query(sparql)
+                self.assertEqual(pinfo['death']['count'], count_result(res), "Death description count for %s" % person)
+
                 # and M date assertions.
-                q = "MATCH (de:%s)<-[:%s]-(a:%s)-[:%s]->(dating:%s) WHERE de.uuid = '%s' " \
-                    "RETURN COUNT(dating) AS num" \
-                    % (c.get_label('E69'), c.star_subject, ddatepred, c.star_object,
-                       c.get_label('E52'), devent)
-                with self.graphdriver.session() as session:
-                    result = session.run(q).single()['num']
-                    self.assertEqual(pinfo['death']['dated'], result)
-                # Each event should also have N different sources.
-                q = "MATCH (de:%s)<-[:%s]-(a:%s)-[:%s]->(sref) WHERE de.uuid = '%s' " \
-                    "RETURN COUNT(DISTINCT sref.uuid) AS num" \
-                    % (c.get_label('E69'), c.star_subject, ddescpred, c.star_source, devent)
-                with self.graphdriver.session() as session:
-                    result = session.run(q).single()['num']
-                    self.assertEqual(pinfo['death']['count'], result)
+                sparql = f"""
+select ?a where {{
+    ?a a {ddatepred} ;
+        {c.star_subject} {devent.n3()} ;
+        {c.star_object} [a {c.get_label('E52')}] .
+}}"""
+                res = c.graph.query(sparql)
+                self.assertEqual(pinfo['death']['dated'], count_result(res), "Death date count for %s" % person)
+
+                # Each event should also have N different sources across both sorts of assertion.
+                sparql = f"""
+select distinct ?sref where {{
+    ?a {c.star_subject} {devent.n3()} ;
+        {c.star_based} ?sref .
+}}"""
+                res = c.graph.query(sparql)
+                self.assertEqual(pinfo['death']['count'], count_result(res))
 
     def test_ethnicity(self):
         """Test that the ethnicity was created correctly for our people with listed ethnicities"""
@@ -520,18 +551,19 @@ class GraphImportTests(unittest.TestCase):
             # Find those with a declared ethnicity. This means a membership in a group of the given type.
             if 'ethnicity' in pinfo:
                 eths = pinfo['ethnicity']
-                q = "MATCH (p:%s)<-[:%s]-(a:%s)-[:%s]->(group:%s) " \
-                    "WHERE p.uuid = '%s' RETURN group.%s AS eth, COUNT(group.%s) AS act" \
-                    % (c.get_label('E21'), c.star_object, c.get_assertion_for_predicate('P107'), c.star_subject,
-                       c.get_label('E74E'), pinfo['uuid'], c.get_label('P1'), c.get_label('P1'))
-                with self.graphdriver.session() as session:
-                    result = session.run(q)
-                    rowct = 0
-                    for row in result:
-                        rowct += 1
-                        self.assertTrue(row['eth'] in eths)
-                        self.assertEqual(eths[row['eth']], row['act'])
-                    self.assertEqual(len(eths.keys()), rowct, "Ethnicity count for %s" % person)
+                sparql = f"""
+select ?eth (count(?eth) as ?act) where {{
+    ?a a {c.get_assertion_for_predicate('P107')} ;
+        {c.star_subject} {pinfo['uri']} ;
+        {c.star_object} [a {c.get_label('E74E')} ; {c.get_label('P1')} ?eth ] .
+}}"""
+                res = c.graph.query(sparql)
+                rowct = 0
+                for row in res:
+                    rowct += 1
+                    self.assertTrue(row['eth'] in eths)
+                    self.assertEqual(eths[row['eth']], row['act'])
+                self.assertEqual(len(eths.keys()), rowct, "Ethnicity count for %s" % person)
 
     def test_religion(self):
         """Test that our one religious affiliation was created correctly"""
@@ -540,17 +572,23 @@ class GraphImportTests(unittest.TestCase):
             # Check that the religious assertions were created, and that they have the correct authority.
             if 'religion' in pinfo:
                 rels = pinfo['religion']
-                q = "MATCH (p:%s)<-[:%s]-(a:%s)-[:%s]->(relaff:%s)<-[:%s]-(a2:%s)-[%s]->(rel:%s), (auth)<-[:%s]-(a) " \
-                    "WHERE p.uuid = '%s' RETURN rel.%s as rel, auth.%s as auth" \
-                    % (c.get_label('E21'), c.star_object, c.get_assertion_for_predicate('SP36'), c.star_subject,
-                       c.get_label('C23'), c.star_subject, c.get_assertion_for_predicate('SP35'), c.star_object,
-                       c.get_label('C24'), c.star_auth, pinfo['uuid'], c.get_label('P1'), c.get_label('P3'))
-                with self.graphdriver.session() as session:
-                    # We are cheating by knowing that no test person has more than one religion specified
-                    result = session.run(q).single(strict=True)
-                    self.assertIsNotNone(result)
-                    self.assertTrue(result['rel'] in rels)
-                    self.assertIn('Georgios Tornikes', result['auth'])
+                sparql = f"""
+select ?rel ?auth where {{
+    ?a a {c.get_assertion_for_predicate('SP36')} ;
+        {c.star_subject} ?relaff ;
+        {c.star_object} {pinfo['uri']} ;
+        {c.star_auth} ?anode .
+    ?a2 a {c.get_assertion_for_predicate('SP35')} ;
+        {c.star_subject} ?relaff ;
+        {c.star_object} [a {c.get_label('C24')} ; {c.get_label('P1')} ?rel ] .
+    ?anode {c.get_label('P3')} ?auth .
+}}"""
+                res = c.graph.query(sparql)
+                # We are cheating by knowing that no test person has more than one religion specified
+                rows = [x for x in res]
+                self.assertEqual(1, len(rows))
+                self.assertTrue(rows[0]['rel'] in rels)
+                self.assertIn('Georgios Tornikes', rows[0]['auth'])
 
     def test_occupation(self):
         """Test that occupations / non-legal designations are set correctly"""
@@ -559,15 +597,19 @@ class GraphImportTests(unittest.TestCase):
             # Check that the occupation assertions were created
             if 'occupation' in pinfo:
                 occs = pinfo['occupation']
-                q = "MATCH (p:%s)<-[:%s]-(a:%s)-[:%s]->(pocc:%s)<-[:%s]-(a2:%s)-[%s]->(occ:%s) " \
-                    "WHERE p.uuid = '%s' RETURN occ" \
-                    % (c.get_label('E21'), c.star_object, c.get_assertion_for_predicate('SP13'), c.star_subject,
-                       c.get_label('C1'), c.star_subject, c.get_assertion_for_predicate('SP14'), c.star_object,
-                       c.get_label('C7'), pinfo['uuid'])
-                with self.graphdriver.session() as session:
-                    result = session.run(q).value('occ')
-                    self.assertIsNotNone(result)
-                    self._check_dict_equiv(occs, result, c.get_label('P1'), "Test occupations for %s" % person)
+                sparql = f"""
+select ?occ where {{
+    ?a a {c.get_assertion_for_predicate('SP13')} ;
+        {c.star_subject} ?pocc ;
+        {c.star_object} {pinfo['uri']} .
+    ?a2 a {c.get_assertion_for_predicate('SP14')} ;
+        {c.star_subject} ?pocc ;
+        {c.star_object} [a {c.get_label('C7')} ; {c.get_label('P1')} ?rel ] .
+    ?pocc a {c.get_label('C1')} .
+}}"""
+                res = c.graph.query(sparql)
+                ctr = Counter([row['occ'].toPython() for row in res])
+                self.assertDictEqual(occs, ctr, "Test occupations for %s" % person)
 
     def test_legalrole(self):
         """Test that legal designations are set correctly"""
@@ -576,15 +618,19 @@ class GraphImportTests(unittest.TestCase):
             # Check that the occupation assertions were created
             if 'legalrole' in pinfo:
                 roles = pinfo['legalrole']
-                q = "MATCH (p:%s)<-[:%s]-(a:%s)-[:%s]->(prole:%s)<-[:%s]-(a2:%s)-[%s]->(role:%s) " \
-                    "WHERE p.uuid = '%s' RETURN role" \
-                    % (c.get_label('E21'), c.star_object, c.get_assertion_for_predicate('SP26'), c.star_subject,
-                       c.get_label('C13'), c.star_subject, c.get_assertion_for_predicate('SP33'), c.star_object,
-                       c.get_label('C12'), pinfo['uuid'])
-                with self.graphdriver.session() as session:
-                    result = session.run(q).value('role')
-                    self.assertIsNotNone(result)
-                    self._check_dict_equiv(roles, result, c.get_label('P1'), "Test legal roles for %s" % person)
+                sparql = f"""
+select ?role where {{
+    ?a a {c.get_assertion_for_predicate('SP26')} ;
+        {c.star_subject} ?prole ;
+        {c.star_object} {pinfo['uri']} .
+    ?a2 a {c.get_assertion_for_predicate('SP33')} ;
+        {c.star_subject} ?prole ;
+        {c.star_object} [a {c.get_label('C12')} ; {c.get_label('P1')} ?role ] .
+    ?prole a {c.get_label('C13')} .
+}}"""
+                res = c.graph.query(sparql)
+                ctr = Counter([row['occ'].toPython() for row in res])
+                self.assertDictEqual(roles, ctr, "Test legal roles for %s" % person)
 
     def test_languageskill(self):
         """Test that our Georgian monk has his language skill set correctly"""
@@ -592,153 +638,178 @@ class GraphImportTests(unittest.TestCase):
         for person, pinfo in self.td_people.items():
             # Find those with a language skill set
             if 'language' in pinfo:
-                q = "MATCH (p:%s)<-[:%s]-(a:%s)-[:%s]->(skill:%s)<-[:%s]-(a2:%s)-[:%s]->(kh:%s) " \
-                    "WHERE p.uuid = '%s' RETURN kh.%s as kh" % (
-                        c.get_label('E21'), c.star_subject, c.get_assertion_for_predicate('SP38'), c.star_object,
-                        c.get_label('C21'), c.star_subject, c.get_assertion_for_predicate('SP37'), c.star_object,
-                        c.get_label('C29'), pinfo['uuid'], c.get_label('P1'))
-                with self.graphdriver.session() as session:
-                    result = session.run(q).single()  # At the moment we do only have one
-                    self.assertIsNotNone(result)
-                    self.assertEqual(pinfo['language'], result['kh'], "Test language for %s" % person)
+                sparql = f"""
+select ?kh where {{
+    ?a a {c.get_assertion_for_predicate('SP38')} ;
+        {c.star_subject} {pinfo['uri']} ;
+        {c.star_object} ?lskill .
+    ?a2 a {c.get_assertion_for_predicate('SP37')} ;
+        {c.star_subject} ?lskill ;
+        {c.star_object} [ a {c.get_label('C29')} ; {c.get_label('P1')} ?kh ] .
+    ?lskill a {c.get_label('C21')} .
+}}"""
+                res = c.graph.query(sparql)
+                rows = [x for x in res]
+                # At the moment we do only have one
+                self.assertEquals(1, len(rows))
+                self.assertEqual(pinfo['language'], rows[0]['kh'].toPython(), "Test language for %s" % person)
 
     def test_kinship(self):
         """Test the kinship assertions for one of our well-connected people"""
         c = self.constants
         for person, pinfo in self.td_people.items():
             if 'kinship' in pinfo:
-                q = "MATCH (p:%s {uuid: '%s'})<-[:%s]-(a:%s)-[:%s]->" \
-                    "(kg:%s)<-[:%s]-(a2:%s)-[:%s]->(kin:%s), " \
-                    "(kg)<-[:%s]-(a3:%s)-[:%s]->(ktype:%s), " \
-                    "(kin)<-[:%s]-(ia2:%s)-[:%s]->(kinid:%s) " \
-                    "RETURN DISTINCT kinid.%s as kin, ktype.%s as kintype" % (
-                        c.get_label('E21'), pinfo['uuid'], c.star_object, c.get_assertion_for_predicate('SP17'),
-                        c.star_subject, c.get_label('C3'), c.star_subject, c.get_assertion_for_predicate('SP18'),
-                        c.star_object, c.get_label('E21'), c.star_subject, c.get_assertion_for_predicate('SP16'),
-                        c.star_object, c.get_label('C4'),
-                        c.star_subject, c.get_label('E15'), c.get_label('P37'), c.get_label('E42'),
-                        c.get_label('P190'), c.get_label('P1')
-                    )
-                with self.graphdriver.session() as session:
-                    result = session.run(q)
-                    foundkin = dict()
-                    for row in result:
-                        k = row['kintype']
-                        if k not in foundkin:
-                            foundkin[k] = []
-                        foundkin[k].append(row['kin'])
-                    for k in foundkin:
-                        foundkin[k] = sorted(foundkin[k])
-                    self.assertDictEqual(pinfo['kinship'], foundkin, "Kinship links for %s" % person)
+                sparql = f"""
+select distinct ?kin ?kintype where {{
+    ?a a {c.get_assertion_for_predicate('SP17')} ;
+        {c.star_subject} ?kg ;
+        {c.star_object} {pinfo['uri']} .
+    ?a2 a {c.get_assertion_for_predicate('SP18')} ;
+        {c.star_subject} ?kg ;
+        {c.star_object} ?kin .
+    ?a3 a {c.get_assertion_for_predicate('SP16')} ;
+        {c.star_subject} ?kg ;
+        {c.star_object} [ a {c.get_label('C4')} ; {c.get_label('P1')} ?kintype ] .
+}}"""
+                res = c.graph.query(sparql)
+                foundkin = defaultdict(list)
+                for row in res:
+                    k = row['kintype'].toPython()
+                    foundkin[k].append(row['kin'].toPython())
+                for k in foundkin:
+                    foundkin[k] = sorted(foundkin[k])
+                self.assertDictEqual(pinfo['kinship'], foundkin, "Kinship links for %s" % person)
 
     def test_possession(self):
         """Check possession assertions. Test the sources and authors/authorities while we are at it."""
         c = self.constants
-        a = c.get_assertion_for_predicate('P51')
-        a2 = c.get_assertion_for_predicate('R15')
-        a3 = c.get_assertion_for_predicate('R3')
-        a4 = c.get_assertion_for_predicate('R16')
-        a5 = c.get_assertion_for_predicate('P14')
         for person, pinfo in self.td_people.items():
             # Find those who possess something. All the possessions are documented in written sources
             # whose authors are also in PBW; exploit this to test that the written sources were set up correctly.
             if 'possession' in pinfo:
-                q = "MATCH (p:%s)<-[:%s]-(a:%s)-[:%s]->(poss:%s), " \
-                    "(a)-[:%s]->(author)<-[:%s]-(idass:%s)-[%s]->(id:%s), " \
-                    "(a)-[:%s]->(src:%s)<-[:%s]-(a2:%s)-[:%s]->(edition:%s), " \
-                    "(edition)<-[:%s]-(a3:%s)-[:%s]->(work:%s), " \
-                    "(work)<-[:%s]-(a4:%s)-[:%s]->(creation:%s), " \
-                    "(creation)<-[:%s]-(a5:%s)-[:%s]->(author) " \
-                    "WHERE p.uuid = '%s' RETURN poss.%s as poss, id.%s as id, src.%s as src" % (
-                        # person is object property of possession
-                        c.get_label('E21'), c.star_object, a, c.star_subject, c.get_label('E18'),
-                        # ...according to author, who is known by an identifier
-                        c.star_auth, c.star_subject, c.get_label('E15'), c.star_object, c.get_label('E42'),
-                        # as we know from source extract, which belongs to the edition
-                        c.star_source, c.get_label('E33'), c.star_object, a2, c.star_subject, c.get_label('F3'),
-                        # the edition belongs to a work
-                        c.star_object, a3, c.star_subject, c.get_label('F1'),
-                        # the work belongs to a creation event
-                        c.star_object, a4, c.star_subject, c.get_label('F27'),
-                        # the creation involves our author, who carried it out
-                        c.star_subject, a5, c.star_object, pinfo['uuid'],
-                        # Just get back the data fields we want
-                        c.get_label('P1'), c.get_label('P190'), c.get_label('P3')
-                    )
-                with self.graphdriver.session() as session:
-                    result = session.run(q)  # At the moment we do only have one
-                    rowct = 0
-                    for row in result:
-                        rowct += 1
-                        poss = row['poss']
-                        author = row['id']
-                        src = row['src']
-                        self.assertTrue(poss in pinfo['possession'], "Test possession is correct for %s" % person)
-                        (agent, reference) = pinfo['possession'][poss]
-                        self.assertEqual(author, agent, "Test possession authority is set for %s" % person)
-                        self.assertEqual(reference, src, "Test possession source ref is set for %s" % person)
-                    self.assertEqual(rowct, len(pinfo['possession'].keys()),
-                                     "Test %s has the right number of possessions" % person)
+                # a: person is object property of possession
+                # idass: according to author, who is known by an identifier
+                # a2: as we know from source extract, which belongs to the edition
+                # a3: the edition belongs to a work
+                # a4: the work belongs to a creation event
+                # a5: the creation involves our author, who carried it out.
+                sparql = f"""
+select ?poss ?authorid ?src where {{
+    ?a a {c.get_assertion_for_predicate('P51')} ;
+        {c.star_subject} [a {c.get_label('E18')} ; {c.get_label('P1')} ?poss ] ;
+        {c.star_object} {pinfo['uri']} ;
+        {c.star_auth} ?author ;
+        {c.star_based} ?srcuri .
+    ?idass a {c.get_label('E15')} ;
+        {c.star_subject} ?author ;
+        {c.get_label('P37')} [ a {c.get_label('E42')} ; {c.get_label('P190')} ?authorid ] ;
+        {c.star_auth} {c.pbw_agent.n3()} .
+    ?a2 a {c.get_assertion_for_predicate('R15')} ;
+        {c.star_subject} ?edition ;
+        {c.star_object} ?srcuri .
+    ?a3 a {c.get_assertion_for_predicate('R3')} ;
+        {c.star_subject} ?work ;
+        {c.star_object} ?edition .
+    ?a4 a {c.get_assertion_for_predicate('R16')} ;
+        {c.star_subject} ?creation ;
+        {c.star_object} ?work .
+    ?a5 a {c.get_assertion_for_predicate('P14')} ;
+        {c.star_subject} ?creation ;
+        {c.star_object} ?author .
+    ?srcuri a {c.get_label('E33')} ;
+        {c.get_label('P3')} ?src .
+}}"""
+                res = c.graph.query(sparql)
+                rowct = 0
+                for row in res:
+                    rowct += 1
+                    poss = row['poss']
+                    author = row['id']
+                    src = row['src']
+                    self.assertTrue(poss in pinfo['possession'], "Test possession is correct for %s" % person)
+                    (agent, reference) = pinfo['possession'][poss]
+                    self.assertEqual(author, agent, "Test possession authority is set for %s" % person)
+                    self.assertEqual(reference, src, "Test possession source ref is set for %s" % person)
+                self.assertEqual(rowct, len(pinfo['possession'].keys()),
+                                 "Test %s has the right number of possessions" % person)
 
     def test_boulloterions(self):
         """For each boulloterion, check that it exists only once and has only one inscription."""
         c = self.constants
         found = set()
-        bq = "MATCH (boul:%s)<-[:%s]-(idass:%s)-[:%s]->(ident:%s), " \
-             "(boul)<-[:%s]-(a:%s)-[:%s]->(inscr:%s), " \
-             "(a)-[:%s]->(src), (a)-[:%s]->(auth) RETURN DISTINCT boul, ident, inscr, src, auth" % (
-                 c.get_label('E22'), c.star_subject, c.get_label('E15'), c.get_label('P37'), c.get_label('E42'),
-                 c.star_subject, c.get_assertion_for_predicate('P128'), c.star_object, c.get_label('E34'),
-                 c.star_source, c.star_auth)
-        with self.graphdriver.session() as session:
-            result = session.run(bq)
-            for row in result:
-                # The boulloterion should have a descname that starts with 'Boulloterion'
-                self.assertTrue(row['boul'].get(c.get_label('P3'), '').startswith('Boulloterion of'))
-                # Its identity should be a PBW URL with some boulloterion ID
-                boulid = int(row['ident'].get(c.get_label('P190')))
-                # We should be expecting this boulloterion
-                self.assertIn(boulid, self.td_boulloterions, "Boulloterion %d should exist" % boulid)
-                boulinfo = self.td_boulloterions[boulid]
+        sparql = f"""
+select ?boul ?inscr ?src ?auth where {{
+    ?a a {c.get_assertion_for_predicate('P128')} ;
+        {c.star_subject} ?boul ;
+        {c.star_object} ?inscr ;
+        {c.star_auth} ?auth ;
+        {c.star_based} ?src .
+}}"""
+        res = c.graph.query(sparql)
+        for row in res:
+            # Check the types
+            self.check_class(row['boul'], 'E22B')
+            self.check_class(row['inscr'], 'E34')
 
-                # but we should not have seen it yet
-                self.assertNotIn(boulid, found, "Boulloterion %d should not be duplicated" % boulid)
-                found.add(boulid)
-                # The boulloterion should have a correct inscription
-                self.assertEqual(boulinfo['inscription'], row['inscr'].get(c.get_label('P190')))
-                # The boulloterion should have the correct named authority
-                self.assertEqual('Jeffreys, Michael J.', row['auth'].get(c.get_label('P3')))
-                # Separate query to check the boulloterion sources on the inscription assertion
-                if len(boulinfo['sources']) > 1:
-                    bsq = 'MATCH (src:%s)-[:%s]-(ed:%s) WHERE src.uuid = "%s" RETURN ed' % (
-                        c.get_label('E73'), c.get_label('P165'), c.get_label('F2'), row['src'].get('uuid'))
-                else:
-                    bsq = 'MATCH (ed:%s) WHERE ed.uuid = "%s" RETURN ed' % (c.get_label('F2'), row['src'].get('uuid'))
-                r2 = session.run(bsq)
-                for row2 in r2:
-                    sid = row2['ed'].get(c.get_label('P1'))
-                    self.assertIn(sid, boulinfo['sources'])
-                    self.assertEqual(row2['ed'].get(c.get_label('P102')), boulinfo['sources'][sid])
+            # The boulloterion should have a single descname that starts with 'Boulloterion'
+            descname = self.get_object(row['boul'], 'P3')
+            self.assertTrue(descname.startswith('Boulloterion of'))
+            # Its identity should be a PBW URL with some boulloterion ID
+            boulid = int(self.get_pbw_id(row['boul']))
+            # We should be expecting this boulloterion
+            self.assertIn(boulid, self.td_boulloterions, "Boulloterion %d should exist" % boulid)
+            boulinfo = self.td_boulloterions[boulid]
 
-                # Separate query to check the boulloterion seals and their respective assertions. A seal was
-                # produced by a boulloterion and belongs to a collection according to the same authority as above,
-                # and these assertions has no explicit source.
-                sealq = 'MATCH (boul:%s)<-[:%s]-(sealass:%s)-[:%s]->(seal:%s), ' \
-                        '(seal)<-[:%s]-(collass:%s)-[:%s]->(coll:%s), ' \
-                        '(sealass)-[:%s]->(auth), (collass)-[:%s]->(auth) RETURN seal, coll, auth, src' % (
-                            c.get_label('E22B'), c.star_subject, c.get_assertion_for_predicate('P108'), c.star_object,
-                            c.get_label('E22S'), c.star_object, c.get_assertion_for_predicate('P46'), c.star_subject,
-                            c.get_label('E78'), c.star_auth, c.star_auth)
-                r3 = session.run(sealq)
-                sealcolls = list(boulinfo['seals'].values())
-                for row3 in r3:
-                    # Check that the seal's collection ID is in the sealcolls list
-                    try:
-                        sealcolls.remove(row3['coll'].get(c.get_label('P1')))
-                    except ValueError:
-                        self.fail()
-                # Check that we found all the seals
-                self.assertEqual(0, len(sealcolls))
+            # but we should not have seen it yet
+            self.assertNotIn(boulid, found, "Boulloterion %d should not be duplicated" % boulid)
+            found.add(boulid)
+            # The boulloterion should have a correct inscription
+            inscr = self.get_object(row['inscr'], 'P190')
+            self.assertEqual(boulinfo['inscription'], inscr)
+            # The boulloterion should have the correct named authority
+            auth = self.get_object(row['auth'], 'P3')
+            self.assertEqual('Jeffreys, Michael J.', auth)
+            # Separate query to check the boulloterion sources on the inscription assertion
+            if len(boulinfo['sources']) > 1:
+                # Source should be a Bibliography which contains a set of works
+                self.check_class(row['src'], 'E73')
+                # Get the texts of this bibliography
+                sources = c.graph.objects(row['src'], c.entitylabels['P165'])
+            else:
+                # Source should be a single text
+                self.check_class(row['src'], 'F2T')
+                sources = [row['src']]
+            for source in sources:
+                self.assertIn(self.get_object(source, 'P1'), boulinfo['sources'])
+                self.assertEqual(self.get_object(source, 'P102'), boulinfo['sources'][sid])
+
+            # Separate query to check the boulloterion seals and their respective assertions. A seal was
+            # produced by a boulloterion and belongs to a collection according to the same authority as above,
+            # and these assertions have no explicit source.
+            sealq = f"""
+select ?seal ?coll where {{
+    ?sealass a {c.get_assertion_for_predicate('L1')} ;
+        {c.star_subject} {row['boul'].n3()} ;
+        {c.star_object} ?seal ;
+        {c.star_auth} ?auth .
+    ?collass a {c.get_assertion_for_predicate('P46')} ;
+        {c.star_subject} [ a {c.get_label('E78')} ; {c.get_label('P1')} ?coll ];
+        {c.star_object} ?seal ;
+        {c.star_auth} ?auth .
+}}"""
+            r3 = c.graph.query(sealq)
+            sealcolls = dict()
+            for row3 in r3:
+                # Get the seal dict value and check its type
+                self.check_class(row3['seal'], 'E22S')
+                sealid = self.get_object(row3['seal'], 'P3')
+                # Check that the seal hasn't been seen yet
+                self.assertIsNone(sealcolls.get(sealid))
+                # Add the seal and its collection
+                collid = self.get_object(row3['coll'], 'P1')
+                sealcolls[sealid] = collid
+            # Check that we found all the seals
+            self.assertDictEqual(boulinfo['seals'], sealcolls)
 
     def test_text_sources(self):
         """Spot-check different textual sources and make sure they are set up correctly"""
@@ -819,10 +890,10 @@ class GraphImportTests(unittest.TestCase):
         that created them."""
         c = self.constants
         p70 = c.get_label('P70')  # the documents predicate
-        f2 = c.get_label('F2')    # the DB record per assertion
+        f2 = c.get_label('F2')  # the DB record per assertion
         r17 = c.get_label('R17')  # linking the record to its creation
         f28 = c.get_label('F28')  # the data creation record
-        p4 = c.get_label('P4')    # created at
+        p4 = c.get_label('P4')  # created at
         e52 = c.get_label('E52')  # a particular time
         p80 = c.get_label('P80')  # with this timestamp
         p14 = c.get_label('P14')  # carried out by...
@@ -840,9 +911,56 @@ class GraphImportTests(unittest.TestCase):
             self.assertIsNotNone(linked['tstamp'])
             self.assertEqual('Andrews, Tara Lee', linked['me'].get(c.get_label('P3')))
 
-    def tearDown(self):
-        self.graphdriver.close()
+    def testRepeat(self):
+        """If we have a DB connection and re-run the import, there should be zero new assertions
+        and the graph should not change."""
+        # See how many triples are in the graph
+        c = self.constants
+        graph_size = len(c.graph)
+        # Write out the graph as is
+        with NamedTemporaryFile(delete=False) as tf:
+            tf_name = tf.name
+            c.graph.serialize(tf)
+        # Regenerate the graph. If we don't have a database connection, we end the test.
+        gimport = graphimportSTAR.graphimportSTAR(origgraph=tf_name, testmode=True)
+        try:
+            gimport.process_persons()
+        except DatabaseError:
+            self.skipTest("Cannot run repetition test without a MySQL connection.")
+        # Check the length of the resulting graph
+        self.assertEqual(graph_size, len(gimport.g), "Regeneration of graph results in no change to size of graph")
+        # Check that the triples are all identical
+        for triple in c.graph:
+            self.assertTrue(triple in gimport.g, f"Triple {triple} exists in both graphs")
 
+    def check_class(self, uri, ocl):
+        """Helper to check that a URI is defined as the given class"""
+        c = self.constants
+        self.assertTrue((uri, RDF.type, c.entitylabels.get(ocl, c.predicates.get(ocl))) in c.graph,
+                        f"Class of {uri} should be {ocl}")
+
+    def get_pbw_id(self, uri):
+        """Return the E15 identifier set by PBW for the given entity."""
+        # Find the E15
+        c = self.constants
+        e15s = [x for x in c.graph.subjects(c.predicates['P140'], uri)
+                if c.graph.value(x, RDF.type) == c.entitylabels['E15']]
+        self.assertEqual(1, len(e15s), f"There should be one E15 assertion for {uri}")
+        # Chain down the E15 to find the identifier value
+        e42 = c.graph.value(e15s[0], c.predicates['P37'], any=False)
+        self.assertIsNotNone(e42, "Identifier should exist")
+        pbwid = c.graph.value(e42, c.predicates['P190'], any=False)
+        self.assertIsNotNone(pbwid, "Identifier content should exist")
+        return pbwid
+
+    def get_object(self, subj, pred):
+        c = self.constants
+        try:
+            obj = c.graph.value(subj, c.predicates[pred], any=False)
+        except UniquenessError:
+            self.fail(f"Object of {subj} : {pred} should be unique")
+        self.assertIsNotNone(obj, f"Object of {subj} : {pred} should exist")
+        return obj.toPython()
 
 if __name__ == '__main__':
     unittest.main()

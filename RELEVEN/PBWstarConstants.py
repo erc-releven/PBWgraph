@@ -223,11 +223,11 @@ class PBWstarConstants:
         }
 
         # Define our STAR model predicates
-        self.star_subj_l = self.get_label('P140')
-        self.star_obj_l = self.get_label('P141')
-        self.star_based_l = self.get_label('P17')
-        self.star_auth_l = self.get_label('P14')
-        self.star_src_l = self.get_label('P70')
+        self.star_subject = self.get_label('P140')
+        self.star_object = self.get_label('P141')
+        self.star_based = self.get_label('P17')
+        self.star_auth = self.get_label('P14')
+        # self.star_src = self.get_label('P70')
 
         # Initialise our group agents and the data structures we need to start
         print("Setting up PBW constants...")
