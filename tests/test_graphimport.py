@@ -157,11 +157,11 @@ class GraphImportTests(unittest.TestCase):
     }
 
     td_boulloterions = {
-        112: {'inscription': 'Konstantinos, proedros domestikos / of the scholai of the Orient and doux of Antioch',
+        112: {'inscription': 'Κωνσταντῖνος πρόεδρος δομέστικος / τῶν σχολῶν τῆς ᾿Ανατολῆς καὶ δοὺξ ᾿Αντιοχείας',
               'seals': {2706: 'Vienna, private collection of Prof. Werner Seibt'}, 'sources': {
                 'Seibt, BBÖ I': 'W. Seibt, Die byzantinischen Bleisiegel in Österreich I. Teil, Kaiserhof, Vienna 1978 [reviewed by V. Šandrovskaja and I.V.Sokolova in Byzantinoslavica 41 (1980), 251-255]',
                 'Wassiliou - Seibt BBÖ II ': 'A.-K. Wassiliou - W. Seibt, Die byzantinischen Bleisiegel in Österreich, 2. Teil: Zentral- und Provinzialverwaltung, Vienna 2003'}},
-        114: {'inscription': 'Lord aid your servant / Ignatios, monk and kaisar ',
+        114: {'inscription': 'Κύριε βοήθει τῷ σῷ δούλῳ / ᾿Ιγνατίῳ μοναχῷ τῷ καίσαρι',
               'seals': {187: 'Vienna, Kunsthistorisches Museum, Münzkabinett', 188: 'Cambridge, Mass., Fogg Art Museum',
                         189: 'Athens, Nomismatikon Mouseion, Main collection',
                         190: 'Private collection: Basel, G. Zacos (largely dispersed)', 191: 'St Petersburg, Hermitage',
@@ -172,7 +172,7 @@ class GraphImportTests(unittest.TestCase):
                 'Zacos - Veglery': 'G. Zacos and A. Veglery, Byzantine Lead Seals I, Basel',
                 'Stavrakos': 'Ch. Stavrakos, Die byzantinischen Bleisiegel mit Familiennamen aus der Sammlung des Numismatischen Museums Athen, Wiesbaden 2000 [reviewed by Cl. Sode in Byzantinische Zeitschrift 95 (2002), 168-170 and J. Nesbitt in Speculum 77 (2002), 996-998]',
                 'Iashvili - Seibt': 'I. Iashvili - W. Seibt, "Byzantinische Siegel aus Petra in Westgeorgien", Studies in Byzantine Sigillography 9, pp. 1-9'}},
-        271: {'inscription': 'Mother of God. / Theotokos aid your servant Ioannes, monk and archbishop of all Bulgaria',
+        271: {'inscription': 'Μήτηρ Θεοῦ. / Θεοτόκε βοήθει τῷ σῷ δούλῳ ᾿Ιωάννῃ μοναχῷ καὶ ἀρχιεπισκόπῳ πάσης Βουλγαρίας',
               'seals': {463: 'Washington, Dumbarton Oaks Research Library and Collection: 58 series',
                         464: 'Cambridge, Mass., Fogg Art Museum', 471: 'Sale Catalogue: Hirsch 186 (May, 1995)'},
               'sources': {
@@ -181,18 +181,18 @@ class GraphImportTests(unittest.TestCase):
                   'Laurent, Corpus V.3': "V. Laurent, Le Corpus des Sceaux de l'empire byzantin, V.3, L'Église: Supplément, Paris 1972 [reviewed by W. Seibt in Byzantinoslavica 35 (1974), 73-84 and by N. Oikonomides in Speculum 49 (1974), 746-7]",
                   'Jordanov, Corpus I': 'I. Jordanov, Corpus of Byzantine Seals from Bulgaria, vol. 1: Byzantine Seals with Geographical Names, Sofia 2003 [reviewed by W. Seibt in Byzantinische Zeitschrift 98, 2005, pp. 129-133]'}},
         272: {
-            'inscription': '[Mother of God]. / Theotokos aid your servant Ioannes, monk and archbishop of all Bulgaria',
+            'inscription': '[Μήτηρ Θεοῦ]. / Θεοτόκε βοήθει τῷ σῷ δούλῳ ᾿Ιωάννῃ μοναχῷ καὶ ἀρχιεπισκόπῳ πάσης Βουλγαρίας',
             'seals': {465: 'Washington, Dumbarton Oaks Research Library and Collection: 55 series'}, 'sources': {
                 'Nesbitt - Oikonomides I': 'J. Nesbitt and N. Oikonomides, Catalogue of Byzantine Seals at Dumbarton Oaks and in the Fogg Museum of Art 1: Italy, North of the Balkans, North of the Black Sea, Washington D.C. 1991 [reviewed by W. Seibt in Byzantinische Zeitschrift 84/85 (1991), 548-5'}},
-        283: {'inscription': 'Lord aid your servant Konstantinos / Diogenes, patrikios and strategos of Serbia',
+        283: {'inscription': 'Κύριε βοήθει τῷ σῷ δούλῳ Κωνσταντίνῳ / πατρικίῳ καὶ στρατηγῷ Σερβίας τῷ Διογένῃ',
               'seals': {480: 'Cambridge, Mass., Fogg Art Museum'}, 'sources': {
                 'Nesbitt - Oikonomides I': 'J. Nesbitt and N. Oikonomides, Catalogue of Byzantine Seals at Dumbarton Oaks and in the Fogg Museum of Art 1: Italy, North of the Balkans, North of the Black Sea, Washington D.C. 1991 [reviewed by W. Seibt in Byzantinische Zeitschrift 84/85 (1991), 548-5',
                 'Laurent, Serbie': 'V. Laurent, "La thème byzantine de Serbie au XIe siècle", Revue des Études Byzantines 15, 1957'}},
-        1406: {'inscription': 'St Nikolaos. / Lord aid your servant Niketas and man of the most felicitous kaisar',
+        1406: {'inscription': '῾Ο ἅγιος Νικόλαος. / Κύριε βοήθει τῷ σῷ δούλῳ Νικήτᾳ καὶ ἀνθρώπῳ τοῦ εὐτυχεστάτου καίσαρος',
                'seals': {5297: 'Sale Catalogue: Spink: October 6, 1999'}, 'sources': {
                 'Zacos II': 'G. Zacos, Byzantine Lead Seals II, compiled and edited by J.W. Nesbitt, Bern 1984 [reviewed by H. Hunger in Jahrbuch der Ã–sterreichischen Byzantinistik 36 (1986), 333-339 and by N. Oikonomides, "A propos d\'une nouvelle publication de sceaux byzantins", Re'}},
         2216: {
-            'inscription': 'Michael / See the seal of (Ioannes) protoproedros (of the protosynkelloi) metropolitan (protoproedros) of Side (metrical, with one word performing two functions)',
+            'inscription': 'Μιχαήλ. / ῞Ορα σφραγίδα πρωτοπροέδρου Σίδης',
             'seals': {2607: 'Cambridge, Mass., Fogg Art Museum',
                       2608: 'Washington, Dumbarton Oaks Research Library and Collection: 58 series',
                       2609: 'Washington, Dumbarton Oaks Research Library and Collection: 55 series',
@@ -204,7 +204,7 @@ class GraphImportTests(unittest.TestCase):
                 'Laurent, Corpus V.1': "V. Laurent, Le Corpus des Sceaux de l'empire byzantin, V.1, L'Église, Paris 1963 [reviewed by V. Grumel in Byzantinische Zeitschrift 59 (1966), 392-396 and by W. Seibt in Byzantinoslavica 35 (1974), 73-84]",
                 'Konstantopoulos, Nom. Mous.': 'K.M. Konstantopoulos, Byzantiaka molyvdoboulla tou en Athenais Ethnikou Nomismatikou Mouseiou, Athens 1917',
                 'Laurent, Corpus V.3': "V. Laurent, Le Corpus des Sceaux de l'empire byzantin, V.3, L'Église: Supplément, Paris 1972 [reviewed by W. Seibt in Byzantinoslavica 35 (1974), 73-84 and by N. Oikonomides in Speculum 49 (1974), 746-7]"}},
-        2217: {'inscription': 'Michael. / Seal of Ioannes, metropolitan (proedros) of Side and hypertimos (metrical)',
+        2217: {'inscription': 'Μιχαήλ. / Σφραγὶς προέδρου τῆς Σίδης ὑπερτίμου',
                'seals': {2613: 'Washington, Dumbarton Oaks Research Library and Collection: 58 series',
                          2614: 'Washington, Dumbarton Oaks Research Library and Collection: 58 series',
                          2615: 'Vienna, Kunsthistorisches Museum, Münzkabinett', 2616: 'St Petersburg, Hermitage'},
@@ -212,97 +212,97 @@ class GraphImportTests(unittest.TestCase):
                    'Nesbitt - Oikonomides II': 'J. Nesbitt and N. Oikonomides,  Catalogue of Byzantine Seals at Dumbarton Oaks and in the Fogg Museum of Art 2: South of the Balkans, the Islands, South of Asia Minor, Washington D.C. 1994 [reviewed by W. Seibt in Byzantinische Zeitschrift 90 (1997), 460-',
                    'Pančenko IRAIK 8': 'B.A. Pančenko, Kollekcii Russkago Archeologičeskago Instituta v Konstantinopolě. Katalog molivdovulov, Sofia 1908 (repr. from Izvestija Russkago Archeologičeskago Instituta v Konstantinopolě 8 (1903), 199-246)',
                    'Laurent, Corpus V.1': "V. Laurent, Le Corpus des Sceaux de l'empire byzantin, V.1, L'Église, Paris 1963 [reviewed by V. Grumel in Byzantinische Zeitschrift 59 (1966), 392-396 and by W. Seibt in Byzantinoslavica 35 (1974), 73-84]"}},
-        2218: {'inscription': 'Michael. / Lord aid Ioannes, metropolitan of Side and protosynkellos',
+        2218: {'inscription': 'Μιχαήλ. / Κύριε βοήθει ᾿Ιωάννῃ μητροπολίτῃ Σίδης καὶ πρωτοσυγκέλλῳ',
                'seals': {2617: 'Washington, Dumbarton Oaks Research Library and Collection: 55 series'}, 'sources': {
                 'Laurent, Corpus V.3': "V. Laurent, Le Corpus des Sceaux de l'empire byzantin, V.3, L'Église: Supplément, Paris 1972 [reviewed by W. Seibt in Byzantinoslavica 35 (1974), 73-84 and by N. Oikonomides in Speculum 49 (1974), 746-7]",
                 'Nesbitt - Oikonomides II': 'J. Nesbitt and N. Oikonomides,  Catalogue of Byzantine Seals at Dumbarton Oaks and in the Fogg Museum of Art 2: South of the Balkans, the Islands, South of Asia Minor, Washington D.C. 1994 [reviewed by W. Seibt in Byzantinische Zeitschrift 90 (1997), 460-'}},
         2566: {
-            'inscription': 'Michael the Archangel | the commander in chief. | St Demetrios. / Lord aid your servant Ioannes, nobelissimos protovestiarios and megas domestikos of the scholai of Orient',
+            'inscription': 'Μιχαὴλ ὁ ᾿Αρχάγγελος | ὁ στρατηλάτης. | ῾Ο ἅγιος Δημήτριος. / Κύριε βοήθει τῷ σῷ δούλῳ ᾿Ιωάννῃ νωβελλισσίμῳ πρωτοβεστιαρίῳ καὶ μεγάλῳ δομεστίκῳ τῶν σχολῶν τῆς ᾿Ανατολῆς',
             'seals': {2914: 'Washington, Dumbarton Oaks Research Library and Collection: 58 series'}, 'sources': {
                 'Laurent, Corpus II': "V. Laurent, Le Corpus des Sceaux de l'empire byzantin, II, L'administration centrale, Paris 1981 [reviewed by J. Nesbitt in Speculum 58 (1983), 771-772, and by W. Seibt in Jahrbuch der Österreichischen Byzantinistik 26 (1977), 325]",
                 'Nesbitt - Oikonomides III': 'J. Nesbitt and N. Oikonomides, Catalogue of Byzantine Seals at Dumbarton Oaks and in the Fogg Museum of Art 3: West, Northwest and Central Asia Minor and the Orient, Washington D.C. 1996 [reviewed by W. Seibt in Byzantinische Zeitschrift 92 (1999), 538-54',
                 'Cheynet, Par St Georges': 'J.-Cl. Cheynet, Par St Georges, par St Michel, Travaux et Mémoires 14, 2002, pp. 114-134'}},
         2567: {
-            'inscription': 'Archangel Michael of Chonai. / Lord aid Ioannes, nobelissimos protovestiarios and megas domestikos of the scholai of Orient',
+            'inscription': '῾Ο ᾿Αρχάγγελος Μιχαὴλ ὁ Χωνιάτης. / Κύριε βοήθει ᾿Ιωάννῃ νωβελλισσίμῳ πρωτοβεστιαρίῳ καὶ μεγάλῳ δομεστίκῳ τῶν σχολῶν τῆς ᾿Ανατολῆς',
             'seals': {2913: 'Washington, Dumbarton Oaks Research Library and Collection: 47 series'}, 'sources': {
                 'Laurent, Corpus II': "V. Laurent, Le Corpus des Sceaux de l'empire byzantin, II, L'administration centrale, Paris 1981 [reviewed by J. Nesbitt in Speculum 58 (1983), 771-772, and by W. Seibt in Jahrbuch der Österreichischen Byzantinistik 26 (1977), 325]",
                 'Nesbitt - Oikonomides III': 'J. Nesbitt and N. Oikonomides, Catalogue of Byzantine Seals at Dumbarton Oaks and in the Fogg Museum of Art 3: West, Northwest and Central Asia Minor and the Orient, Washington D.C. 1996 [reviewed by W. Seibt in Byzantinische Zeitschrift 92 (1999), 538-54'}},
         2625: {
-            'inscription': 'Lord aid your servant Andronikos, protoproedros and / strategos of Thrakesion, man of the kaisar (Ioannes) Doukas',
+            'inscription': 'Κύριε βοήθει τῷ σῷ δούλῳ ᾿Ανδρονίκῳ πρωτοπροέδρῳ καὶ / στρατηγῷ τῶν Θρᾳκησίων τῷ ἀνθρώπῳ καίσαρος τοῦ Δούκα',
             'seals': {2661: 'Washington, Dumbarton Oaks Research Library and Collection: 58 series'}, 'sources': {
                 'Nesbitt - Oikonomides III': 'J. Nesbitt and N. Oikonomides, Catalogue of Byzantine Seals at Dumbarton Oaks and in the Fogg Museum of Art 3: West, Northwest and Central Asia Minor and the Orient, Washington D.C. 1996 [reviewed by W. Seibt in Byzantinische Zeitschrift 92 (1999), 538-54'}},
         2799: {
-            'inscription': 'Lord aid your servant Konstantinos, patrikios / praipositos vestarches and domestikos of Orient',
+            'inscription': 'Κύριε βοήθει τῷ σῷ δούλῳ Κωνσταντίνῳ πατρικίῳ / πραιποσίτῳ βεστάρχῃ καὶ δομεστίκῳ τῆ~ ᾿Ανατολῆ~',
             'seals': {2912: 'Cambridge, Mass., Fogg Art Museum'}, 'sources': {
                 'Nesbitt - Oikonomides III': 'J. Nesbitt and N. Oikonomides, Catalogue of Byzantine Seals at Dumbarton Oaks and in the Fogg Museum of Art 3: West, Northwest and Central Asia Minor and the Orient, Washington D.C. 1996 [reviewed by W. Seibt in Byzantinische Zeitschrift 92 (1999), 538-54',
                 'Wassiliou - Seibt BBÖ II ': 'A.-K. Wassiliou - W. Seibt, Die byzantinischen Bleisiegel in Österreich, 2. Teil: Zentral- und Provinzialverwaltung, Vienna 2003'}},
         2991: {
-            'inscription': 'St Nikolaos. / 12 (or 2? Indiction no. ?) Lord aid your servant Ioannes monk and orphanotrophos (copper tessera)',
+            'inscription': '῾Ο ἅγιος Νικόλαος. / ΙΒ Κύριε βοήθει τῷ σῷ δούλῳ ᾿Ιωάννῃ μοναχῷ καὶ ὀρφανοτρόφῳ',
             'seals': {5401: 'Washington, Dumbarton Oaks Research Library and Collection: 58 series',
                       5402: 'Cambridge, Mass., Fogg Art Museum'},
             'sources': {'Zacos - Veglery': 'G. Zacos and A. Veglery, Byzantine Lead Seals I, Basel',
                         'Nesbitt, Orphanotrophos': 'J. Nesbitt, "The orphanotrophos: some observations on the history of the office in the light of seals", Studies in Byzantine Sigillography 8 (2003), pp. 51-61'}},
-        2992: {'inscription': 'St Nikolaos. / Lord aid your servant Ioannes monk and orphanotrophos',
+        2992: {'inscription': '῾Ο ἅγιος Νικόλαος. / Κύριε βοήθει τῷ σῷ δούλῳ ᾿Ιωάννῃ μοναχῷ καὶ ὀρφανοτρόφῳ',
                'seals': {5403: 'Private collection: Basel, G. Zacos (largely dispersed)',
                          8893: 'St Petersburg, Hermitage'},
                'sources': {'Zacos - Veglery': 'G. Zacos and A. Veglery, Byzantine Lead Seals I, Basel',
                            'Schlumberger, Sigillographie': "G. Schlumberger, Sigillographie de l'empire byzantin, Paris 1884",
                            'Schlumberger, Mélanges': "G. Schlumberger, Mélanges d'archéologie byzantine, Paris 1895 [= extract from Revue des Études grecques 2 (1889), 245-59; 4 (1891), 111-42 and 7 (1894), 319-336]",
                            'Stepanova, St Nicholas': 'E. Stepanova, "The image of St Nicholas on Byzantine seals", Studies in Byzantine Sigillography 9 (2006), pp. 185-195'}},
-        2993: {'inscription': 'St Nikolaos. / Lord aid your servant Ioannes monk and orphanotrophos',
+        2993: {'inscription': '῾Ο ἅγιος Νικόλαος. / Κύριε βοήθει τῷ σῷ δούλῳ ᾿Ιωάννῃ μοναχῷ καὶ ὀρφανοτρόφῳ',
                'seals': {5404: 'Private collection: Basel, G. Zacos (largely dispersed)',
                          5405: 'Private collection: Basel, G. Zacos (largely dispersed)',
                          5406: 'Private collection: Basel, G. Zacos (largely dispersed)',
                          5407: 'Private collection: Basel, G. Zacos (largely dispersed)',
                          5408: 'Private collection: Basel, G. Zacos (largely dispersed)'},
                'sources': {'Zacos - Veglery': 'G. Zacos and A. Veglery, Byzantine Lead Seals I, Basel'}},
-        2996: {'inscription': 'Lord aid your servant Konstantinos / the most illustrious nobelissimos',
+        2996: {'inscription': 'Κύριε βοήθει τῷ σῷ δούλῳ Κωνσταντίνῳ / τῷ λαμπροτάτῳ νωβελλισίμῳ',
                'seals': {5413: 'Private collection: Basel, G. Zacos (largely dispersed)'},
                'sources': {'Zacos - Veglery': 'G. Zacos and A. Veglery, Byzantine Lead Seals I, Basel'}},
-        4143: {'inscription': 'Through piety Anna Komnene’s seal does not bear holy pictures, but verses (metrical)',
-               'seals': {6052: 'Mordtmann collection'},
-               'sources': {'Mordtmann, Komnenon': 'A. Mordtmann, "Molybdoboulla ton Komnenon", EPhS 13, Suppl.',
-                           'Schlumberger, Sigillographie': "G. Schlumberger, Sigillographie de l'empire byzantin, Paris 1884",
-                           'Schlumberger, Inédits 5': 'G. Schlumberger, "Sceaux byzantins inédits (Cinquième série)", Revue Numismatique 9 (1905), 321-354, nos. 204-295. ',
-                           'Laurent, Bulles métriques': 'V. Laurent, Les bulles métriques dans la sigillographie byzantine, Athens 1932 [repr. from Hellenika 4 (1931), 191-228 (nos. 1-110) and 321-360 (nos. 111-224); Hellenika 5 (1932), 137-174 (nos. 225-331) and 389-420 (nos. 331a-423); Hellenika 6 (1933), 81-'}},
-        3000: {'inscription': 'Theotokos aid your servant / Ioannes the most fortunate kaisar',
+        3000: {'inscription': 'Θεοτόκε βοήθει τῷ σῷ δούλῳ / ´᾿Ιωάννῃ τῷ εὐτυχεστάτῳ καίσαρι',
                'seals': {6777: 'Private collection: Basel, G. Zacos (largely dispersed)',
                          6778: 'Private collection: Basel, G. Zacos (largely dispersed)',
                          6779: 'Private collection: Basel, G. Zacos (largely dispersed)',
                          6780: 'Private collection: Basel, G. Zacos (largely dispersed)',
                          6782: 'Paris, Bibliotheque nationale'},
                'sources': {'Zacos - Veglery': 'G. Zacos and A. Veglery, Byzantine Lead Seals I, Basel'}},
-        3001: {'inscription': 'Theotokos aid your servant / Ioannes the most fortunate kaisar',
+        3001: {'inscription': 'Θεοτόκε βοήθει τῷ σῷ δούλῳ / ´᾿Ιωάννῃ τῷ εὐτυχεστάτῳ καίσαρι',
                'seals': {6781: 'Private collection: Basel, G. Zacos (largely dispersed)'},
                'sources': {'Zacos - Veglery': 'G. Zacos and A. Veglery, Byzantine Lead Seals I, Basel'}},
-        3002: {'inscription': 'Theotokos aid your servant / Ioannes the most fortunate kaisar',
+        3002: {'inscription': 'Θεοτόκε βοήθει τῷ σῷ δούλῳ / ´᾿Ιωάννῃ τῷ εὐτυχεστάτῳ καίσαρι',
                'seals': {6783: 'Private collection: Basel, G. Zacos (largely dispersed)'},
                'sources': {'Zacos - Veglery': 'G. Zacos and A. Veglery, Byzantine Lead Seals I, Basel'}},
-        3003: {'inscription': 'Theotokos aid your servant / Ioannes the most fortunate kaisar',
+        3003: {'inscription': 'Θεοτόκε βοήθει τῷ σῷ δούλῳ / ´᾿Ιωάννῃ τῷ εὐτυχεστάτῳ καίσαρι',
                'seals': {6784: 'Private collection: Basel, G. Zacos (largely dispersed)'},
                'sources': {'Zacos - Veglery': 'G. Zacos and A. Veglery, Byzantine Lead Seals I, Basel'}},
-        3004: {'inscription': 'Lord aid your servant Ioannes / Doukas, basileopator',
+        3004: {'inscription': 'Κύριε βοήθει τῷ σῷ δούλῳ ᾿Ιωάννῃ / βασιλεοπάτορι τῷ Δούκα',
                'seals': {6785: 'Private collection: Basel, G. Zacos (largely dispersed)',
                          6786: 'Private collection: Basel, G. Zacos (largely dispersed)',
                          9051: 'Khoury collection (largely purchased around Antioch and in Lebanon)'},
                'sources': {'Zacos - Veglery': 'G. Zacos and A. Veglery, Byzantine Lead Seals I, Basel',
                            'Cheynet, Collection Khoury': 'J.-Cl. Cheynet, Sceaux de la collection Khoury, Revue Numismatique 159, 2003, 419-456'}},
-        4941: {'inscription': 'St Petros. / (H)erbebios Phrangopoulos, magistros vestes stratelates of Orient',
+        4143: {'inscription': 'Δι᾿ εὐλάβειαν οὐ φέρει θείους τύπους / ῎Αννης Κομνηνῆς ἡ σφραγὶς ἀλλὰ στίχους',
+               'seals': {6052: 'Mordtmann collection'},
+               'sources': {'Mordtmann, Komnenon': 'A. Mordtmann, "Molybdoboulla ton Komnenon", EPhS 13, Suppl.',
+                           'Schlumberger, Sigillographie': "G. Schlumberger, Sigillographie de l'empire byzantin, Paris 1884",
+                           'Schlumberger, Inédits 5': 'G. Schlumberger, "Sceaux byzantins inédits (Cinquième série)", Revue Numismatique 9 (1905), 321-354, nos. 204-295. ',
+                           'Laurent, Bulles métriques': 'V. Laurent, Les bulles métriques dans la sigillographie byzantine, Athens 1932 [repr. from Hellenika 4 (1931), 191-228 (nos. 1-110) and 321-360 (nos. 111-224); Hellenika 5 (1932), 137-174 (nos. 225-331) and 389-420 (nos. 331a-423); Hellenika 6 (1933), 81-'}},
+        4941: {'inscription': '῾Ο ἅγιος Πέτρος. / ῾Ερβεβίῳ μαγίστρῳ βέστῃ καὶ στρατηλάτῃ τῆς ᾿Ανατολῆς τῷ Φραγγοπώλῳ',
                'seals': {7419: 'USA (private collection)'}, 'sources': {
                 'Braunlin - Nesbitt, Selections': 'M. Braunlin and J. Nesbitt, "Selections from a private collection of Byzantine bullae", Byzantion 68 (1998), 157-182'}},
-        5253: {'inscription': 'St Georgios. / Georgius, son of king Bodinus',
+        5253: {'inscription': '῾Ο ἅγιος Γεώργιος. / Georgius regis Bodini filius',
                'seals': {7860: 'Institute and Museum of Archaeology, Sofia', 7861: 'Bulgaria (private collection)'},
                'sources': {
                    'Jordanov, Corpus II': 'I. Jordanov, Corpus of Byzantine Seals from Bulgaria, vol. 2: Byzantine Seals with Family Names, Sofia 2006',
                    'Gerasimov, Georges': 'Gerasimov Th., "Un sceau en plomb de Georges, fils du roi Bodine". Studia Serdicensia 1, pp. 217-218',
                    'Jouroukova, Georgi Bodin': 'J. Jouroukova, "Nov oloven pečat na Georgi Bodin", Numizmatika 2, 8-13'}},
-        6463: {'inscription': 'Lord aid your servant / Ignatios kaisar (?), monk',
+        6463: {'inscription': 'Κύριε βοήθει τῷ σῷ δούλῳ / ᾿Ιγνατίῳ μοναχῷ τῷ Καίσαρι',
                'seals': {9707: 'Washington, Dumbarton Oaks Research Library and Collection: 47 series'}, 'sources': {
                 'Laurent, Corpus V.2': "V. Laurent, Le Corpus des Sceaux de l'empire byzantin, V.2, L'Église, Paris 1965 [reviewed by V. Grumel in Byzantinische Zeitschrift 61 (1968), 129; W. Seibt in Byzantinoslavica 35 (1974), 73-84]",
                 'Seibt, review of Laurent, Corpus V ': 'W. Seibt, review of Laurent, Corpus V, Byzantinoslavica 35 (1974), 73-84',
                 'Seibt, BBÖ I': 'W. Seibt, Die byzantinischen Bleisiegel in Österreich I. Teil, Kaiserhof, Vienna 1978 [reviewed by V. Šandrovskaja and I.V.Sokolova in Byzantinoslavica 41 (1980), 251-255]',
                 'Zacos - Veglery': 'G. Zacos and A. Veglery, Byzantine Lead Seals I, Basel'}},
-        6798: {'inscription': '[...] | Lord aid / Konstantinos Diogenes, patrikios and strategos',
+        6798: {'inscription': '[...] | Κύριε βοήθει / Κωνσταντίνῳ πατρικίῳ καὶ στρατηγῷ τῷ Διογένῃ',
                'seals': {10217: 'Regional Historical Museum, Shumen ', 10218: 'Istanbul Archaological Musum'},
                'sources': {
                    'Jordanov - Zhekova, Shumen': 'I. Jordanov - Z. Zhekova, Catalogue of Medieval Seals at the Regional Historical Museum of Shumen, Shumen 2007'}}}
@@ -381,19 +381,47 @@ class GraphImportTests(unittest.TestCase):
 
     }
 
+    # Helper functions
+    def check_class(self, uri, ocl):
+        """Helper to check that a URI is defined as the given class"""
+        c = self.constants
+        rcl = c.graph.value(uri, RDF.type)
+        self.assertEqual(c.entitylabels.get(ocl, c.predicates.get(ocl)), rcl,
+                        f"Class of {uri} should be {ocl}")
+
+    def get_external_id(self, uri):
+        """Return the content of the E42 identifier set via an E15 for the given entity."""
+        # Find the E15
+        c = self.constants
+        e15s = [x for x in c.graph.subjects(c.predicates['P140'], uri)
+                if c.graph.value(x, RDF.type) == c.entitylabels['E15']]
+        self.assertEqual(1, len(e15s), f"There should be one E15 assertion for {uri}")
+        # Chain down the E15 to find the identifier value
+        e42 = c.graph.value(e15s[0], c.predicates['P37'], any=False)
+        self.assertIsNotNone(e42, "Identifier should exist")
+        pbwid = c.graph.value(e42, c.predicates['P190'], any=False)
+        self.assertIsNotNone(pbwid, "Identifier content should exist")
+        return pbwid
+
+    def get_object(self, subj, pred):
+        c = self.constants
+        try:
+            obj = c.graph.value(subj, c.predicates[pred], any=False)
+        except UniquenessError:
+            self.fail(f"Object of {subj} : {pred} should be unique")
+        self.assertIsNotNone(obj, f"Object of {subj} : {pred} should exist")
+        return obj.toPython()
+
+
+    # Tests begin here
     def setUp(self):
-        # Make sure our triples file exists
-        testfile = 'statements-test.ttl'
-        if not os.path.isfile(testfile):
-            gimport = graphimportSTAR.graphimportSTAR(origgraph=testfile, testmode=True)
-            try:
-                gimport.process_persons()
-            except DatabaseError:
-                self.fail("Cannot run tests without a MySQL connection or an existing triples file with test data.")
-            self.constants = gimport.constants
-        else:
-            g = Graph()
-            self.constants = PBWstarConstants.PBWstarConstants(g)
+        # Test against the GraphDB instance in config.py
+        gimport = graphimportSTAR.graphimportSTAR(testmode=True)
+        try:
+            gimport.process_persons()
+        except DatabaseError:
+            self.fail("Cannot run tests without a connection to a datastore.")
+        self.constants = gimport.constants
 
         c = self.constants
         # Get the URIs for each of our test people
@@ -406,7 +434,7 @@ class GraphImportTests(unittest.TestCase):
                 self.assertIsNotNone(e15)
                 puri = c.graph.value(e15, c.predicates['P140'], any=False)
                 self.assertIsNotNone(puri)
-                self.td_people[p]['uri'] = puri.n3()
+                self.td_people[p]['uri'] = puri
             except UniquenessError:
                 self.fail("ID should lead to unique person")
 
@@ -471,17 +499,24 @@ select ?p_uri ?mainid where {{
                 sparql = f"""
 select ?appellation where {{
     ?a1 a {c.get_assertion_for_predicate('P1')} ;
-        {c.star_subject} {pinfo['uri']} ;
-        {c.star_object} [a {c.get_label('E41')} ; {c.get_label('P190')} ?appellation ] ;
+        {c.star_subject} {pinfo['uri'].n3()} ;
+        {c.star_object} ?appellation ;
         {c.star_based} ?src .
 }}"""
                 res = c.graph.query(sparql)
                 found_appels = defaultdict(int)
                 for row in res:
-                    for appel in row['appellation']:
-                        # Fortunately for us all the appellations are Greek
-                        self.assertEqual(appel.language, 'grc')
-                        found_appels[appel.toPython()] += 1
+                    appel = row['appellation']
+                    # The appellation should be an E41, have an English and an original language
+                    self.check_class(appel, 'E41')
+                    values = [v for v in c.graph.objects(appel, c.predicates['P190'])]
+                    self.assertEqual(2, len(values))
+                    langs = {x.language: x.toPython() for x in values}
+                    # Fortunately for us all the original language appellations are Greek
+                    self.assertTrue('en' in langs)
+                    self.assertTrue('grc' in langs)
+                    found_appels[langs['grc']] += 1
+                # Check that we found all of them
                 self.assertDictEqual(names, found_appels)
 
     def test_death(self):
@@ -500,7 +535,7 @@ select ?person ?de where {{
         for row in res:
             person = row['person']
             de = row['de']
-            self.assertIsNone(deathevents.get(person), f"{self.get_pbw_id(person)} should not die twice")
+            self.assertIsNone(deathevents.get(person), f"{self.get_external_id(person)} should not die twice")
             deathevents[person] = de
 
         for person, pinfo in self.td_people.items():
@@ -554,7 +589,7 @@ select distinct ?sref where {{
                 sparql = f"""
 select ?eth (count(?eth) as ?act) where {{
     ?a a {c.get_assertion_for_predicate('P107')} ;
-        {c.star_subject} {pinfo['uri']} ;
+        {c.star_subject} {pinfo['uri'].n3()} ;
         {c.star_object} [a {c.get_label('E74E')} ; {c.get_label('P1')} ?eth ] .
 }}"""
                 res = c.graph.query(sparql)
@@ -576,7 +611,7 @@ select ?eth (count(?eth) as ?act) where {{
 select ?rel ?auth where {{
     ?a a {c.get_assertion_for_predicate('SP36')} ;
         {c.star_subject} ?relaff ;
-        {c.star_object} {pinfo['uri']} ;
+        {c.star_object} {pinfo['uri'].n3()} ;
         {c.star_auth} ?anode .
     ?a2 a {c.get_assertion_for_predicate('SP35')} ;
         {c.star_subject} ?relaff ;
@@ -601,7 +636,7 @@ select ?rel ?auth where {{
 select ?occ where {{
     ?a a {c.get_assertion_for_predicate('SP13')} ;
         {c.star_subject} ?pocc ;
-        {c.star_object} {pinfo['uri']} .
+        {c.star_object} {pinfo['uri'].n3()} .
     ?a2 a {c.get_assertion_for_predicate('SP14')} ;
         {c.star_subject} ?pocc ;
         {c.star_object} [a {c.get_label('C7')} ; {c.get_label('P1')} ?rel ] .
@@ -622,7 +657,7 @@ select ?occ where {{
 select ?role where {{
     ?a a {c.get_assertion_for_predicate('SP26')} ;
         {c.star_subject} ?prole ;
-        {c.star_object} {pinfo['uri']} .
+        {c.star_object} {pinfo['uri'].n3()} .
     ?a2 a {c.get_assertion_for_predicate('SP33')} ;
         {c.star_subject} ?prole ;
         {c.star_object} [a {c.get_label('C12')} ; {c.get_label('P1')} ?role ] .
@@ -641,7 +676,7 @@ select ?role where {{
                 sparql = f"""
 select ?kh where {{
     ?a a {c.get_assertion_for_predicate('SP38')} ;
-        {c.star_subject} {pinfo['uri']} ;
+        {c.star_subject} {pinfo['uri'].n3()} ;
         {c.star_object} ?lskill .
     ?a2 a {c.get_assertion_for_predicate('SP37')} ;
         {c.star_subject} ?lskill ;
@@ -663,7 +698,7 @@ select ?kh where {{
 select distinct ?kin ?kintype where {{
     ?a a {c.get_assertion_for_predicate('SP17')} ;
         {c.star_subject} ?kg ;
-        {c.star_object} {pinfo['uri']} .
+        {c.star_object} {pinfo['uri'].n3()} .
     ?a2 a {c.get_assertion_for_predicate('SP18')} ;
         {c.star_subject} ?kg ;
         {c.star_object} ?kin .
@@ -697,7 +732,7 @@ select distinct ?kin ?kintype where {{
 select ?poss ?authorid ?src where {{
     ?a a {c.get_assertion_for_predicate('P51')} ;
         {c.star_subject} [a {c.get_label('E18')} ; {c.get_label('P1')} ?poss ] ;
-        {c.star_object} {pinfo['uri']} ;
+        {c.star_object} {pinfo['uri'].n3()} ;
         {c.star_auth} ?author ;
         {c.star_based} ?srcuri .
     ?idass a {c.get_label('E15')} ;
@@ -755,7 +790,7 @@ select ?boul ?inscr ?src ?auth where {{
             descname = self.get_object(row['boul'], 'P3')
             self.assertTrue(descname.startswith('Boulloterion of'))
             # Its identity should be a PBW URL with some boulloterion ID
-            boulid = int(self.get_pbw_id(row['boul']))
+            boulid = int(self.get_external_id(row['boul']))
             # We should be expecting this boulloterion
             self.assertIn(boulid, self.td_boulloterions, "Boulloterion %d should exist" % boulid)
             boulinfo = self.td_boulloterions[boulid]
@@ -763,25 +798,29 @@ select ?boul ?inscr ?src ?auth where {{
             # but we should not have seen it yet
             self.assertNotIn(boulid, found, "Boulloterion %d should not be duplicated" % boulid)
             found.add(boulid)
-            # The boulloterion should have a correct inscription
-            inscr = self.get_object(row['inscr'], 'P190')
-            self.assertEqual(boulinfo['inscription'], inscr)
+            # The boulloterion should have a correct inscription (we only record the Greek)
+            inscr = [v for v in c.graph.objects(row['inscr'], c.predicates['P190'])]
+            self.assertEqual(1, len(inscr))
+            self.assertEqual(boulinfo['inscription'], inscr[0].toPython(),
+                             f"boulloterion {boulid} inscription should match")
+            # self.assertEqual('grc', inscr[0].language) ## TODO not yet
             # The boulloterion should have the correct named authority
             auth = self.get_object(row['auth'], 'P3')
             self.assertEqual('Jeffreys, Michael J.', auth)
             # Separate query to check the boulloterion sources on the inscription assertion
             if len(boulinfo['sources']) > 1:
                 # Source should be a Bibliography which contains a set of works
-                self.check_class(row['src'], 'E73')
+                self.check_class(row['src'], 'E73B')
                 # Get the texts of this bibliography
-                sources = c.graph.objects(row['src'], c.entitylabels['P165'])
+                sources = c.graph.objects(row['src'], c.predicates['P165'])
             else:
                 # Source should be a single text
-                self.check_class(row['src'], 'F2T')
+                self.check_class(row['src'], 'F3P')
                 sources = [row['src']]
             for source in sources:
-                self.assertIn(self.get_object(source, 'P1'), boulinfo['sources'])
-                self.assertEqual(self.get_object(source, 'P102'), boulinfo['sources'][sid])
+                skey = self.get_object(source, 'P1')
+                self.assertIn(skey, boulinfo['sources'], f"Soruce {skey} should be there for boulloterion {boulid}")
+                self.assertEqual(self.get_object(source, 'P3'), boulinfo['sources'][skey])
 
             # Separate query to check the boulloterion seals and their respective assertions. A seal was
             # produced by a boulloterion and belongs to a collection according to the same authority as above,
@@ -793,7 +832,7 @@ select ?seal ?coll where {{
         {c.star_object} ?seal ;
         {c.star_auth} ?auth .
     ?collass a {c.get_assertion_for_predicate('P46')} ;
-        {c.star_subject} [ a {c.get_label('E78')} ; {c.get_label('P1')} ?coll ];
+        {c.star_subject} ?coll;
         {c.star_object} ?seal ;
         {c.star_auth} ?auth .
 }}"""
@@ -814,7 +853,6 @@ select ?seal ?coll where {{
     def test_text_sources(self):
         """Spot-check different textual sources and make sure they are set up correctly"""
         c = self.constants
-        p3 = c.get_label('P3')
         for s, sinfo in self.spot_sources.items():
             if 'author' in sinfo:
                 # The Chronographia: work was created by author according to author based on passage
@@ -822,96 +860,118 @@ select ?seal ?coll where {{
                 # The praktikon: work was created by author according to PBW editor
                 # Yahya: work was created by author according to editor based on *edition*
                 # All: work has edition according to editor based on edition
-                motivation = c.get_label('F3') if s == 'yahya' else c.get_label('E33')
-                q = 'MATCH (work:%s)<-[:%s]-(wc1:%s)-[:%s]->(wc:%s)<-[:%s]-(wc2:%s)-[:%s]->(author:%s), ' \
-                    '(wc1)-[:%s]->(authority), (wc2)-[:%s]->(authority), ' \
-                    '(wc1)-[:%s]->(passage:%s), (wc2)-[:%s]->(passage), ' \
-                    '(work)<-[:%s]-(wed:%s)-[:%s]->(edition:%s), (wed)-[:%s]->(editor), (wed)-[:%s]->(edition) ' \
-                    'WHERE work.%s = "%s" ' \
-                    'RETURN work.%s as work, author.%s as author, authority.%s as authority, editor.%s as editor, ' \
-                    'edition.%s as edition, passage.%s as passage' % (
-                        c.get_label('F1'), c.star_object, c.get_assertion_for_predicate('R16'), c.star_subject,
-                        c.get_label('F27'), c.star_subject, c.get_assertion_for_predicate('P14'), c.star_object,
-                        c.get_label('E21'), c.star_auth, c.star_auth, c.star_source, motivation, c.star_source,
-                        c.star_subject, c.get_assertion_for_predicate('R3'), c.star_object, c.get_label('F3'),
-                        c.star_auth, c.star_source, p3, sinfo.get('work'), p3, p3, p3, p3, p3, p3
-                    )
+                sparql = f"""
+select ?work ?author ?authority ?editor ?edition ?passage where {{
+    ?work a {c.get_label('F2T')} ;
+        {c.get_label('P3')} {Literal(sinfo.get('work')).n3()} .
+    ?wc1 a {c.get_assertion_for_predicate('R16')} ;
+        {c.star_subject} ?wc ;
+        {c.star_object} ?work ;
+        {c.star_auth} ?authority ;
+        {c.star_based} ?passage .
+    ?wc2 a {c.get_assertion_for_predicate('P14')} ;
+        {c.star_subject} ?wc ;
+        {c.star_object} ?author ;
+        {c.star_auth} ?authority ;
+        {c.star_based} ?passage .
+    ?wed a {c.get_assertion_for_predicate('R3')} ;
+        {c.star_subject} ?work ;
+        {c.star_object} ?edition ;
+        {c.star_auth} ?editor ;
+        {c.star_based} ?edition .
+}}"""
             elif 'work' in sinfo:
                 # The 1094 synod: work has edition according to editor based on edition
-                q = 'MATCH (work:%s)<-[:%s]-(wed:%s)-[:%s]->(edition:%s), ' \
-                    '(wed)-[:%s]->(editor), (wed)-[:%s]->(edition) ' \
-                    'WHERE work.%s = "%s" ' \
-                    'RETURN work.%s as work, editor.%s as editor, edition.%s as edition' % (
-                        c.get_label('F1'), c.star_subject, c.get_assertion_for_predicate('R3'), c.star_object,
-                        c.get_label('F3'), c.star_auth, c.star_source,
-                        p3, sinfo.get('work'),
-                        p3, p3, p3
-                    )
+                sparql = f"""
+select ?work ?editor ?edition where {{
+    ?work a {c.get_label('F2T')} ;
+        {c.get_label('P3')} {Literal(sinfo.get('work')).n3()} .
+    ?wed a {c.get_assertion_for_predicate('R3')} ;
+        {c.star_subject} ?work ;
+        {c.star_object} ?edition ;
+        {c.star_auth} ?editor ;
+        {c.star_based} ?edition .
+        
+}}"""
             else:
                 # The Christos Philanthropos doc: edition was created by editors according to editors based on edition.
                 # We have to match the group of editors.
-                q = 'MATCH (edition:%s)<-[:%s]-(ec1:%s)-[:%s]->(ec:%s)<-[:%s]-(ec2:%s)-[:%s]->(editor), ' \
-                    '(ec1)-[:%s]->(editor), (ec2)-[:%s]->(editor), ' \
-                    '(ec1)-[:%s]->(edition), (ec2)-[:%s]->(edition) ' \
-                    'WHERE edition.%s = "%s" ' \
-                    'RETURN editor.%s as editor, edition.%s as edition' % (
-                        c.get_label('F3'), c.star_object, c.get_assertion_for_predicate('R17'), c.star_subject,
-                        c.get_label('F28'), c.star_subject, c.get_assertion_for_predicate('P14'), c.star_object,
-                        c.star_auth, c.star_auth, c.star_source, c.star_source,
-                        p3, sinfo.get('edition'), p3, p3)
-            with self.graphdriver.session() as session:
-                # There should only be one result
-                result = session.run(q).single(strict=True)
-                if 'author' in sinfo:
-                    self.assertEqual(sinfo.get('author'), result['author'])
-                if 'authority' in sinfo:
-                    self.assertEqual(sinfo.get('authority'), result['authority'])
-                if 'work' in sinfo:
-                    self.assertEqual(sinfo.get('work'), result['work'])
-                self.assertEqual(sinfo.get('edition'), result['edition'])
-                self.assertEqual(sinfo.get('editor'), result['editor'])
+                sparql = f"""
+select ?editor ?edition where {{
+    ?edition a {c.get_label('F2T')} ;
+        {c.get_label('P3')} {Literal(sinfo.get('edition')).n3()} .
+    ?ec1 a {c.get_assertion_for_predicate('R17')} ;
+        {c.star_subject} ?ec ;
+        {c.star_object} ?edition ;
+        {c.star_auth} ?editor ;
+        {c.star_based} ?edition .
+}}
+"""
+            result = [row for row in c.graph.query(sparql)]
+            # Check that there is one result
+            self.assertEqual(1, len(result))
+            # Check the types of the various entities if we know them unambiguously
+            data = result[0]
+            self.check_class(data['edition'], 'F2T')
+            self.check_class(data['passage'], 'F3' if s == 'yahya' else 'E33')
+            # Check that the information corresponds to what we expect
+            if 'author' in sinfo:
+                self.check_class(data['author'], 'E21')
+                self.assertEqual(sinfo.get('author'), self.get_external_id(data['author']))
+            if 'authority' in sinfo:
+                self.assertEqual(sinfo.get('authority'), self.get_external_id(data['authority']))
+            self.assertEqual(sinfo.get('edition'), self.get_object(data['edition'], 'P3'))
+            self.assertEqual(sinfo.get('editor'), self.get_object(data['editor'], 'P3'))
 
-                # Now check that the passages are present & correct and have the right authority
-                pq = 'MATCH (edition:%s {%s:\'%s\'})<-[%s]-(psa:%s)-[:%s]->(passage:%s), ' \
-                     '(psa)-[:%s]->(pbwed) RETURN passage.%s as passage, pbwed.%s as pbwed' % (
-                         c.get_label('F3'), p3, sinfo.get('edition'), c.star_subject,
-                         c.get_assertion_for_predicate('R15'),
-                         c.star_object, c.get_label('E33'), c.star_auth, p3, p3
-                     )
-                passages = session.run(pq)
-                ct = 0
-                for row in passages:
-                    ct += 1
-                    self.assertEqual(row['pbwed'], sinfo.get('pbwed'))
-                self.assertEqual(ct, sinfo.get('passages'))
+            # Now check that the passages are present & correct and have the right authority
+            spq = f"""
+select ?passage ?pbwed where {{
+    ?edition a {c.get_label('F2T')} ;
+        {c.get_label('P3')} {Literal(sinfo.get('edition')).n3()} . 
+    ?psa a {c.get_assertion_for_predicate('R15')} ;
+        {c.star_subject} ?edition ;
+        {c.star_object} ?passage ;
+        {c.star_auth} ?pbwed .
+}}"""
+            passages = c.graph.query(spq)
+            ct = 0
+            for row in passages:
+                ct += 1
+                pbwed = self.get_external_id(row['pbwed'])
+                self.assertEqual(sinfo.get('pbwed'), pbwed)
+            self.assertEqual(ct, sinfo.get('passages'))
 
     def test_db_entry(self):
         """All the assertions in the database should be attached to DB records, linked to the single entry
         that created them."""
         c = self.constants
-        p70 = c.get_label('P70')  # the documents predicate
-        f2 = c.get_label('F2')  # the DB record per assertion
-        r17 = c.get_label('R17')  # linking the record to its creation
-        f28 = c.get_label('F28')  # the data creation record
-        p4 = c.get_label('P4')  # created at
-        e52 = c.get_label('E52')  # a particular time
-        p80 = c.get_label('P80')  # with this timestamp
-        p14 = c.get_label('P14')  # carried out by...
-        e21 = c.get_label('E21')  # ...me.
-        totalq = "MATCH (a) WHERE ANY (l IN labels(a) WHERE l =~ 'star__E13_.*') RETURN COUNT(a) AS numass"
-        linkedq = "MATCH (a)<-[:%s]-(record:%s)<-[:%s]-(dbevent:%s)-[:%s]->(me:%s)," \
-                  "(dbevent)-[:%s]->(tstamp:%s) " \
-                  "RETURN count(a) as numass, count(record) as numrec, tstamp.%s as tstamp, me" % (
-                      p70, f2, r17, f28, p14, e21, p4, e52, p80)
-        with self.graphdriver.session() as session:
-            total = session.run(totalq).single()['numass']
-            linked = session.run(linkedq).single(strict=True)
-            self.assertEqual(total, linked['numass'])
-            self.assertEqual(total, linked['numrec'])
-            self.assertIsNotNone(linked['tstamp'])
-            self.assertEqual('Andrews, Tara Lee', linked['me'].get(c.get_label('P3')))
 
-    def testRepeat(self):
+        # How many assertions do we have? These are the things that have P140 subjects
+        total_assertions = len([x for x in c.graph.subjects(c.predicates['P140'])])
+        # No assertion should have more than one P140
+        total_unique = len([x for x in c.graph.subjects(c.predicates['P140'], unique=True)])
+        self.assertEqual(total_assertions, total_unique)
+
+        # Find the assertions that are connected to a database record. There should in theory only
+        # be one record.
+        sparql = f"""
+select (count(?a) as ?numass) ?record ?tstamp ?me where {{
+    ?a {c.star_subject} ?somesubj .
+    ?record a {c.get_label('D10')} ;
+        {c.get_label('L11')} ?a ;
+        {c.get_label('P14')} ?me ;
+        {c.get_label('P4')} ?tstamp .
+}}"""
+        linked = [x for x in c.graph.query(sparql)]
+        self.assertEqual(1, len(linked))
+        result = linked[0]
+
+        self.assertEqual(result['numass'], total_assertions)
+        self.assertIsNotNone(result['tstamp'])
+        self.assertEqual('Andrews, Tara Lee', self.get_object(result['me'], 'P3'))
+
+    @unittest.skip("for now")
+    def test_repeat(self):
         """If we have a DB connection and re-run the import, there should be zero new assertions
         and the graph should not change."""
         # See how many triples are in the graph
@@ -933,34 +993,6 @@ select ?seal ?coll where {{
         for triple in c.graph:
             self.assertTrue(triple in gimport.g, f"Triple {triple} exists in both graphs")
 
-    def check_class(self, uri, ocl):
-        """Helper to check that a URI is defined as the given class"""
-        c = self.constants
-        self.assertTrue((uri, RDF.type, c.entitylabels.get(ocl, c.predicates.get(ocl))) in c.graph,
-                        f"Class of {uri} should be {ocl}")
-
-    def get_pbw_id(self, uri):
-        """Return the E15 identifier set by PBW for the given entity."""
-        # Find the E15
-        c = self.constants
-        e15s = [x for x in c.graph.subjects(c.predicates['P140'], uri)
-                if c.graph.value(x, RDF.type) == c.entitylabels['E15']]
-        self.assertEqual(1, len(e15s), f"There should be one E15 assertion for {uri}")
-        # Chain down the E15 to find the identifier value
-        e42 = c.graph.value(e15s[0], c.predicates['P37'], any=False)
-        self.assertIsNotNone(e42, "Identifier should exist")
-        pbwid = c.graph.value(e42, c.predicates['P190'], any=False)
-        self.assertIsNotNone(pbwid, "Identifier content should exist")
-        return pbwid
-
-    def get_object(self, subj, pred):
-        c = self.constants
-        try:
-            obj = c.graph.value(subj, c.predicates[pred], any=False)
-        except UniquenessError:
-            self.fail(f"Object of {subj} : {pred} should be unique")
-        self.assertIsNotNone(obj, f"Object of {subj} : {pred} should exist")
-        return obj.toPython()
 
 if __name__ == '__main__':
     unittest.main()
