@@ -6,6 +6,7 @@ import re
 from datetime import datetime
 from functools import reduce
 from rdflib import Graph, Literal, XSD
+from rdflib.plugins.stores import sparqlstore
 from sqlalchemy import create_engine, and_
 from sqlalchemy.orm import sessionmaker
 from warnings import warn
@@ -45,6 +46,15 @@ def _matchid(var, val):
     return 'MATCH (%s) WHERE %s.uuid = "%s" ' % (var, var, val)
 
 
+def _get_single_key(rdfresult, k):
+    if len(rdfresult) == 0:
+        return None
+    if len(rdfresult) > 1:
+        warn(f"Query result had multiple rows!")
+    for row in rdfresult:
+        return row[k]
+
+
 def _get_source_lang(factoid):
     lkeys = {2: 'grc', 3: 'la', 4: 'ar', 5: 'xcl'}
     try:
@@ -69,7 +79,7 @@ class graphimportSTAR:
     constants = None
     mysqlsession = None
 
-    def __init__(self, origgraph=None, testmode=False):
+    def __init__(self, origgraph, testmode=False):
         # Set the testing flag
         self.testmode = testmode
         # Record the starting time
@@ -78,17 +88,27 @@ class graphimportSTAR:
         engine = create_engine('mysql+mysqlconnector://' + config.dbstring)
         smaker = sessionmaker(bind=engine)
         self.mysqlsession = smaker()
-        # Start an RDF graph, parsing what we started with
-        self.g = Graph()
-        loaded = False
-        if origgraph is not None:
+        # Are we connecting to the remote service?
+        if origgraph == config.graphuri:
+            # Make the connection and let the constants module instatiate the graph with all the namespaces
+            store = sparqlstore.SPARQLUpdateStore(origgraph, origgraph + '/statements', method='POST',
+                                                  auth=(config.graphuser, config.graphpw))
+            # Make / retrieve the global nodes and self.constants
+            self.constants = RELEVEN.PBWstarConstants.PBWstarConstants(store=store)
+            self.g = self.constants.graph
+            loaded = True
+        else:
+            # Start an RDF graph, parsing what we started with
+            self.g = Graph()
+            loaded = False
             try:
                 self.g.parse(origgraph)
                 loaded = True
             except FileNotFoundError:
                 pass
-        # Make / retrieve the global nodes and self.constants
-        self.constants = RELEVEN.PBWstarConstants.PBWstarConstants(self.g)
+            # Make / retrieve the global nodes and self.constants
+            self.constants = RELEVEN.PBWstarConstants.PBWstarConstants(graph=self.g)
+
         # How many assertions do we have to start with?
         if loaded:
             res = self.g.triples((None, self.constants.predicates['P140'], None))
@@ -257,7 +277,7 @@ class graphimportSTAR:
         sparql_check = self.create_assertion_sparql('a1', 'P128', boul_node, '?inscription', pbweditor)
         res = self.g.query("SELECT ?inscription WHERE { " + sparql_check + "}")
         if len(res):
-            return boul_node, res['inscription']
+            return boul_node, _get_single_key(res, 'inscription')
 
         # If the boulloterion does not yet have an assertion that it carries any inscription, it
         # will need to be created with its inscription, its seals, and its source list
@@ -267,7 +287,7 @@ class graphimportSTAR:
         # Make the assertion(s) concerning its inscription. TODO for the cleanup change E73 to E33
         sparql = f"""
         ?inscription a {c.get_label('E34')}, {c.get_label('E73')} ;
-            {c.get_label('P190')} {Literal(boulloterion.origLText, _get_source_lang(boulloterion.origLang)).n3()} . """
+            {c.get_label('P190')} {Literal(boulloterion.origLText, _get_source_lang(boulloterion)).n3()} . """
         sparql += self.create_assertion_sparql('a', 'P128', boul_node, '?inscription', pbweditor, source_node)
 
         # Create the seals that belong to this boulloterion; assert that they
@@ -278,8 +298,8 @@ class graphimportSTAR:
             sparql += f"""
         ?seal{i} a {c.get_label('E22S')} ;
             {c.get_label('P3')} "{seal_id}" . """
-            sparql += self.create_assertion_sparql(f"?a{i}c", 'P46', coll, f'?seal{i}', pbweditor)
-            sparql += self.create_assertion_sparql(f"?a{i}b", 'L1', boul_node, f'?seal{i}', pbweditor)
+            sparql += self.create_assertion_sparql(f"a{i}c", 'P46', coll, f'?seal{i}', pbweditor)
+            sparql += self.create_assertion_sparql(f"a{i}b", 'L1', boul_node, f'?seal{i}', pbweditor)
 
         # Possible optimization: We have already established that this boulloterion (and therefore the
         # inscription and seals) don't exist yet, so just run the statement as an update
@@ -287,8 +307,8 @@ class graphimportSTAR:
         res = c.ensure_entities_existence(sparql)
         # Get the documentation
         assertionkeys = ['a']
-        assertionkeys.extend([f'a{n}c'] for n in range(len(boulloterion.seals)))
-        assertionkeys.extend([f'a{n}b'] for n in range(len(boulloterion.seals)))
+        assertionkeys.extend([f'a{n}c' for n in range(len(boulloterion.seals))])
+        assertionkeys.extend([f'a{n}b' for n in range(len(boulloterion.seals))])
         c.document(pbwdoc, *[res[x] for x in assertionkeys])
         # Return the boulloterion and inscription
         return boul_node, res['inscription']
@@ -328,7 +348,7 @@ class graphimportSTAR:
             short_name = source.shortName if source.bibKey == 816 else re_encode(source.shortName)
             latin_bib = source.latinBib if source.bibKey == 816 else re_encode(source.latinBib)
             sn = f"""
-            ?src a {c.get_label('F3')} ;
+            ?src a {c.get_label('F3P')} ;
                 {c.get_label('P1')} {Literal(short_name).n3()} ;
                 {c.get_label('P3')} {Literal(latin_bib).n3()} .
             """
@@ -376,8 +396,8 @@ class graphimportSTAR:
         agent = self.get_authority_node(self.constants.authorities(sourcekey))
         sparql = f"""
         ?sourceref a {c.get_label('E33')} ;
-            {c.get_label('P3')} '{escape_text(c.sourceref(factoid))}' ;
-            {c.get_label('P190')} '{escape_text(factoid.origLDesc)}' . """
+            {c.get_label('P3')} {Literal(c.sourceref(factoid)).n3()} ;
+            {c.get_label('P190')} {Literal(factoid.origLDesc).n3()} . """
         sparql += self.create_assertion_sparql('a', 'R15', wholesource, '?sourceref', agent)
         res = c.ensure_entities_existence(sparql)
         c.document(pbwdoc, res['a'])
@@ -805,7 +825,7 @@ class graphimportSTAR:
         # See if there is an existing kinship group of any sort with the person as source and their
         # kin as target. If not, return a new (not yet connected) C3 Social Relationship node.
         c = self.constants
-        # The pattern to match
+        # The pattern to match. TODO maybe we want to add the kinship type to this search pattern?
         sparql_check = f"""select distinct ?kstate where {{
         ?kstate a {c.get_label('C3')} .
         ?a1 a {c.get_assertion_for_predicate('SP17')} ;
@@ -813,11 +833,11 @@ class graphimportSTAR:
             {c.star_object} {graphperson.n3()} .
         ?a2 a star:E13_sdhss_P18 ;
             {c.star_subject} ?kstate ;
-            {c.star_object} {graphkin.n3()} . }}"""
+            {c.star_object} {graphkin.n3()} .}}"""
         res = self.g.query(sparql_check)
         if len(res):
             # We found a kinship between these two people. Return it
-            return res.get('kstate')
+            return _get_single_key(res, 'kstate')
         else:
             return None
 
@@ -959,43 +979,43 @@ class graphimportSTAR:
                 ourftype = _smooth_labels(ftype)
                 try:
                     method = getattr(self, "%s_handler" % ourftype.lower())
-                    fprocessed = 0
-                    for f in person.main_factoids(ftype):
-                        # Find out what sources we are actually using and make note of them
-                        source_key = self.constants.source(f)
-                        if source_key is None:
-                            print("Skipping factoid %d with unlisted source %s" % (f.factoidKey, f.source))
-                            continue
-                        elif source_key == 'OUT_OF_SCOPE':
-                            print("Skipping factoid %d with a source %s out of our temporal scope"
-                                  % (f.factoidKey, f.source))
-                            continue
-                        else:
-                            used_sources.add(source_key)
-                        # Note if we use a boulloterion, and if so how many seals it has
-                        if f.boulloterion is not None:
-                            if f.boulloterion.boulloterionKey not in boulloteria:
-                                seals += len(f.boulloterion.seals)
-                            boulloteria.add(f.boulloterion.boulloterionKey)
-                        # Get the source, either a text passage or a seal inscription, and the authority
-                        # for the factoid. Authority will either be the author of the text, or the PBW
-                        # colleague who read the text and ingested the information.
-                        (source_node, authority_node) = self.get_source_and_agent(f)
-                        # If the factoid has no source then we skip it
-                        if source_node is None:
-                            print("HELP: Factoid %d had no parseable source for some reason" % f.factoidKey)
-                            continue
-                        # If the factoid has no authority then we assign it to the generic PBW agent
-                        if authority_node is None:
-                            authority_node = self.constants.pbw_agent
-                        # Call the handler for this factoid type
-                        method(source_node, authority_node, f, graph_person)
-                        fprocessed += 1
-                    if fprocessed > 0:
-                        print("Ingested %d %s factoid(s)" % (fprocessed, ftype))
-
                 except AttributeError:
-                    pass
+                    continue
+                fprocessed = 0
+                for f in person.main_factoids(ftype):
+                    # Find out what sources we are actually using and make note of them
+                    source_key = self.constants.source(f)
+                    if source_key is None:
+                        print("Skipping factoid %d with unlisted source %s" % (f.factoidKey, f.source))
+                        continue
+                    elif source_key == 'OUT_OF_SCOPE':
+                        print("Skipping factoid %d with a source %s out of our temporal scope"
+                              % (f.factoidKey, f.source))
+                        continue
+                    else:
+                        used_sources.add(source_key)
+                    # Note if we use a boulloterion, and if so how many seals it has
+                    if f.boulloterion is not None:
+                        if f.boulloterion.boulloterionKey not in boulloteria:
+                            seals += len(f.boulloterion.seals)
+                        boulloteria.add(f.boulloterion.boulloterionKey)
+                    # Get the source, either a text passage or a seal inscription, and the authority
+                    # for the factoid. Authority will either be the author of the text, or the PBW
+                    # colleague who read the text and ingested the information.
+                    (source_node, authority_node) = self.get_source_and_agent(f)
+                    # If the factoid has no source then we skip it
+                    if source_node is None:
+                        print("HELP: Factoid %d had no parseable source for some reason" % f.factoidKey)
+                        continue
+                    # If the factoid has no authority then we assign it to the generic PBW agent
+                    if authority_node is None:
+                        authority_node = self.constants.pbw_agent
+                    # Call the handler for this factoid type
+                    method(source_node, authority_node, f, graph_person)
+                    fprocessed += 1
+                if fprocessed > 0:
+                    print("Ingested %d %s factoid(s)" % (fprocessed, ftype))
+
         self.record_assertion_factoids()
         print("Processed %d person records." % processed)
         print("Used the following sources: %s" % sorted(used_sources))
@@ -1012,15 +1032,15 @@ if __name__ == '__main__':
     parser.add_argument('-t', '--testing', action='store_true',
                         help="Run in testing mode with limited data")
     parser.add_argument('-g', '--graph',
+                        default=config.graphuri,
                         help="Graph containing existing STAR assertions, if any")
     args = parser.parse_args()
     # Process the person records
     gimport = graphimportSTAR(origgraph=args.graph, testmode=args.testing)
     gimport.process_persons()
-    # Write the output to a timestamped file
+    # Where are we writing the graph to? Default is the location in config.py
     filename = args.graph
-    if filename is None:
-        filename = f'statements_{gimport.starttime.isoformat().split(".")[0].replace(":", "-")}.ttl'
-    gimport.g.serialize(filename)
+    if args.graph != config.graphuri:
+         gimport.g.serialize(args.graph)
     duration = datetime.now() - gimport.starttime
     print("Done! Ran in %s" % str(duration))

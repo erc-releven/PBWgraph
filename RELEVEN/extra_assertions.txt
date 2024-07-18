@@ -1,0 +1,94 @@
+# Axioms:
+# - all persons have a birth
+# - all persons have a death
+# - all persons have an initial gender assignment
+
+// Get the bits of info that we want to manipulate
+MATCH (konst:crm__E21_Person {crm__P3_has_note:"Konstantinos Doukas porphyrogennetos, son of Michael VII"})
+MATCH (anna:crm__E21_Person {crm__P3_has_note:"Anna Komnene, daughter of Alexios I and historian"})
+MATCH (male:sdhss__C11 {crm__P1_is_identified_by:"Male"})
+MATCH (eunuch:sdhss__C11 {crm__P1_is_identified_by:"Eunuch"})
+MATCH (viaf:lrmoo__F11 {crm__P3_has_note:"Virtual Internet Authority File"})
+MATCH (tla:crm__E21_Person {crm__P3_has_note:"Andrews, Tara Lee"})
+
+// Change the gender assertion concerning Konstantinos to have been made by (inter alia) Anna
+MATCH (konst)<-[:crm__P141_assigned]-(a1:Resource:star__E13_crm_P41)-[:crm__P140_assigned_attribute_to]->(event:Resource:crm__E17_Type_Assignment)<-[:crm__P140_assigned_attribute_to]-(a2:Resource:star__E13_crm_P42)
+MATCH (a1)-[r1:crm__P14_carried_out_by]->(pbw)
+MATCH (a2)-[r2:crm__P14_carried_out_by]->(pbw)
+DELETE r1, r2
+CREATE (src:Resource:crm__E73_Information_Object:crm__E33_Linguistic_Object {crm__P3_has_note:"40.80-89", crm__P190_has_symbolic_content:"ἄγαλμα φύσεως ... Θεοῦ χειρῶν φιλοτίμημα ... τοῦ παρ᾽ Ἕλλησι μυθευομένου χρυσοῦ γένους ἀπορροή ... προχρόνιος πρὸ ἡμῶν καὶ πρὶν ἡμεῖς τὸν ἥλιον ἴδοιμεν ... καθαρὸς καὶ ἀμόλυντος"})<-[:crm__P17_was_motivated_by]-(a1)-[:crm__P14_carried_out_by]->(anna)
+CREATE (src)<-[:crm__P17_was_motivated_by]-(a2)-[:crm__P14_carried_out_by]->(anna)
+
+
+// Add Michael the Syrian as an author and Chabot as editor
+CREATE (msyr:Resource:crm__E21_Person {crm__P3_has_note:"Michael, Syrian orthodox patriarch and historian"})
+CREATE (viaf)<-[:crm__P14_carried_out_by]-(mid:Resource:crm__E15_Identifier_Assignment {crm__P37_assigned:"http://viaf.org/viaf/12704144"})-[:crm__P140_assigned_attribute_to]->(msyr)
+CREATE (chabot:Resource:crm__E21_Person {crm__P3_has_note:"Chabot, Jean-Baptiste"})
+CREATE (viaf)<-[:crm__P14_carried_out_by]-(cid:Resource:crm__E15_Identifier_Assignment {crm__P37_assigned:"http://viaf.org/viaf/44399630"})-[:crm__P140_assigned_attribute_to]->(chabot)
+// Add the edition of Chabot
+CREATE (edition:Resource:lrmoo__F3 {crm__P3_has_note:"Chronique, 3 vols, Paris 1899"})
+// and a passage for the Chronicle authorship
+CREATE (apass:Resource:crm__E73_Information_Object:crm__E33_Linguistic_Object {crm__P3_has_note:"XVIII.IX"})
+// and a passage for the castration
+CREATE (cast:Resource:crm__E73_Information_Object:crm__E33_Linguistic_Object {crm__P3_has_note:"XV.V", crm__P190_has_symbolic_content:""})
+// ...and his Chronicle as a work
+CREATE (wc:Resource:lrmoo__F27)<-[:crm__P140_assigned_attribute_to]-(aship:Resource:star__E13_crm_P14)-[:crm__P141_assigned]->(msyr)
+CREATE (aship)-[:crm__P14_carried_out_by]->(msyr)
+CREATE (aship)-[:crm__P17_was_motivated_by]->(apass)
+CREATE (wc)<-[:crm__P140_assigned_attribute_to]-(ofwork:Resource:star__E13_lrmoo_R16)-[:crm__P141_assigned]->(work:Resource:lrmoo__F1 {crm__P3_has_note:"Chronicle of Michael the Syrian"})
+CREATE (ofwork)-[:crm__P14_carried_out_by]->(msyr)
+CREATE (ofwork)-[:crm__P17_was_motivated_by]->(apass)
+// Link the work to the edition
+CREATE (work)<-[:crm__P140_assigned_attribute_to]-(edass:Resource:star__E13_lrmoo_R3)-[:crm__P141_assigned]->(edition)
+CREATE (edass)-[:crm__P14_carried_out_by]->(chabot)
+CREATE (edass)-[:crm__P17_was_motivated_by]->(edass)
+// ...and the edition to the passages
+CREATE (edition)<-[:crm__P140_assigned_attribute_to]-(epa1:Resource:star__E13_lrmoo_R15)-[:crm__P141_assigned]->(apass)
+CREATE (epa1)-[:crm__P14_carried_out_by]->(tla)
+CREATE (edition)<-[:crm__P140_assigned_attribute_to]-(epa2:Resource:star__E13_lrmoo_R15)-[:crm__P141_assigned]->(cast)
+CREATE (epa2)-[:crm__P14_carried_out_by]->(tla)
+
+// Let Michael assert that Konstantinos was indeed born male
+CREATE (a3:Resource:star__E13_crm_P42)-[:crm__P140_assigned_attribute_to]->(event),
+    (a3)-[:crm__P141_assigned]->(male),
+    (a3)-[:crm__P14_carried_out_by]->(msyr),
+    (a3)-[:crm__P17_was_motivated_by]->(cast)
+// but that he also had another assignment event during his lifetime
+CREATE (reign:Resource:`crm__E52_Time-Span` {crm__P82a_begin_of_the_begin:datetime("1078-01-07T00:00:00"), crm__P82b_end_of_the_end:datetime("1081-04-01T00:00:00")})
+CREATE (castration:Resource:crm__E17_Type_Assignment)<-[:crm__P140_assigned_attribute_to]-(a4:Resource:star__E13_crm_P41)-[:crm__P141_assigned]->(konst)
+CREATE (castration)<-[:crm__P140_assigned_attribute_to]-(a5:Resource:star__E13_crm_P42)-[:crm__P141_assigned]->(eunuch)
+CREATE (castration)<-[:crm__P140_assigned_attribute_to]-(a6:Resource:star__E13_crm_P4)-[:crm__P141_assigned]->(reign)
+CREATE (msyr)<-[:crm__P14_carried_out_by]-(a4)-[:crm__P17_was_motivated_by]->(cast)
+CREATE (msyr)<-[:crm__P14_carried_out_by]-(a5)-[:crm__P17_was_motivated_by]->(cast)
+CREATE (msyr)<-[:crm__P14_carried_out_by]-(a6)-[:crm__P17_was_motivated_by]->(cast)
+
+
+// ---- Death of Frangopoulos
+// Get the bits of info that we want to manipulate
+MATCH (herve:crm__E21_Person {crm__P3_has_note:"Hervé Phrangopoulos/Frankopoulos"})
+MATCH (viaf:lrmoo__F11 {crm__P3_has_note:"Virtual Internet Authority File"})
+
+// Create the people and sources we will need
+CREATE (viaf)<-[:crm__P14_carried_out_by]-(mid:Resource:crm__E15_Identifier_Assignment {crm__P37_assigned:"http://viaf.org/viaf/67980167"})-[:crm__P140_assigned_attribute_to]->(matt:Resource:crm__E21_Person {crm__P3_has_note:"Matthew of Edessa"})
+CREATE (viaf)<-[:crm__P14_carried_out_by]-(mid:Resource:crm__E15_Identifier_Assignment {crm__P37_assigned:"http://viaf.org/viaf/44305385"})-[:crm__P140_assigned_attribute_to]->(seibt:Resource:crm__E21_Person {crm__P3_has_note:"Seibt, Werner"})
+CREATE (viaf)<-[:crm__P14_carried_out_by]-(mid:Resource:crm__E15_Identifier_Assignment {crm__P37_assigned:"http://viaf.org/viaf/44305385"})-[:crm__P140_assigned_attribute_to]->(seibt:Resource:crm__E21_Person {crm__P3_has_note:"Seibt, Werner"})
+CREATE (viaf)<-[:crm__P14_carried_out_by]-(mid:Resource:crm__E15_Identifier_Assignment {crm__P37_assigned:"http://viaf.org/viaf/44305385"})-[:crm__P140_assigned_attribute_to]->(seibt:Resource:crm__E21_Person {crm__P3_has_note:"Seibt, Werner"})
+CREATE 
+CREATE (zham:Resource:lrmoo__F3 {crm__P3_has_note:""})
+
+// Create the death event
+CREATE (herve)<-[:crm__P141_assigned]-(da:star__E13_crm_P100)-[:crm__P140_assigned_attribute_to]->(death:crm__E69_Death)
+
+
+# boulloterion
+title "Erbebios Phrangopoulos, proedros and stratelates with command of the headless East"
+text "(H)erbebios Frangopoulos, proedros and stratelates with military authority over the headless East"
+origLText "Κ(ύρι)ε βοήθ(ει) Ἐρβεβίῳ (προ)έ[δρ](ῳ) στρατ[ηλ]άτῃ δίκαι(α) ὑπερέχο[ν(τι)] ἀκ(ε)φάλη[ς] [τ(ῆς)] Ἀνατ(ο)λ[ῆς] [τῷ Φ]ρα[γγοπ(ώλῳ)]"
+oLangKey 5
+obvIcon Text (5 lines)
+revIcon Text (5 lines)
+diameter -
+dateWords 11th c., after August 1071
+obvTypeKey 0
+revTypeKey 0
+scDateKey 0

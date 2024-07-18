@@ -1,4 +1,4 @@
-from rdflib import Literal, Namespace, RDF
+from rdflib import Graph, Literal, Namespace, RDF
 from warnings import warn
 import re
 import RELEVEN.PBWSources
@@ -16,8 +16,7 @@ import pbw
 class PBWstarConstants:
     """A class to deal with all of our constants, where the data is nicely encapsulated"""
 
-    def __init__(self, graph):
-        self.graph = graph
+    def __init__(self, graph=None, store=None):
         # These are the modern scholars who put the source information into PBW records.
         # We need Michael and Tara on the outside
         self.mj = {'identifier': 'Jeffreys, Michael J.', 'viaf': '73866641'}
@@ -25,7 +24,8 @@ class PBWstarConstants:
 
         self.sourcelist = RELEVEN.PBWSources.PBWSources(join(dirname(__file__), 'pbw_sources.csv'))
 
-        self.ns = Namespace('https://r11.eu/rdf/resource/')
+        datauri = 'https://r11.eu/rdf/resource/'
+        self.ns = Namespace(datauri)
         self.namespaces = {
             'crm':   Namespace('http://www.cidoc-crm.org/cidoc-crm/'),
             'crmdig': Namespace('http://www.ics.forth.gr/isl/CRMdig/'),
@@ -36,8 +36,20 @@ class PBWstarConstants:
             'star':  Namespace('https://r11.eu/ns/star/'),
             'data':  self.ns
         }
-        for k, v in self.namespaces.items():
-            self.graph.bind(k, v, override=True)
+
+        graph_exists = False
+        if graph is not None:
+            self.graph = graph
+            graph_exists = True
+        elif store is not None:
+            self.graph = Graph(store, identifier=datauri)
+            graph_exists = True
+
+        if graph_exists:
+            for k, v in self.namespaces.items():
+                self.graph.bind(k, v, override=True)
+        else:
+            warn("No graph or remote SPARQL store specified - initialising static constants only")
 
         # The classes we are using, keyed by their short forms.
         self.entitylabels = {
@@ -230,29 +242,30 @@ class PBWstarConstants:
         # self.star_src = self.get_label('P70')
 
         # Initialise our group agents and the data structures we need to start
-        print("Setting up PBW constants...")
-        # Ensure existence of our external authorities
-        self.pbw_agent = None
-        self.viaf_agent = None
-        self.orcid_agent = None
-        f11s = [{'key': 'pbw',
-                 'title': Literal('Prosopography of the Byzantine World'),
-                 'uri': Literal('https://pbw2016.kdl.kcl.ac.uk/')},
-                {'key': 'viaf',
-                 'title': Literal('Virtual Internet Authority File'),
-                 'uri': Literal('https://viaf.org/')},
-                {'key': 'orcid',
-                 'title': Literal('OrcID'),
-                 'uri': Literal('https://orcid.org/')}]
-        for ent in f11s:
-            f11_query = f"""
-            ?a a {self.get_label('F11')} ;
-                {self.get_label('P3')} {ent['title'].n3()} ;
-                {self.get_label('P1')} {ent['uri'].n3()} ."""
-            uris = self.ensure_entities_existence(f11_query)
-            f11_uri = uris['a']
-            # Store it in self.[key]_agent, e.g. self.pbw_agent
-            self.__setattr__(f"{ent['key']}_agent", f11_uri)
+        if graph_exists:
+            print("Setting up PBW constants...")
+            # Ensure existence of our external authorities
+            self.pbw_agent = None
+            self.viaf_agent = None
+            self.orcid_agent = None
+            f11s = [{'key': 'pbw',
+                     'title': Literal('Prosopography of the Byzantine World'),
+                     'uri': Literal('https://pbw2016.kdl.kcl.ac.uk/')},
+                    {'key': 'viaf',
+                     'title': Literal('Virtual Internet Authority File'),
+                     'uri': Literal('https://viaf.org/')},
+                    {'key': 'orcid',
+                     'title': Literal('OrcID'),
+                     'uri': Literal('https://orcid.org/')}]
+            for ent in f11s:
+                f11_query = f"""
+                ?a a {self.get_label('F11')} ;
+                    {self.get_label('P3')} {ent['title'].n3()} ;
+                    {self.get_label('P1')} {ent['uri'].n3()} ."""
+                uris = self.ensure_entities_existence(f11_query)
+                f11_uri = uris['a']
+                # Store it in self.[key]_agent, e.g. self.pbw_agent
+                self.__setattr__(f"{ent['key']}_agent", f11_uri)
 
         # Some of these factoid types have their own controlled vocabularies.
         # Set up our structure for retaining these; we will define them when we encounter them
@@ -400,9 +413,9 @@ class PBWstarConstants:
         return minted
 
     def ensure_entities_existence(self, sparql, force_create=False):
-        # print("SPARQL is:" + sparql)
+        print("SPARQL is:" + sparql)
         if not force_create:
-            res = self.graph.query("SELECT DISTINCT * WHERE {" + sparql + "}", initNs=self.namespaces)
+            res = self.graph.query("SELECT DISTINCT * WHERE {" + sparql + "}")
             if len(res):
                 # We should hopefully have only one row...
                 if len(res) > 1:
@@ -416,7 +429,7 @@ class PBWstarConstants:
         q = sparql
         for k, v in new_uris.items():
             q = q.replace(f'?{k}', v.n3(self.graph.namespace_manager))
-        self.graph.update("INSERT DATA {" + q + "}", initNs=self.namespaces)
+        self.graph.update("INSERT DATA {" + q + "}")
         return new_uris
 
     def ensure_egroup_existence(self, gclass, glink, members):
@@ -432,18 +445,23 @@ class PBWstarConstants:
         GROUP BY ?egroup
         HAVING (COUNT(?member) = {len(members)})
         """
-        res = self.graph.query(sparql)
-        if len(res) == 0:
+        rows = [x for x in self.graph.query(sparql)]
+        if len(rows) == 0:
             # We need to create the group and its members
             mlist = ', '.join([x.n3() for x in members])
             sparql = f"""
         ?egroup a {self.get_label(gclass)} ;
             {self.get_label(glink)} {mlist} .
             """
-            res = self.ensure_entities_existence(sparql, force_create=True)
+            answer = self.ensure_entities_existence(sparql, force_create=True)
+        else:
+            # Make sure there is only one egroup that fits this spec
+            if len(rows) > 1:
+                warn("Multiple entity groups found with exactly the given members!")
+            answer = rows[0]
 
         # Either way, return the entity group
-        return res.get('egroup')
+        return answer.get('egroup')
 
     def document(self, pbwpage, *assertions):
         """Make the E31 link between the pbwpage and whatever assertions we just pulled from it."""
