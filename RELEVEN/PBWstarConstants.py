@@ -146,6 +146,7 @@ class PBWstarConstants:
             'R15': self.namespaces['lrmoo']['R15_has_fragment'],   # has fragment
             'R16': self.namespaces['lrmoo']['R16_created'],   # created [work]
             'R17': self.namespaces['lrmoo']['R17_created'],   # created [expression]
+            'R24': self.namespaces['lrmoo']['R24_created'],   # created [manifestation]
             'R76': self.namespaces['lrmoo']['R76_is_derivative_of'],   # is derivative of
             'SP13': self.namespaces['sdhss']['P13'],  # pertains to [person, social quality]
             'SP14': self.namespaces['sdhss']['P14'],  # has social quality
@@ -438,7 +439,7 @@ class PBWstarConstants:
         return minted
 
     def ensure_entities_existence(self, sparql, force_create=False):
-        print("SPARQL is:" + sparql)
+        # print("SPARQL is:" + sparql)
         if not force_create:
             res = self.graph.query("SELECT DISTINCT * WHERE {" + sparql + "}")
             if len(res):

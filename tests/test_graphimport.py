@@ -637,9 +637,10 @@ select ?rel ?auth where {{
                 # We are cheating by knowing that no test person has more than one religion specified
                 rows = [x for x in res]
                 self.assertEqual(1, len(rows))
-                self.assertTrue(rows[0]['rel'].toPython() in rels)
+                found_rel = rows[0]['rel'].toPython()
+                self.assertTrue(found_rel in rels)
                 authority = self.get_external_id(rows[0]['auth']).toPython()
-                self.assertIn(authority, rels['auth'])
+                self.assertIn(authority, rels[found_rel])
 
     def test_occupation(self):
         """Test that occupations / non-legal designations are set correctly"""
@@ -891,7 +892,7 @@ select ?seal ?coll where {{
 select ?work ?author ?authority ?editor ?edition ?passage where {{
     ?work a {c.get_label('F2T')} ;
         {c.get_label('P3')} {Literal(sinfo.get('work')).n3()} .
-    ?wc1 a {c.get_assertion_for_predicate('R16')} ;
+    ?wc1 a {c.get_assertion_for_predicate('R17')} ;
         {c.star_subject} ?wc ;
         {c.star_object} ?work ;
         {c.star_auth} ?authority ;
@@ -901,9 +902,9 @@ select ?work ?author ?authority ?editor ?edition ?passage where {{
         {c.star_object} ?author ;
         {c.star_auth} ?authority ;
         {c.star_based} ?passage .
-    ?wed a {c.get_assertion_for_predicate('R3')} ;
-        {c.star_subject} ?work ;
-        {c.star_object} ?edition ;
+    ?wed a {c.get_assertion_for_predicate('R5')} ;
+        {c.star_subject} ?edition ;
+        {c.star_object} ?work ;
         {c.star_auth} ?editor ;
         {c.star_based} ?edition .
 }}"""
@@ -913,9 +914,9 @@ select ?work ?author ?authority ?editor ?edition ?passage where {{
 select ?work ?editor ?edition where {{
     ?work a {c.get_label('F2T')} ;
         {c.get_label('P3')} {Literal(sinfo.get('work')).n3()} .
-    ?wed a {c.get_assertion_for_predicate('R3')} ;
-        {c.star_subject} ?work ;
-        {c.star_object} ?edition ;
+    ?wed a {c.get_assertion_for_predicate('R5')} ;
+        {c.star_subject} ?edition ;
+        {c.star_object} ?work ;
         {c.star_auth} ?editor ;
         {c.star_based} ?edition .
         
@@ -925,9 +926,9 @@ select ?work ?editor ?edition where {{
                 # We have to match the group of editors.
                 sparql = f"""
 select ?editor ?edition where {{
-    ?edition a {c.get_label('F2T')} ;
+    ?edition a {c.get_label('F3P')} ;
         {c.get_label('P3')} {Literal(sinfo.get('edition')).n3()} .
-    ?ec1 a {c.get_assertion_for_predicate('R17')} ;
+    ?ec1 a {c.get_assertion_for_predicate('R24')} ;
         {c.star_subject} ?ec ;
         {c.star_object} ?edition ;
         {c.star_auth} ?editor ;
@@ -939,34 +940,35 @@ select ?editor ?edition where {{
             self.assertEqual(1, len(result))
             # Check the types of the various entities if we know them unambiguously
             data = result[0]
-            self.check_class(data['edition'], 'F2T')
-            self.check_class(data['passage'], 'F3' if s == 'yahya' else 'E33')
+            self.check_class(data['edition'], 'F3P')
+            if 'passage' in data:
+                self.check_class(data['passage'], 'F3P' if s == 'yahya' else 'E33')
             # Check that the information corresponds to what we expect
             if 'author' in sinfo:
                 self.check_class(data['author'], 'E21')
-                self.assertEqual(sinfo.get('author'), self.get_external_id(data['author']))
+                self.assertEqual(sinfo.get('author'), self.get_object(data['author'], 'P3'))
             if 'authority' in sinfo:
-                self.assertEqual(sinfo.get('authority'), self.get_external_id(data['authority']))
+                self.assertEqual(sinfo.get('authority'), self.get_object(data['authority'], 'P3'))
             self.assertEqual(sinfo.get('edition'), self.get_object(data['edition'], 'P3'))
             self.assertEqual(sinfo.get('editor'), self.get_object(data['editor'], 'P3'))
 
             # Now check that the passages are present & correct and have the right authority
             spq = f"""
-select ?passage ?pbwed where {{
-    ?edition a {c.get_label('F2T')} ;
-        {c.get_label('P3')} {Literal(sinfo.get('edition')).n3()} . 
+select ?pbwed (count(?passage) as ?pct) where {{ 
     ?psa a {c.get_assertion_for_predicate('R15')} ;
-        {c.star_subject} ?edition ;
+        {c.star_subject} {data['edition'].n3()} ;
         {c.star_object} ?passage ;
         {c.star_auth} ?pbwed .
-}}"""
+}} group by ?pbwed"""
             passages = c.graph.query(spq)
-            ct = 0
+            # There should only be one PBW editor / editor group per edition
+            self.assertEqual(1, len(passages))
             for row in passages:
-                ct += 1
-                pbwed = self.get_external_id(row['pbwed'])
+                pbwed = self.get_object(row['pbwed'], 'P3')
                 self.assertEqual(sinfo.get('pbwed'), pbwed)
-            self.assertEqual(ct, sinfo.get('passages'))
+                # When we test against production we can't guarantee an exact number, but there should be
+                # at least the number from the test database.
+                self.assertGreaterEqual(row['pct'].toPython(), sinfo.get('passages'))
 
     @unittest.skip("not yet")
     def test_db_entry(self):
