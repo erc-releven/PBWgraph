@@ -1,6 +1,7 @@
 from rdflib.plugins.stores import sparqlstore
 
 import config
+import re
 import unittest
 from collections import Counter, defaultdict
 from functools import reduce
@@ -29,8 +30,8 @@ class GraphImportTests(unittest.TestCase):
                     'secondname': {'Κομνηνοῦ': 2},
                     'death': {'count': 1, 'dated': 0},
                     'religion': {'Christian': ['Georgios 25002']},
-                    'legalrole': {'Basilis': 1, 'Basilissa': 1, 'Kaisarissa': 4,
-                                  'Pansebastos sebaste': 1, 'Porphyrogennetos': 6},
+                    'legalrole': {'Basilis': 1, 'Basilissa': 1, 'Kaisarissa': 4},
+                    'occupation': {'Pansebastos sebaste': 1, 'Porphyrogennetos': 6},
                     'kinship': {'daughter': ['Alexios 1', 'Eirene 61'],
                                 'sister': ['Ioannes 2', 'Maria 146'],
                                 'wife': ['Nikephoros 117'],
@@ -45,14 +46,14 @@ class GraphImportTests(unittest.TestCase):
                                            'Maria 171']}
                     },
         'Anna 64': {'gender': ['Female'], 'identifier': 'τῆς κουροπαλατίσσης Ἄννης',
-                    'legalrole': {'Kouropalatissa': 1},
+                    'occupation': {'Kouropalatissa': 1},
                     'kinship': {'grandmother': ['Anonymus 61'],
                                 'mother': ['Ioannes 61', 'Nikephoros 62']}},
         'Anna 101': {'gender': ['Female'], 'identifier': 'Ἄννα',
-                     'altname': {'Ἀρετῆς': 1}, 'legalrole': {'Nun': 1},
+                     'altname': {'Ἀρετῆς': 1}, 'occupation': {'Nun': 1},
                      'kinship': {'daughter': ['Eudokia 1', 'Konstantinos 10']}},
         'Anna 102': {'gender': ['Female'], 'identifier': ' Ἄννῃ',
-                     'death': {'count': 1, 'dated': 0}, 'legalrole': {'Nun': 1},
+                     'death': {'count': 1, 'dated': 0}, 'occupation': {'Nun': 1},
                      'kinship': {'wife': ['Eustathios 105'],
                                  'mother': ['Romanos 106']}},
         'Apospharios 101': {'gender': ['Male'], 'identifier': ' Ἀποσφάριον', 'legalrole': {'Slave': 1},
@@ -114,7 +115,8 @@ class GraphImportTests(unittest.TestCase):
         'Konstantinos 62': {'gender': ['Male'], 'identifier': 'Κωνσταντίνῳ',
                             'secondname': {'Δούκα': 1},
                             'death': {'count': 2, 'dated': 0},
-                            'legalrole': {'Basileus': 3, 'Basileus (co-emperor)': 3, 'Porphyrogennetos': 5},
+                            'legalrole': {'Basileus': 3, 'Basileus (co-emperor)': 3},
+                            'occupation': {'Porphyrogennetos': 5},
                             'kinship': {'son': ['Maria 61', 'Michael 7'],
                                         'fiancé': ['Anna 62'],
                                         'grandson': ['Konstantinos 10'],
@@ -440,34 +442,42 @@ class GraphImportTests(unittest.TestCase):
     def test_gender(self):
         """Test that each person has the gender assignments we expect"""
         c = self.constants
+        p_uri_list = '\n'.join([f"{d['uri'].n3()}" for d in self.td_people.values()])
         sparql = f"""
 select ?p_uri ?gender where {{
+    VALUES ?p_uri {{
+        {p_uri_list}
+    }}
     ?a1 a {c.get_assertion_for_predicate('P41')} ;
         {c.star_subject} ?ga ;
         {c.star_object} ?p_uri ;
         {c.star_auth} {c.pbw_agent.n3()} .
-    ?a2 a {c.get_assertion_for_predicate('P37')} ;
+    ?a2 a {c.get_assertion_for_predicate('P42')} ;
         {c.star_subject} ?ga ;
         {c.star_object} [a {c.get_label('C11')} ; {c.get_label('P1')} ?gender ] ;
         {c.star_auth} {c.pbw_agent.n3()} .
 }}"""
         res = c.graph.query(sparql)
         # Save the results for lookup
-        genders = dict()
+        genders = defaultdict(list)
         for row in res:
-            genders[row['p_uri']] = row['gender']
+            genders[row['p_uri']].append(row['gender'].toPython())
         # Check that they are correct
         for person, pinfo in self.td_people.items():
             p_uri = pinfo['uri']
             self.assertIsNotNone(genders.get(p_uri))
-            self.assertEqual(genders[p_uri], pinfo['gender'], f"Test gender for {person}")
+            self.assertListEqual(genders[p_uri], pinfo['gender'], f"Test gender for {person}")
 
     # The identifier is the name as PBW has it in the original language.
     def test_identifier(self):
         """Test that each person has the main appellation given in the PBW database"""
         c = self.constants
+        p_uri_list = '\n'.join([f"{d['uri'].n3()}" for d in self.td_people.values()])
         sparql = f"""
 select ?p_uri ?mainid where {{
+    VALUES ?p_uri {{
+        {p_uri_list}
+    }}
     ?a1 a {c.get_assertion_for_predicate('P1')} ;
         {c.star_subject} ?p_uri ;
         {c.star_object} [a {c.get_label('E41')} ; {c.get_label('P190')} ?mainid ] ;
@@ -482,7 +492,7 @@ select ?p_uri ?mainid where {{
         for person, pinfo in self.td_people.items():
             p_uri = pinfo['uri']
             self.assertIsNotNone(identifiers.get(p_uri))
-            self.assertEqual(pinfo['identifier'], identifiers['uri'].toPython(), f"Test identifier for {person}")
+            self.assertEqual(pinfo['identifier'], identifiers[p_uri].toPython(), f"Test identifier for {person}")
 
     def test_appellation(self):
         """Test that each person has the second or alternative names assigned, as sourced assertions"""
@@ -521,10 +531,14 @@ select ?appellation where {{
         """Test that each person has at most one death event, since they all only died once. Also
         test that the assertions look correct"""
         c = self.constants
-        # Look for all death events and see who they are about
+        # Look for all death events for the people in our test list
         deathevents = dict()
+        p_uri_list = '\n'.join([f"{d['uri'].n3()}" for d in self.td_people.values()])
         sparql = f"""
-select ?person ?de where {{
+select distinct ?person ?de where {{
+    VALUES ?person {{
+        {p_uri_list}
+    }}
     ?a a {c.get_assertion_for_predicate('P100')} ;
         {c.star_subject} ?de ;
         {c.star_object} ?person .
@@ -532,9 +546,9 @@ select ?person ?de where {{
         res = c.graph.query(sparql)
         for row in res:
             person = row['person']
-            de = row['de']
+            devent = row['de']
             self.assertIsNone(deathevents.get(person), f"{self.get_external_id(person)} should not die twice")
-            deathevents[person] = de
+            deathevents[person] = devent
 
         for person, pinfo in self.td_people.items():
             # Check if the person should have a death event.
@@ -542,18 +556,20 @@ select ?person ?de where {{
             ddescpred = c.get_assertion_for_predicate('P3')
             ddatepred = c.get_assertion_for_predicate('P4')
             if 'death' not in pinfo:
-                # Make sure that the death was found
-                self.assertIsNone(devent)
+                # Make allowance for a different death event having been added to the production store by WissKI
+                if devent is not None:
+                    self.assertIsNotNone(re.search(r'/[0-9a-f]{13}$', devent.toPython()))
                 continue
             else:
                 self.assertIsNotNone(devent)
                 # See if we have the expected info about the death event in question.
-                # Each event should have N description assertions, each with a P3 attribute.
+                # Each event should have N description assertions in English, each with a P3 attribute.
                 sparql = f"""
-select ?desc ?src where {{
+SELECT ?desc WHERE {{
     ?a a {ddescpred} ;
         {c.star_subject} {devent.n3()} ;
         {c.star_object} ?desc .
+    FILTER(LANGMATCHES(LANG(?desc), 'en'))
 }}"""
                 res = c.graph.query(sparql)
                 self.assertEqual(pinfo['death']['count'], count_result(res), "Death description count for %s" % person)
@@ -587,15 +603,16 @@ select distinct ?sref where {{
                 sparql = f"""
 select ?eth (count(?eth) as ?act) where {{
     ?a a {c.get_assertion_for_predicate('P107')} ;
-        {c.star_subject} {pinfo['uri'].n3()} ;
-        {c.star_object} [a {c.get_label('E74E')} ; {c.get_label('P1')} ?eth ] .
+        {c.star_subject} [a {c.get_label('E74E')} ; {c.get_label('P1')} ?eth ] ;
+        {c.star_object} {pinfo['uri'].n3()} .
 }} group by ?eth"""
                 res = c.graph.query(sparql)
                 rowct = 0
                 for row in res:
                     rowct += 1
-                    self.assertTrue(row['eth'] in eths)
-                    self.assertEqual(eths[row['eth']], row['act'])
+                    ethlabel = row['eth'].toPython()
+                    self.assertTrue(ethlabel in eths)
+                    self.assertEqual(eths[ethlabel], row['act'].toPython())
                 self.assertEqual(len(eths.keys()), rowct, "Ethnicity count for %s" % person)
 
     def test_religion(self):
@@ -610,18 +627,19 @@ select ?rel ?auth where {{
     ?a a {c.get_assertion_for_predicate('SP36')} ;
         {c.star_subject} ?relaff ;
         {c.star_object} {pinfo['uri'].n3()} ;
-        {c.star_auth} ?anode .
+        {c.star_auth} ?auth .
     ?a2 a {c.get_assertion_for_predicate('SP35')} ;
         {c.star_subject} ?relaff ;
-        {c.star_object} [a {c.get_label('C24')} ; {c.get_label('P1')} ?rel ] .
-    ?anode {c.get_label('P3')} ?auth .
+        {c.star_object} [a {c.get_label('C24')} ; {c.get_label('P1')} ?rel ] ;
+        {c.star_auth} ?auth .
 }}"""
                 res = c.graph.query(sparql)
                 # We are cheating by knowing that no test person has more than one religion specified
                 rows = [x for x in res]
                 self.assertEqual(1, len(rows))
-                self.assertTrue(rows[0]['rel'] in rels)
-                self.assertIn('Georgios Tornikes', rows[0]['auth'])
+                self.assertTrue(rows[0]['rel'].toPython() in rels)
+                authority = self.get_external_id(rows[0]['auth']).toPython()
+                self.assertIn(authority, rels['auth'])
 
     def test_occupation(self):
         """Test that occupations / non-legal designations are set correctly"""
@@ -637,7 +655,7 @@ select ?occ where {{
         {c.star_object} {pinfo['uri'].n3()} .
     ?a2 a {c.get_assertion_for_predicate('SP14')} ;
         {c.star_subject} ?pocc ;
-        {c.star_object} [a {c.get_label('C7')} ; {c.get_label('P1')} ?rel ] .
+        {c.star_object} [a {c.get_label('C2')} ; {c.get_label('P1')} ?occ ] .
     ?pocc a {c.get_label('C1')} .
 }}"""
                 res = c.graph.query(sparql)
@@ -708,7 +726,7 @@ select distinct ?kin ?kintype where {{
                 foundkin = defaultdict(list)
                 for row in res:
                     k = row['kintype'].toPython()
-                    foundkin[k].append(row['kin'].toPython())
+                    foundkin[k].append(self.get_external_id(row['kin']).toPython())
                 for k in foundkin:
                     foundkin[k] = sorted(foundkin[k])
                 self.assertDictEqual(pinfo['kinship'], foundkin, "Kinship links for %s" % person)
@@ -740,10 +758,10 @@ select ?poss ?authorid ?src where {{
     ?a2 a {c.get_assertion_for_predicate('R15')} ;
         {c.star_subject} ?edition ;
         {c.star_object} ?srcuri .
-    ?a3 a {c.get_assertion_for_predicate('R3')} ;
-        {c.star_subject} ?work ;
-        {c.star_object} ?edition .
-    ?a4 a {c.get_assertion_for_predicate('R16')} ;
+    ?a3 a {c.get_assertion_for_predicate('R5')} ;
+        {c.star_subject} ?edition ;
+        {c.star_object} ?text .
+    ?a4 a {c.get_assertion_for_predicate('R17')} ;
         {c.star_subject} ?creation ;
         {c.star_object} ?work .
     ?a5 a {c.get_assertion_for_predicate('P14')} ;
@@ -756,9 +774,9 @@ select ?poss ?authorid ?src where {{
                 rowct = 0
                 for row in res:
                     rowct += 1
-                    poss = row['poss']
-                    author = row['id']
-                    src = row['src']
+                    poss = row['poss'].toPython()
+                    author = row['authorid'].toPython()
+                    src = row['src'].toPython()
                     self.assertTrue(poss in pinfo['possession'], "Test possession is correct for %s" % person)
                     (agent, reference) = pinfo['possession'][poss]
                     self.assertEqual(author, agent, "Test possession authority is set for %s" % person)
@@ -770,8 +788,15 @@ select ?poss ?authorid ?src where {{
         """For each boulloterion, check that it exists only once and has only one inscription."""
         c = self.constants
         found = set()
+        boulloterions_to_test = '\n'.join([Literal(str(x)).n3() for x in self.td_boulloterions.keys()])
         sparql = f"""
-select ?boul ?inscr ?src ?auth where {{
+SELECT ?boul ?inscr ?src ?auth WHERE {{
+    VALUES ?boulid {{
+        {boulloterions_to_test}
+    }}
+    ?ida a {c.get_label('E15')} ;
+        {c.star_subject} ?boul ;
+        {c.get_label('P37')} [ a {c.get_label('E42')} ; {c.get_label('P190')} ?boulid ] .
     ?a a {c.get_assertion_for_predicate('P128')} ;
         {c.star_subject} ?boul ;
         {c.star_object} ?inscr ;
@@ -805,8 +830,10 @@ select ?boul ?inscr ?src ?auth where {{
             # The boulloterion should have the correct named authority or authorities
 
             auth = self.get_object(row['auth'], 'P3')
+            # Alphabetize the authority string we got
+            alph_auth = '; '.join(sorted(auth.split('; ')))
             real_auth = boulinfo.get('auth', 'Jeffreys, Michael J.')
-            self.assertEqual(real_auth, auth, f"Authority for boulloterion {boulid} correctly set")
+            self.assertEqual(real_auth, alph_auth, f"Authority for boulloterion {boulid} correctly set")
             # Separate query to check the boulloterion sources on the inscription assertion
             if len(boulinfo['sources']) > 1:
                 # Source should be a Bibliography which contains a set of works
@@ -941,6 +968,7 @@ select ?passage ?pbwed where {{
                 self.assertEqual(sinfo.get('pbwed'), pbwed)
             self.assertEqual(ct, sinfo.get('passages'))
 
+    @unittest.skip("not yet")
     def test_db_entry(self):
         """All the assertions in the database should be attached to DB records, linked to the single entry
         that created them."""

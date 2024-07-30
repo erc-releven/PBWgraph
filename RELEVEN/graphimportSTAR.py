@@ -785,7 +785,7 @@ class graphimportSTAR:
         whopred = 'SP13'
         whichpred = 'SP14'
         if factoid.occupation in self.constants.legal_designations:
-            # We need to treat it as a legal role instead of an occupation
+            # We need to treat it as a legal role instead of a social role / occupation
             roletype = self.constants.get_label('C13')
             whopred = 'SP26'
             whichpred = 'SP33'
@@ -798,11 +798,19 @@ class graphimportSTAR:
         if factoid.dignityOffice is None:
             return
         dignity_id = self.constants.get_dignity(factoid.dignityOffice.stdName)
-        # We treat dignities as legal roles
+        roletype = self.constants.get_label('C13')
+        whopred = 'SP26'
+        whichpred = 'SP33'
+        if dignity_id in self.constants.generic_social_roles:
+            # We need to treat it as a social instead of a legal role
+            roletype = self.constants.get_label('C1')
+            whopred = 'SP13'
+            whichpred = 'SP14'
+        # We treat (most) dignities as legal roles
         # (r:C13 Social Role Embodiment) [dwho:P26 is embodied by] person
         # (r:C13) [dwhich:P33 is embodiment of] dignity
-        self._find_or_create_social_designation(sourcenode, agent, factoid, graphperson, dignity_id,
-                                                self.constants.get_label('C13'), 'SP26', 'SP33')
+        self._find_or_create_social_designation(sourcenode, agent, factoid, graphperson, dignity_id, roletype,
+                                                whopred, whichpred)
 
     def languageskill_handler(self, sourcenode, agent, factoid, graphperson):
         """Assign a language skill to the person"""

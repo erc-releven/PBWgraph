@@ -1,4 +1,4 @@
-from rdflib import Graph, Literal, Namespace, RDF
+from rdflib import Graph, URIRef, Literal, Namespace, RDF, SKOS
 from warnings import warn
 import re
 import RELEVEN.PBWSources
@@ -54,6 +54,7 @@ class PBWstarConstants:
         # The classes we are using, keyed by their short forms.
         self.entitylabels = {
             'C1': self.namespaces['sdhss']['C1'],    # Social Quality of an Actor (Embodiment)
+            'C2': self.namespaces['sdhss']['C2'],    # Actor's Social Quality (Type)
             'C3': self.namespaces['sdhss']['C3'],    # Social Relationship
             'C4': self.namespaces['sdhss']['C4'],    # Social Relationship Type
             'C5': self.namespaces['sdhss']['C5'],    # Membership
@@ -250,18 +251,18 @@ class PBWstarConstants:
             self.orcid_agent = None
             f11s = [{'key': 'pbw',
                      'title': Literal('Prosopography of the Byzantine World'),
-                     'uri': Literal('https://pbw2016.kdl.kcl.ac.uk/')},
+                     'uri': URIRef('https://pbw2016.kdl.kcl.ac.uk/')},
                     {'key': 'viaf',
                      'title': Literal('Virtual Internet Authority File'),
-                     'uri': Literal('https://viaf.org/')},
+                     'uri': URIRef('https://viaf.org/')},
                     {'key': 'orcid',
-                     'title': Literal('OrcID'),
-                     'uri': Literal('https://orcid.org/')}]
+                     'title': Literal('ORCID', 'en'),
+                     'uri': URIRef('https://orcid.org/')}]
             for ent in f11s:
                 f11_query = f"""
                 ?a a {self.get_label('F11')} ;
-                    {self.get_label('P3')} {ent['title'].n3()} ;
-                    {self.get_label('P1')} {ent['uri'].n3()} ."""
+                    {self.get_label('P1')} {ent['title'].n3()} ;
+                    {SKOS.exactMatch.n3()} {ent['uri'].n3()} ."""
                 uris = self.ensure_entities_existence(f11_query)
                 f11_uri = uris['a']
                 # Store it in self.[key]_agent, e.g. self.pbw_agent
@@ -280,8 +281,28 @@ class PBWstarConstants:
             'Kinship': dict()
         }
         # Special-case 'slave' and ordained/consecrated roles out of 'occupations'
-        self.legal_designations = ['Slave', 'Monk', 'Nun', 'Nun (?)', 'Bishops', 'Monk (Latin)', 'Patriarch',
-                                   'Servant of Christ', 'Servant of God', 'Hieromonk', 'Servant of the Lord']
+        self.legal_designations = ['Slave', 'Monk', 'Bishops', 'Monk (Latin)', 'Patriarch', 'Hieromonk']
+
+        # Special-case certain "dignities" into generic social roles, cf.
+        # https://github.com/erc-releven/.github/issues/16
+        self.generic_social_roles = ['Agent', 'Anadochos', 'Asekretissa', 'Asketes', 'Basileus (rebel)', 'Depotatos',
+                                     'Despotatos', 'Diasemotatos', 'Doulos of the emperor', 'Doulos of the sebastos',
+                                     'Droungaria', 'Ex-droungarios of the fleet', 'Ex-emperor',
+                                     'Gambros of the emperor', 'General (?) of the Antiochenes', 'Herald',
+                                     'Hyperperilampros', 'Hypersebastos', 'Imperial doctor',
+                                     'Interpreter of the English', 'Interpreter of the Bulgarians',
+                                     'Interpreter of the Romans', 'Interpreter of the droungarios', 'Kanikline',
+                                     'Katepanissa', 'Kouropalatissa', 'Kritaina', 'Lady', 'Lawyer', 'Magistrissa',
+                                     'Man', 'Megal(o)epiphanestatos', 'Mystographissa', 'Oikeios of the emperor',
+                                     'Oikodespotes', 'Panentimos pantimos', 'Panhyperlampros', 'Panhypersebaste',
+                                     'Panhypersebastos', 'Panhypertimos', 'Pansebastohypertatos', 'Pansebastos sebaste',
+                                     'Pantimos', 'Patrikia', 'Phrourarchos', 'Phylax', 'Porphyrogennetos', 'Proedrissa',
+                                     'Protokouropalatissa', 'Protoproedrissa', 'Protospatharea', 'Protospatharissa',
+                                     'Protovestarchissa', 'Protovestiaria', 'Protovestiarissa',
+                                     'Relative of the megas domestikos', 'Scholarios', 'Scribe', 'Sebastokratorissa',
+                                     'Servant of the patriarch', 'Ship\'s captain', 'Son of the archon', 'Strategissa',
+                                     'Strateutes', 'Stratiotes', 'Topoteretissa', 'Vestarchissa', 'Vestena',
+                                     'Xenodochos']
 
         # Make a list of boulloterions that are missing their references, with a link to the publication
         # that the seals come from or -1 if we should use the seal catalogues as sources
@@ -387,18 +408,21 @@ class PBWstarConstants:
         if srlabel in self.legal_designations:
             return self._find_or_create_cv_entry('SocietyRole', self.get_label('C12'), srlabel)
         else:
-            return self._find_or_create_cv_entry('SocietyRole', self.get_label('C7'), srlabel)
+            return self._find_or_create_cv_entry('SocietyRole', self.get_label('C2'), srlabel)
 
     def get_dignity(self, dignity):
         # Dignities in PBW tend to be specific to institutions / areas;
         # make an initial selection by breaking on the 'of'
-        diglabel = [dignity]
+        diglabel = dignity
         if ' of the ' not in dignity:  # Don't split (yet) titles that probably don't refer to places
-            diglabel = dignity.split(' of ')
-        dig_uuid = self._find_or_create_cv_entry('Dignity', self.get_label('C12'), diglabel[0])
-        # Make sure that the UUID also appears under the original label
-        self.cv['Dignity'][dignity] = dig_uuid
-        return dig_uuid
+            diglabel = dignity.split(' of ')[0]
+        if diglabel in self.generic_social_roles:
+            dig_uri = self._find_or_create_cv_entry('Dignity', self.get_label('C2'), diglabel)
+        else:
+            dig_uri = self._find_or_create_cv_entry('Dignity', self.get_label('C12'), diglabel)
+        # Make sure that the URI also appears under the original label, if we shortened it
+        self.cv['Dignity'][dignity] = dig_uri
+        return dig_uri
 
     def inrange(self, floruit):
         """Return true if the given floruit tag falls within RELEVEN's range"""
