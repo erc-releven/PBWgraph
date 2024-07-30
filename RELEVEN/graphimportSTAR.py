@@ -199,7 +199,7 @@ class graphimportSTAR:
             sparql = f"""
             ?gass a {c.get_label('E17')} . """
             sparql += self.create_assertion_sparql('a1', 'P41', '?gass', graphperson, c.pbw_agent)
-            sparql += self.create_assertion_sparql('a2', 'P37', '?gass', c.get_gender(pbw_sex), c.pbw_agent)
+            sparql += self.create_assertion_sparql('a2', 'P42', '?gass', c.get_gender(pbw_sex), c.pbw_agent)
             # Check and create it if necessary
             res = c.ensure_entities_existence(sparql)
             c.document(pbwdoc, res['a1'], res['a2'])
@@ -219,7 +219,7 @@ class graphimportSTAR:
         # Create the SPARQL expression
         sparql = f"""
         ?appellation a crm:E41 ;
-            crm:P190 {Literal(appellation, lang='en').n3()} .
+            crm:P190 {Literal(appellation, lang=_get_source_lang(sqlperson)).n3()} .
         """
         sparql += self.create_assertion_sparql('a1', 'P1', graphperson, '?appellation', c.pbw_agent)
         # Check and create it if necessary
@@ -294,6 +294,7 @@ class graphimportSTAR:
         # belong to their collection and that they came from this boulloterion.
         for i, seal in enumerate(boulloterion.seals):
             coll = self.find_or_create_seal_collection(seal.collection.collectionName)
+            # TODO needs to change to use sealKey, since this id isn't unique
             seal_id = "%d.%d.%d" % (seal.collectionKey, seal.boulloterionKey, seal.collectionRef)
             sparql += f"""
         ?seal{i} a {c.get_label('E22S')} ;

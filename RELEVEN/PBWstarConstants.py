@@ -357,7 +357,8 @@ class PBWstarConstants:
         if label not in self.cv[category]:
             # We have to create the node, possibly attaching it to a superclass
             dataprop = self.get_label('P1')
-            litlabel = Literal(label, 'en')
+            # TODO attach language to these later
+            litlabel = Literal(label)
             sparql = f"""
             ?cventry a {nodeclass} ;
                 {dataprop} {litlabel.n3()} ."""
@@ -433,24 +434,44 @@ class PBWstarConstants:
         return new_uris
 
     def ensure_egroup_existence(self, gclass, glink, members):
+        # Get the URI list
         mvalues = '\n'.join([f"({x.n3()})" for x in members])
+        # Look to see if a group with exactly these members exists
         sparql = f"""
+SELECT ?egroup WHERE {{
+    VALUES (?member) {{
+{mvalues}
+    }}
+    {{
         SELECT ?egroup WHERE {{
-            VALUES (?member) {{
-        {mvalues}
-            }}
             ?egroup a {self.get_label(gclass)} ;
-                {self.get_label(glink)} ?member .
+                {self.get_label(glink)} ?item .
         }}
-        GROUP BY ?egroup
-        HAVING (COUNT(?member) = {len(members)})
-        """
+        GROUP BY ?egroup HAVING (COUNT(?item) = {len(members)})
+    }}
+    ?egroup {self.get_label(glink)} ?member .
+}}
+GROUP BY ?egroup
+HAVING (COUNT(?member) = {len(members)})
+"""
         rows = [x for x in self.graph.query(sparql)]
         if len(rows) == 0:
             # We need to create the group and its members
             mlist = ', '.join([x.n3() for x in members])
+            # Get the group label, which is a semicolon-separated list of member labels
+            mnames = []
+            for m in members:
+                mname = self.graph.value(m, self.namespaces['crm'].P3_has_note)
+                if mname is None:
+                    warn(f"Group member {m} has no label?!")
+                    mnames.append('XX ANON')
+                else:
+                    mnames.append(str(mname))
+            mlabel = Literal('; '.join(mnames)).n3()
+            # Construct the query
             sparql = f"""
         ?egroup a {self.get_label(gclass)} ;
+            {self.get_label('P3')} {mlabel} ;
             {self.get_label(glink)} {mlist} .
             """
             answer = self.ensure_entities_existence(sparql, force_create=True)
