@@ -102,6 +102,7 @@ class PBWstarConstants:
             'F11': self.namespaces['lrmoo']['F11_Corporate_Body'],  # Corporate Body
             'F27': self.namespaces['lrmoo']['F27_Work_Creation'],  # Work Creation
             'F28': self.namespaces['lrmoo']['F28_Expression_Creation'],  # Expression Creation
+            'F30': self.namespaces['lrmoo']['F30_Manifestation_Creation']
         }
 
         # The properties we are using, keyed by their short forms.

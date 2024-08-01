@@ -1,12 +1,11 @@
-from rdflib.plugins.stores import sparqlstore
-
 import config
 import re
 import unittest
 from collections import Counter, defaultdict
 from functools import reduce
-from rdflib import Graph, RDF, Literal
+from rdflib import RDF, Literal
 from rdflib.exceptions import UniquenessError
+from rdflib.plugins.stores import sparqlstore
 from RELEVEN import PBWstarConstants, graphimportSTAR
 from sqlalchemy.exc import DatabaseError
 from tempfile import NamedTemporaryFile
@@ -20,6 +19,7 @@ def count_result(res):
     return reduce(lambda x, y: x + 1, res, 0)
 
 
+# noinspection PyUnresolvedReferences
 class GraphImportTests(unittest.TestCase):
     graphdriver = None
     constants = None
@@ -491,7 +491,7 @@ select ?p_uri ?mainid where {{
         # Check that they are correct
         for person, pinfo in self.td_people.items():
             p_uri = pinfo['uri']
-            self.assertIsNotNone(identifiers.get(p_uri))
+            self.assertIsNotNone(identifiers.get(p_uri), f"Identifier found for {person}")
             self.assertEqual(pinfo['identifier'], identifiers[p_uri].toPython(), f"Test identifier for {person}")
 
     def test_appellation(self):
@@ -764,7 +764,7 @@ select ?poss ?authorid ?src where {{
         {c.star_object} ?text .
     ?a4 a {c.get_assertion_for_predicate('R17')} ;
         {c.star_subject} ?creation ;
-        {c.star_object} ?work .
+        {c.star_object} ?text .
     ?a5 a {c.get_assertion_for_predicate('P14')} ;
         {c.star_subject} ?creation ;
         {c.star_object} ?author .

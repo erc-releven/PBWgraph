@@ -218,8 +218,8 @@ class graphimportSTAR:
 
         # Create the SPARQL expression
         sparql = f"""
-        ?appellation a crm:E41 ;
-            crm:P190 {Literal(appellation, lang=_get_source_lang(sqlperson)).n3()} .
+        ?appellation a {c.get_label('E41')} ;
+            {c.get_label('P190')} {Literal(appellation, lang=_get_source_lang(sqlperson)).n3()} .
         """
         sparql += self.create_assertion_sparql('a1', 'P1', graphperson, '?appellation', c.pbw_agent)
         # Check and create it if necessary
@@ -425,29 +425,29 @@ class graphimportSTAR:
         # Keep track of the assertions we may have created
         assertions_set = []
         afact_src = None
-        # Express the expression
+        # Express the edition/publication
         sparql = f"""
-        ?expr a {c.get_label('F3P')};
+        ?publ a {c.get_label('F3P')};
             {c.get_label('P3')} {Literal(edition_id).n3()} . """
 
         if text_id is None:
-            # We are dealing with a secondary source. Assert an expression creation instead of a
-            # work creation, with the editors; we will have to go back later and say that this
+            # We are dealing with a secondary source. Assert a publication (manifestation) creation instead of a
+            # text (expression) creation, with the editors; we will have to go back later and say that this
             # depended on another work (the primary source).
             # TODO remove the 'based' leg after reconciliation
             sparql += f"""
-        ?ec a {c.get_label('F28')} . """
-            sparql += self.create_assertion_sparql('a1', 'R17', '?ec', '?expr', editors, '?expr')
-            sparql += self.create_assertion_sparql('a2', 'P14', '?ec', editors, editors, '?expr')
+        ?ec a {c.get_label('F30')} . """
+            sparql += self.create_assertion_sparql('a1', 'R24', '?ec', '?publ', editors, '?publ')
+            sparql += self.create_assertion_sparql('a2', 'P14', '?ec', editors, editors, '?publ')
             assertions_set.extend(['a1', 'a2'])
         else:
             # We are dealing with a primary source, so we need to make a bunch of assertions.
-            # First, the editors assert that the edition (that is, the expression) belongs to
+            # First, the editors assert that the edition (that is, the publication) belongs to
             # the work; this is based on, well, the edition.
             sparql += f"""
         ?work a {c.get_label('F2T')} ;
             {c.get_label('P3')} "{text_id}" . """
-            sparql += self.create_assertion_sparql('a1', 'R3', '?work', '?expr', editors, '?expr')
+            sparql += self.create_assertion_sparql('a1', 'R5', '?publ', '?work', editors, '?publ')
             assertions_set.append('a1')
             # Now we need to see if authorship has to be asserted.
             author = self.get_author_node(self.constants.author(sourcekey))
@@ -457,7 +457,7 @@ class graphimportSTAR:
                 # Otherwise, the authority (for now) is the editor.
                 # If we don't have a specific reference for the claim, we just use the edition (again).
                 aship_authority = editors
-                aship_source = '?expr'
+                aship_source = '?publ'
                 if 'factoid' in workinfo:
                     # Pull in the authorship factoid that describes the authorship of this work
                     afact = self.mysqlsession.query(pbw.Factoid).filter_by(factoidKey=workinfo['factoid']).scalar()
@@ -480,7 +480,7 @@ class graphimportSTAR:
                         # it is a narrative factoid, then the PBW editor is making the claim
                         # Either way, the PBW editor will be who says this passage belongs to the edition
                         aship_authority = author if afact.factoidType == 'Authorship' else pbw_authority
-                        # We have to make a sourceref expression node, connected to this expression, for
+                        # We have to make a sourceref node, connected to this text, for
                         # the factoid source
                         sparql += f"""
         ?srcref a {c.get_label('E33')} ;
@@ -499,22 +499,22 @@ class graphimportSTAR:
                 if aship_source == '?srcref':
                     # It is the PBW editor who says that a particular passage belongs to the respective edition.
                     # n.b. We will need to fix/change this manually for non-factoid provenance!
-                    sparql += self.create_assertion_sparql('a2', 'R15', '?expr', aship_source, pbw_authority)
+                    sparql += self.create_assertion_sparql('a2', 'R15', '?publ', aship_source, pbw_authority)
                     assertions_set.append('a2')
 
                 # We have now dealt with extracting information from some relevant authorship factoid, if it exists.
                 # Move on to the assertion that the author authored the work
                 sparql += f"""
         ?wc a {c.get_label('F27')} . """
-                sparql += self.create_assertion_sparql('a3', 'R16', '?wc', '?work', aship_authority, aship_source)
+                sparql += self.create_assertion_sparql('a3', 'R17', '?wc', '?work', aship_authority, aship_source)
                 sparql += self.create_assertion_sparql('a4', 'P14', '?wc', author, aship_authority, aship_source)
                 assertions_set.extend(['a3', 'a4'])
 
-        # Whatever we just made, return the expression, which is what we are after.
+        # Whatever we just made, return the edition/publication, which is what we are after.
         res = c.ensure_entities_existence(sparql)
         if afact_src:
             c.document(afact_src, *[res[x] for x in assertions_set])
-        return res['expr']
+        return res['publ']
 
     def _find_or_create_identified_entity(self, etype, agent, identifier, dname):
         """Return an identified entity URIRef. This can be a Boulloterion (E22 subclass), an E21 Person, an E39 Agent,
@@ -708,18 +708,28 @@ class graphimportSTAR:
                 factoid.factoidKey, factoid.engDesc))
             return
 
-        # Set up the death event. We take for granted that every 11th-c. person has one.
-        sparql = f"""
+        # Set up the death event. We take for granted that every 11th-c. person has a maximum of one death,
+        # so we set this event separately and we don't bother with source or authority, as those will be
+        # attached to the date/place/etc. of the event.
+        de_query = f"""
         ?de a {c.get_label('E69')} .
         ?a0 a {c.get_assertion_for_predicate('P100')} ;
             {c.star_subject} ?de ;
             {c.star_object} {graphperson.n3()} .
         """
+        res = c.ensure_entities_existence(de_query)
+        deathevent = res['de']
+        # For ease of understanding we should give the death event a label with the person's PBW identifier.
+        # Add the label if it doesn't already exist, in a backwards-compatible way
+        pbwperson = factoid.main_person()[0]
+        person_pbwid = f"{pbwperson.name} {pbwperson.mdbCode}"
+        if c.graph.value(deathevent, c.predicates['P3']) is None:
+            c.graph.add(deathevent, c.predicates['P3'], Literal("Death event for " + person_pbwid).n3() )
 
         # Get the description of the death in English and the original language
         olang = _get_source_lang(factoid) or 'grc'
         descriptions = [Literal(factoid.replace_referents(), 'en'), Literal(factoid.origLDesc, olang)]
-        sparql += self.create_assertion_sparql('a1', 'P3', '?de', descriptions, agent, sourcenode)
+        sparql = self.create_assertion_sparql('a1', 'P3', deathevent, descriptions, agent, sourcenode)
 
         # See if the death is dated and, if so, add the date
         deathdate = factoid.deathRecord.sourceDate
@@ -727,7 +737,7 @@ class graphimportSTAR:
             sparql += f"""
         ?deathdate a {c.get_label('E52')} ;
             {c.get_label('P80')} {Literal(deathdate).n3()} . """
-            sparql += self.create_assertion_sparql('a2', 'P4', '?de', '?deathdate', agent, sourcenode)
+            sparql += self.create_assertion_sparql('a2', 'P4', deathevent, '?deathdate', agent, sourcenode)
 
         res = c.ensure_entities_existence(sparql)
         c.document(pbwdoc, res['a1'])
@@ -755,12 +765,16 @@ class graphimportSTAR:
         # (grouping) [:whichpred] rnode
         c = self.constants
         pbwdoc = c.pbw_uri(factoid)
+        # We have to deal with the fact that we might have duplicate assertions with different geographic
+        # scopes, which we have chopped off in the title name. TODO we should add the geographic scopes to these
+        # when we can...
         sparql = f"""
         ?designation a {label} . """
         sparql += self.create_assertion_sparql('a1', whopred, '?designation', graphperson, agent, sourcenode)
         sparql += self.create_assertion_sparql('a2', whichpred, '?designation', des, agent, sourcenode)
-        res = c.ensure_entities_existence(sparql)
-        c.document(pbwdoc, res['a1'], res['a2'])
+        sparql += f"        {pbwdoc.n3()} a {c.get_label('E31')}; {c.get_label('P70')} ?a1, ?a2 ."
+        c.ensure_entities_existence(sparql)
+        # c.document(pbwdoc, res['a1'], res['a2'])
 
     def religion_handler(self, sourcenode, agent, factoid, graphperson):
         """Assign a group membership for the given religious confession to the person"""
@@ -797,11 +811,12 @@ class graphimportSTAR:
     def dignity_handler(self, sourcenode, agent, factoid, graphperson):
         if factoid.dignityOffice is None:
             return
-        dignity_id = self.constants.get_dignity(factoid.dignityOffice.stdName)
+        dignity_string = factoid.dignityOffice.stdName
+        dignity_id = self.constants.get_dignity(dignity_string)
         roletype = self.constants.get_label('C13')
         whopred = 'SP26'
         whichpred = 'SP33'
-        if dignity_id in self.constants.generic_social_roles:
+        if dignity_string in self.constants.generic_social_roles:
             # We need to treat it as a social instead of a legal role
             roletype = self.constants.get_label('C1')
             whopred = 'SP13'
