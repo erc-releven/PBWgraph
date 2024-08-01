@@ -724,7 +724,7 @@ class graphimportSTAR:
         pbwperson = factoid.main_person()[0]
         person_pbwid = f"{pbwperson.name} {pbwperson.mdbCode}"
         if c.graph.value(deathevent, c.predicates['P3']) is None:
-            c.graph.add(deathevent, c.predicates['P3'], Literal("Death event for " + person_pbwid).n3() )
+            c.graph.add((deathevent, c.predicates['P3'], Literal("Death event for " + person_pbwid)))
 
         # Get the description of the death in English and the original language
         olang = _get_source_lang(factoid) or 'grc'
@@ -942,7 +942,7 @@ class graphimportSTAR:
         # Filter for assertions with a UUID rather than a WissKI identifier. These are the ones that should have
         # been created on this run.
         new_assertions = [row['a'] for row in res
-                          if re.search(r"/\w{8}-\w{4}-\w{4}-\w{4}-\w{12}$", row['a'].toPython())]
+                          if re.search(r"/\w{8}-\w{4}-\w{4}-\w{4}-\w{12,}$", row['a'].toPython())]
         if len(new_assertions):
             print(f"Recording {len(new_assertions)} new assertions in the graph.")
             # Create the database record

@@ -27,7 +27,7 @@ class GraphImportTests(unittest.TestCase):
     # death, ethnicity, religion, societyrole, legalrole, language, kinship, possession
     td_people = {
         'Anna 62': {'gender': ['Female'], 'identifier': 'Ἄννα Κομνηνή',
-                    'secondname': {'Κομνηνοῦ': 2},
+                    'secondname': {'Κομνηνοῦ': {'count': 2}},
                     'death': {'count': 1, 'dated': 0},
                     'religion': {'Christian': ['Georgios 25002']},
                     'legalrole': {'Basilis': 1, 'Basilissa': 1, 'Kaisarissa': 4},
@@ -50,7 +50,8 @@ class GraphImportTests(unittest.TestCase):
                     'kinship': {'grandmother': ['Anonymus 61'],
                                 'mother': ['Ioannes 61', 'Nikephoros 62']}},
         'Anna 101': {'gender': ['Female'], 'identifier': 'Ἄννα',
-                     'altname': {'Ἀρετῆς': 1}, 'occupation': {'Nun': 1},
+                     'altname': {'Ἀρετῆς': {'count': 1, 'source': 'Michel Psellos, Chronographie, 2 vols., Paris 1967'}},
+                     'occupation': {'Nun': 1},
                      'kinship': {'daughter': ['Eudokia 1', 'Konstantinos 10']}},
         'Anna 102': {'gender': ['Female'], 'identifier': ' Ἄννῃ',
                      'death': {'count': 1, 'dated': 0}, 'occupation': {'Nun': 1},
@@ -73,12 +74,16 @@ class GraphImportTests(unittest.TestCase):
                                      'Estates much poorer than Ani and its territory':
                                          ['Aristakes 101', '63.8-9 (55)']}},
         'Herve 101': {'gender': ['Male'], 'identifier': 'Ἐρβέβιον τὸν Φραγγόπωλον',
-                      'secondname': {'Φραγγόπωλον': 2},
+                      'secondname': {'Φραγγόπωλον': {'count': 2}},
                       'ethnicity': {'Norman': 1},
                       'legalrole': {'Stratelates': 1, 'Vestes': 1, 'Magistros': 1},
                       'possession': {'House at Dagarabe in Armeniakon': ['Ioannes 110', '485.52']}},
         'Ioannes 62': {'gender': ['Male'], 'identifier': 'Ἰωάννης',
-                       'secondname': {'Δούκα': 6}, 'altname': {'Ἰγνάτιος': 1},
+                       'secondname': {'Δούκα': {'count': 6}},
+                       'altname': {'Ἰγνάτιος': {'count': 1,
+                                                'source': '“Commémoraisons des Comnènes dans le typikon liturgique du '
+                                                          'monastère du Christ Philanthrope (ms. Panaghia Kamariotissa '
+                                                          '29)”, Revue des études Byzantines 63 (2005), 41-69'}},
                        'death': {'count': 1, 'dated': 0},
                        'legalrole': {'Stratarches': 1, 'Kaisar': 21, 'Basileopator': 1, 'Strategos autokrator': 2,
                                      'Basileus': 3, 'Monk': 4},
@@ -108,12 +113,16 @@ class GraphImportTests(unittest.TestCase):
                         'death': {'count': 1, 'dated': 0},
                         'legalrole': {'Archbishop': 3, 'Monk': 3}},
         'Ioannes 102': {'gender': ['Eunuch'], 'identifier': 'Ἰωάννην',
-                        'legalrole': {'Bishop': 1, 'Metropolitan': 13, 'Protoproedros': 1, 'Hypertimos': 2,
+                        # Metropolitan should be 12 but is 13 currently in production, because it erroneously
+                        # included an out-of-scope letter of Theophylact of Ohrid
+                        'legalrole': {'Bishop': 1, 'Metropolitan': 12, 'Protoproedros': 1, 'Hypertimos': 2,
                                       'Protoproedros of the protosynkelloi': 2, 'Protosynkellos': 2}},
         'Ioannes 110': {'gender': ['Male'], 'identifier': 'Ἰωάννου...τοῦ Σκυλίτζη',
                         'legalrole': {'Megas droungarios of the vigla': 1, 'Kouropalates': 1}},
         'Konstantinos 62': {'gender': ['Male'], 'identifier': 'Κωνσταντίνῳ',
-                            'secondname': {'Δούκα': 1},
+                            'secondname': {'Δούκα': {'count': 1,
+                                                     'source': 'Annae Comnenae Alexias, Corpus fontium historiae '
+                                                               'Byzantinae 40/1, Berlin – New York 2001'}},
                             'death': {'count': 2, 'dated': 0},
                             'legalrole': {'Basileus': 3, 'Basileus (co-emperor)': 3},
                             'occupation': {'Porphyrogennetos': 5},
@@ -127,7 +136,9 @@ class GraphImportTests(unittest.TestCase):
                             'possession': {
                                 'An estate, Pentegostis, near Serres, with excellent water and buildings to house the '
                                 'imperial entourage': ['Eustathios 20147', '269.60-62']}},
-        'Konstantinos 64': {'gender': ['Eunuch'], 'identifier': 'Κωνσταντῖνος', 'altname': {'Θεοδώρῳ': 1},
+        'Konstantinos 64': {'gender': ['Eunuch'], 'identifier': 'Κωνσταντῖνος',
+                            'altname': {'Θεοδώρῳ': {'count': 1, 'source': '“Βυζαντινὰ χρυσόβουλλα καὶ πιττάκια”,'
+                                                                          ' Ἐκκλησιαστικὴ Ἀλήθεια 4 (1883-84) 431'}},
                             'death': {'count': 1, 'dated': 0},
                             'legalrole': {'Domestikos of the eastern tagmata': 1, 'Nobelissimos': 7, 'Praipositos': 1,
                                           'Domestikos of the scholai': 1, 'Proedros': 1, 'Vestarches': 1,
@@ -141,7 +152,7 @@ class GraphImportTests(unittest.TestCase):
                                 'A house with a cistern near the Holy Apostles (in Constantinople)': ['Ioannes 110',
                                                                                                       '422.18']}},
         'Konstantinos 101': {'gender': ['Male'], 'identifier': 'Κωνσταντῖνος ὁ Διογένης',
-                             'secondname': {'Διογένης': 6},
+                             'secondname': {'Διογένης': {'count': 6}},
                              'death': {'count': 2, 'dated': 0},
                              'legalrole': {'Doux': 4, 'Patrikios': 2, 'Strategos': 3, 'Archon': 1, 'Monk': 1},
                              'kinship': {'husband': ['Anonyma 108'],
@@ -149,8 +160,13 @@ class GraphImportTests(unittest.TestCase):
                                          'husband of niece': ['Romanos 3'],
                                          'nephew (by marriage)': ['Romanos 3']}},
         'Konstantinos 102': {'gender': ['Male'], 'identifier': 'Κωνσταντίνῳ',
-                             'secondname': {'Βοδίνῳ': 3},
-                             'altname': {'Πέτρον ἀντὶ Κωνσταντίνου μετονομάσαντες': 1},
+                             'secondname': {'Βοδίνῳ': {'count': 3}},
+                             'altname': {'Πέτρον ἀντὶ Κωνσταντίνου μετονομάσαντες':
+                                             {'count': 1,
+                                              'source': 'Ἡ συνέχεια τῆς Χρονογραφίας τοῦ Ἰωάννου Σκυλίτση (Ioannes '
+                                                        'Skylitzes Continuatus), Ἑταιρεία Μακεδονικῶν Σπουδῶν, Ιδρυμα '
+                                                        'Μελετῶν Χερσονήσου τοῦ Αἵμου 105, Thessalonike (1968) 103-186'}
+                                         },
                              'legalrole': {'King': 2, 'Basileus': 1},
                              'kinship': {'son': ['Michael 101'], 'father': ['Georgios 20253']}},
         'Konstantinos 110': {'gender': ['Male'], 'identifier': 'Κωνσταντῖνος',
@@ -380,6 +396,16 @@ class GraphImportTests(unittest.TestCase):
             'editor': 'Rízou-Kouroúpou, Matoúla; Vannier, Jean-François',
             'passages': 14,
             'pbwed': 'Jeffreys, Michael J.'
+        },
+
+        # Source that we split into multiple sub-sources: Kleinchroniken #5
+        # The work has no author but it does have an edition
+        'kleinchroniken_5': {
+            'work': 'Short Chronicle #5',
+            'edition': 'Die byzantinischen Kleinchroniken, 3 vols., Vienna 1975-1979, 54-56',
+            'editor': 'Schreiner, Peter',
+            'passages': 1,
+            'pbwed': 'Papacostas, Tassos'
         }
 
     }
@@ -505,14 +531,20 @@ select ?p_uri ?mainid where {{
                 names.update(pinfo['altname'])
             if len(names) > 0:
                 sparql = f"""
-select ?appellation where {{
+select ?appellation ?src where {{
     ?a1 a {c.get_assertion_for_predicate('P1')} ;
         {c.star_subject} {pinfo['uri'].n3()} ;
         {c.star_object} ?appellation ;
-        {c.star_based} ?src .
+        {c.star_auth} ?authority ;
+        {c.star_based} ?passage .
+    OPTIONAL {{
+        ?a2 a {c.get_assertion_for_predicate('R15')} ;
+            {c.star_subject} [a {c.get_label('F3P')} ; {c.get_label('P3')} ?src ] ;
+            {c.star_object} ?passage .
+    }}
 }}"""
                 res = c.graph.query(sparql)
-                found_appels = defaultdict(int)
+                found_appels = dict()
                 for row in res:
                     appel = row['appellation']
                     # The appellation should be an E41, have an English and an original language
@@ -523,7 +555,15 @@ select ?appellation where {{
                     # Fortunately for us all the original language appellations are Greek
                     self.assertTrue('en' in langs)
                     self.assertTrue('grc' in langs)
-                    found_appels[langs['grc']] += 1
+                    # Add the count and the source text to the found_appels dict. If the name is
+                    # already there (i.e. there are multiple assertions) remove the source text.
+                    test_name = langs['grc']
+                    if test_name in found_appels:
+                        found_appels[test_name]['count'] += 1
+                        if 'source' in found_appels[test_name]:
+                            del found_appels[test_name]['source']
+                    else:
+                        found_appels[test_name] = {'count': 1, 'source': row['src'].toPython()}
                 # Check that we found all of them
                 self.assertDictEqual(names, found_appels)
 
@@ -970,12 +1010,13 @@ select ?pbwed (count(?passage) as ?pct) where {{
                 # at least the number from the test database.
                 self.assertGreaterEqual(row['pct'].toPython(), sinfo.get('passages'))
 
-    @unittest.skip("not yet")
     def test_db_entry(self):
         """All the assertions in the database should be attached to DB records, linked to the single entry
         that created them."""
-        c = self.constants
+        if config.dbmode == 'prod':
+            self.skipTest("skipping DB entry test for production")
 
+        c = self.constants
         # How many assertions do we have? These are the things that have P140 subjects
         total_assertions = len([x for x in c.graph.subjects(c.predicates['P140'])])
         # No assertion should have more than one P140
@@ -996,7 +1037,7 @@ select (count(?a) as ?numass) ?record ?tstamp ?me where {{
         self.assertEqual(1, len(linked))
         result = linked[0]
 
-        self.assertEqual(result['numass'], total_assertions)
+        self.assertEqual(result['numass'].toPython(), total_assertions)
         self.assertIsNotNone(result['tstamp'])
         self.assertEqual('Andrews, Tara Lee', self.get_object(result['me'], 'P3'))
 
@@ -1004,6 +1045,9 @@ select (count(?a) as ?numass) ?record ?tstamp ?me where {{
     def test_repeat(self):
         """If we have a DB connection and re-run the import, there should be zero new assertions
         and the graph should not change."""
+        if config.dbmode == 'prod':
+            self.skipTest("skipping data regeneration test for production")
+
         # See how many triples are in the graph
         c = self.constants
         graph_size = len(c.graph)
@@ -1016,7 +1060,7 @@ select (count(?a) as ?numass) ?record ?tstamp ?me where {{
         try:
             gimport.process_persons()
         except DatabaseError:
-            self.skipTest("Cannot run repetition test without a MySQL connection.")
+            self.skipTest("Cannot run data regeneration test without a MySQL connection.")
         # Check the length of the resulting graph
         self.assertEqual(graph_size, len(gimport.g), "Regeneration of graph results in no change to size of graph")
         # Check that the triples are all identical
