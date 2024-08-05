@@ -9,6 +9,7 @@ from rdflib import Graph, Literal, XSD
 from rdflib.plugins.stores import sparqlstore
 from sqlalchemy import create_engine, and_
 from sqlalchemy.orm import sessionmaker
+from urllib.error import URLError
 from warnings import warn
 
 
@@ -298,7 +299,7 @@ class graphimportSTAR:
             seal_id = "%d.%d.%d" % (seal.collectionKey, seal.boulloterionKey, seal.collectionRef)
             sparql += f"""
         ?seal{i} a {c.get_label('E22S')} ;
-            {c.get_label('P3')} "{seal_id}" . """
+            {c.get_label('P3')} {Literal(seal_id).n3()} . """
             sparql += self.create_assertion_sparql(f"a{i}c", 'P46', coll, f'?seal{i}', pbweditor)
             sparql += self.create_assertion_sparql(f"a{i}b", 'L1', boul_node, f'?seal{i}', pbweditor)
 
@@ -446,7 +447,7 @@ class graphimportSTAR:
             # the work; this is based on, well, the edition.
             sparql += f"""
         ?work a {c.get_label('F2T')} ;
-            {c.get_label('P3')} "{text_id}" . """
+            {c.get_label('P3')} {Literal(text_id).n3()} . """
             sparql += self.create_assertion_sparql('a1', 'R5', '?publ', '?work', editors, '?publ')
             assertions_set.append('a1')
             # Now we need to see if authorship has to be asserted.
@@ -927,24 +928,24 @@ class graphimportSTAR:
         database creation event."""
         c = self.constants
         tla = self.get_authority_node([self.constants.ta])
+
         # Find all assertions that haven't been created by a different software run.
         # We are assuming that assertions and only assertions have P140 predicates.
-        sparql_check = f"""
-        select distinct ?a where {{
-            ?a {c.star_subject} ?subject .
-            MINUS {{
-                ?l a {c.get_label('D10')} ;
-                    {c.get_label('L11')} ?a .
-            }}
+	# We also assume that assertions without a UUID were created by WissKI.
+        sparql_criteria = f"""
+        ?a {c.star_subject} ?subject .
+        MINUS {{
+            ?l a {c.get_label('D10')} ;
+                {c.get_label('L11')} ?a .
         }}
+        FILTER(!REGEX(STR(?a), "/\\\\w{{13}}$"))
         """
-        res = self.g.query(sparql_check)
-        # Filter for assertions with a UUID rather than a WissKI identifier. These are the ones that should have
-        # been created on this run.
-        new_assertions = [row['a'] for row in res
-                          if re.search(r"/\w{8}-\w{4}-\w{4}-\w{4}-\w{12,}$", row['a'].toPython())]
-        if len(new_assertions):
-            print(f"Recording {len(new_assertions)} new assertions in the graph.")
+        res = self.g.query(f"SELECT (COUNT(?a) AS ?act) WHERE {{ {sparql_criteria} }}")
+        num_new = 0
+        for row in res:  # there is only one row
+            num_new = row['act'].toPython()
+        if num_new > 0:
+            print(f"Recording {num_new} new assertions in the graph.")
             # Create the database record
             timenow = datetime.now()
             dbr_q = f"""
@@ -963,14 +964,76 @@ class graphimportSTAR:
             res = c.ensure_entities_existence(dbr_q, force_create=True)
             dbr = res['dbr']
 
-            for a in new_assertions:
-                self.g.add((dbr, c.predicates['L11'], a))
+            sparql_update = f"""
+        INSERT {{
+            {dbr.n3()} {c.get_label('L11')} ?a .
+        }} WHERE {{
+            {sparql_criteria}
+        }}
+            """
+            c.graph.update(sparql_update)
         else:
             print("No new assertions created on this run.")
 
-    def process_persons(self):
+    def _person_process_loop(self, person, direct_person_records, factoid_types, used_sources, boulloteria):
+         # Skip the anonymous groups for now
+        if person.name == 'Anonymi':
+            return
+        # Create or find the person node
+        print(f"*** Making/finding node for person {person.name} {person.mdbCode} ***")
+        graph_person = self.find_or_create_pbwperson(person)
+
+        # Get the 'factoids' that are directly in the person record
+        for ftype in direct_person_records:
+            ourftype = _smooth_labels(ftype)
+            try:
+                method = getattr(self, "%s_handler" % ourftype.lower())
+                method(person, graph_person)
+            except AttributeError:
+                warn(f"No handler for {ourftype} record info; skipping.")
+
+        # Now get the factoids that are really factoids
+        for ftype in factoid_types:
+            ourftype = _smooth_labels(ftype)
+            try:
+                method = getattr(self, "%s_handler" % ourftype.lower())
+            except AttributeError:
+                continue
+            fprocessed = 0
+            for f in person.main_factoids(ftype):
+                # Find out what sources we are actually using and make note of them
+                source_key = self.constants.source(f)
+                if source_key is None:
+                    print(f"Skipping factoid {f.factoidKey} with unlisted source {f.source}")
+                    continue
+                elif source_key == 'OUT_OF_SCOPE':
+                    print(f"Skipping factoid {f.factoidKey} with a source {f.source} out of our temporal scope")
+                    continue
+                else:
+                    used_sources.add(source_key)
+                # Note if we use a boulloterion
+                if f.boulloterion is not None:
+                    boulloteria.add(f.boulloterion.boulloterionKey)
+                # Get the source, either a text passage or a seal inscription, and the authority
+                # for the factoid. Authority will either be the author of the text, or the PBW
+                # colleague who read the text and ingested the information.
+                (source_node, authority_node) = self.get_source_and_agent(f)
+                # If the factoid has no source then we skip it
+                if source_node is None:
+                    print(f"HELP: Factoid {f.factoidKey} had no parseable source for some reason")
+                    continue
+                # If the factoid has no authority then we assign it to the generic PBW agent
+                if authority_node is None:
+                    authority_node = self.constants.pbw_agent
+                # Call the handler for this factoid type
+                method(source_node, authority_node, f, graph_person)
+                fprocessed += 1
+            if fprocessed > 0:
+                print(f"Ingested {fprocessed} {ftype} factoid(s)")
+        return True
+
+    def process_persons(self, skipuntil=None, processed=0):
         """Go through the relevant person records and process them for factoids"""
-        processed = 0
         used_sources = set()
         boulloteria = set()
         seals = 0
@@ -980,70 +1043,34 @@ class graphimportSTAR:
         # Get the list of factoid types in the PBW DB
         factoid_types = [x.typeName for x in self.mysqlsession.query(pbw.FactoidType).all() if
                          x.typeName != '(Unspecified)']
+        # Are we skipping?
+        started = skipuntil is None
         for person in self.collect_person_records():
-            # Skip the anonymous groups for now
-            if person.name == 'Anonymi':
-                continue
-            processed += 1
-            # Create or find the person node
-            print("*** Making/finding node for person %s %d ***" % (person.name, person.mdbCode))
-            graph_person = self.find_or_create_pbwperson(person)
-
-            # Get the 'factoids' that are directly in the person record
-            for ftype in direct_person_records:
-                ourftype = _smooth_labels(ftype)
-                try:
-                    method = getattr(self, "%s_handler" % ourftype.lower())
-                    method(person, graph_person)
-                except AttributeError:
-                    warn("No handler for %s record info; skipping." % ourftype)
-
-            # Now get the factoids that are really factoids
-            for ftype in factoid_types:
-                ourftype = _smooth_labels(ftype)
-                try:
-                    method = getattr(self, "%s_handler" % ourftype.lower())
-                except AttributeError:
+            # Get the person's string name
+            person_pbwstr = f"{person.name} {person.mdbCode}"
+            if not started:
+                if skipuntil == f"{person_pbwstr}":
+                    started = True
+                else:
+                    print(f"Skipping past {person_pbwstr}")
                     continue
-                fprocessed = 0
-                for f in person.main_factoids(ftype):
-                    # Find out what sources we are actually using and make note of them
-                    source_key = self.constants.source(f)
-                    if source_key is None:
-                        print("Skipping factoid %d with unlisted source %s" % (f.factoidKey, f.source))
-                        continue
-                    elif source_key == 'OUT_OF_SCOPE':
-                        print("Skipping factoid %d with a source %s out of our temporal scope"
-                              % (f.factoidKey, f.source))
-                        continue
-                    else:
-                        used_sources.add(source_key)
-                    # Note if we use a boulloterion, and if so how many seals it has
-                    if f.boulloterion is not None:
-                        if f.boulloterion.boulloterionKey not in boulloteria:
-                            seals += len(f.boulloterion.seals)
-                        boulloteria.add(f.boulloterion.boulloterionKey)
-                    # Get the source, either a text passage or a seal inscription, and the authority
-                    # for the factoid. Authority will either be the author of the text, or the PBW
-                    # colleague who read the text and ingested the information.
-                    (source_node, authority_node) = self.get_source_and_agent(f)
-                    # If the factoid has no source then we skip it
-                    if source_node is None:
-                        print("HELP: Factoid %d had no parseable source for some reason" % f.factoidKey)
-                        continue
-                    # If the factoid has no authority then we assign it to the generic PBW agent
-                    if authority_node is None:
-                        authority_node = self.constants.pbw_agent
-                    # Call the handler for this factoid type
-                    method(source_node, authority_node, f, graph_person)
-                    fprocessed += 1
-                if fprocessed > 0:
-                    print("Ingested %d %s factoid(s)" % (fprocessed, ftype))
+            try:
+                result = self._person_process_loop(person, direct_person_records, factoid_types,
+                                                   used_sources, boulloteria)
+                if result:
+                    processed += 1
+            except URLError as e:
+                print(f"Obtained URLerror {e.reason}; will retry")
+                result = self._person_process_loop(person, direct_person_records, factoid_types,
+                                                   used_sources, boulloteria)
+                # If we get another exception then it's a persistent network error and we die anyway
+                if result:
+                    processed += 1
 
         self.record_assertion_factoids()
-        print("Processed %d person records." % processed)
-        print("Used the following sources: %s" % sorted(used_sources))
-        print("Used the following boulloterion IDs with a total of %d seals: %s" % (seals, sorted(boulloteria)))
+        print(f"Processed {processed} person records.")
+        print(f"Used the following sources: {sorted(used_sources)}")
+        print(f"Used the following boulloterion IDs: {sorted(boulloteria)}" )
 
 
 # If we are running as main, execute the script
@@ -1058,10 +1085,13 @@ if __name__ == '__main__':
     parser.add_argument('-g', '--graph',
                         default=config.graphuri,
                         help="Graph containing existing STAR assertions, if any")
+    parser.add_argument('-r', '--resume-from',
+                        default=None,
+                        help="Resume from the named PBW person")
     args = parser.parse_args()
     # Process the person records
     gimport = graphimportSTAR(origgraph=args.graph, testmode=args.testing)
-    gimport.process_persons()
+    gimport.process_persons(skipuntil=args.resume_from)
     # Where are we writing the graph to? Default is the location in config.py
     filename = args.graph
     if args.graph != config.graphuri:

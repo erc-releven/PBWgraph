@@ -441,23 +441,27 @@ class PBWstarConstants:
 
     def ensure_entities_existence(self, sparql, force_create=False):
         # print("SPARQL is:" + sparql)
-        if not force_create:
-            res = self.graph.query("SELECT DISTINCT * WHERE {" + sparql + "}")
-            if len(res):
-                # We should hopefully have only one row...
-                if len(res) > 1:
-                    warn(f"More than one row returned for SPARQL expression:\n{sparql}")
-                # In any case return the variables from the first row as a dictionary.
-                for row in res:
-                    return row.asdict()
+        try:
+            if not force_create:
+                res = self.graph.query("SELECT DISTINCT * WHERE {" + sparql + "}")
+                if len(res):
+                    # We should hopefully have only one row...
+                    if len(res) > 1:
+                        warn(f"More than one row returned for SPARQL expression:\n{sparql}")
+                    # In any case return the variables from the first row as a dictionary.
+                    for row in res:
+                        return row.asdict()
 
-        # Either force_create was specified or res had zero length.
-        new_uris = self.mint_uris_for_query(sparql)
-        q = sparql
-        for k, v in new_uris.items():
-            q = q.replace(f'?{k}', v.n3(self.graph.namespace_manager))
-        self.graph.update("INSERT DATA {" + q + "}")
-        return new_uris
+            # Either force_create was specified or res had zero length.
+            new_uris = self.mint_uris_for_query(sparql)
+            q = sparql
+            for k, v in new_uris.items():
+                q = q.replace(f'?{k}', v.n3(self.graph.namespace_manager))
+            self.graph.update("INSERT DATA {" + q + "}")
+            return new_uris
+        except Exception as e:
+            print(f"EXCEPTION {e}; SPARQL was {sparql}")
+            raise e
 
     def ensure_egroup_existence(self, gclass, glink, members):
         # Get the URI list
