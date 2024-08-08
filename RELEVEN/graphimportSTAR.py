@@ -217,10 +217,11 @@ class graphimportSTAR:
         else:
             appellation = sqlperson.nameOL.rstrip()
 
-        # Create the SPARQL expression
+        # Create the SPARQL expression.
+        # We do *not* add lang=_get_source_lang(sqlperson)).n3() to these strings (yet, TODO)
         sparql = f"""
         ?appellation a {c.get_label('E41')} ;
-            {c.get_label('P190')} {Literal(appellation, lang=_get_source_lang(sqlperson)).n3()} .
+            {c.get_label('P190')} {Literal(appellation).n3()} .
         """
         sparql += self.create_assertion_sparql('a1', 'P1', graphperson, '?appellation', c.pbw_agent)
         # Check and create it if necessary

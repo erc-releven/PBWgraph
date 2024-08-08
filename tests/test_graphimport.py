@@ -439,7 +439,7 @@ class GraphImportTests(unittest.TestCase):
         except UniquenessError:
             self.fail(f"Object of {subj} : {pred} should be unique")
         self.assertIsNotNone(obj, f"Object of {subj} : {pred} should exist")
-        return obj.toPython()
+        return obj
 
 
     # Tests begin here
@@ -447,7 +447,7 @@ class GraphImportTests(unittest.TestCase):
         # Test against the GraphDB instance in config.py
         store = sparqlstore.SPARQLStore(config.graphuri, method='POST', auth=(config.graphuser, config.graphpw))
         # Make / retrieve the global nodes and self.constants
-        self.constants = PBWstarConstants.PBWstarConstants(store=store)
+        self.constants = PBWstarConstants.PBWstarConstants(store=store, graph=config.graphname)
 
         c = self.constants
         # Get the URIs for each of our test people
@@ -487,12 +487,13 @@ select ?p_uri ?gender where {{
         # Save the results for lookup
         genders = defaultdict(list)
         for row in res:
-            genders[row['p_uri']].append(row['gender'].toPython())
+            genders[row['p_uri']].append(row['gender'])
         # Check that they are correct
         for person, pinfo in self.td_people.items():
             p_uri = pinfo['uri']
             self.assertIsNotNone(genders.get(p_uri))
-            self.assertListEqual(genders[p_uri], pinfo['gender'], f"Test gender for {person}")
+            self.assertListEqual(genders[p_uri], [Literal(x) for x in pinfo['gender']],
+                                 f"Test gender for {person}")
 
     # The identifier is the name as PBW has it in the original language.
     def test_identifier(self):
@@ -518,7 +519,7 @@ select ?p_uri ?mainid where {{
         for person, pinfo in self.td_people.items():
             p_uri = pinfo['uri']
             self.assertIsNotNone(identifiers.get(p_uri), f"Identifier found for {person}")
-            self.assertEqual(pinfo['identifier'], identifiers[p_uri].toPython(), f"Test identifier for {person}")
+            self.assertEqual(Literal(pinfo['identifier']), identifiers[p_uri], f"Test identifier for {person}")
 
     def test_appellation(self):
         """Test that each person has the second or alternative names assigned, as sourced assertions"""
@@ -650,9 +651,9 @@ select ?eth (count(?eth) as ?act) where {{
                 rowct = 0
                 for row in res:
                     rowct += 1
-                    ethlabel = row['eth'].toPython()
-                    self.assertTrue(ethlabel in eths)
-                    self.assertEqual(eths[ethlabel], row['act'].toPython())
+                    ethlabel = row['eth']
+                    self.assertTrue(ethlabel in [Literal(x) for x in eths.keys()])
+                    self.assertEqual(eths[ethlabel.toPython()], row['act'].toPython())
                 self.assertEqual(len(eths.keys()), rowct, "Ethnicity count for %s" % person)
 
     def test_religion(self):
@@ -677,10 +678,10 @@ select ?rel ?auth where {{
                 # We are cheating by knowing that no test person has more than one religion specified
                 rows = [x for x in res]
                 self.assertEqual(1, len(rows))
-                found_rel = rows[0]['rel'].toPython()
-                self.assertTrue(found_rel in rels)
-                authority = self.get_external_id(rows[0]['auth']).toPython()
-                self.assertIn(authority, rels[found_rel])
+                found_rel = rows[0]['rel']
+                self.assertTrue(found_rel in [Literal(x) for x in rels.keys()])
+                authority = self.get_external_id(rows[0]['auth'])
+                self.assertIn(authority, [Literal(x) for x in rels[found_rel.toPython()]])
 
     def test_occupation(self):
         """Test that occupations / non-legal designations are set correctly"""
@@ -688,7 +689,7 @@ select ?rel ?auth where {{
         for person, pinfo in self.td_people.items():
             # Check that the occupation assertions were created
             if 'occupation' in pinfo:
-                occs = pinfo['occupation']
+                occs = {Literal(k): v for k, v in pinfo['occupation'].items()}
                 sparql = f"""
 select ?occ where {{
     ?a a {c.get_assertion_for_predicate('SP13')} ;
@@ -700,7 +701,7 @@ select ?occ where {{
     ?pocc a {c.get_label('C1')} .
 }}"""
                 res = c.graph.query(sparql)
-                ctr = Counter([row['occ'].toPython() for row in res])
+                ctr = Counter([row['occ'] for row in res])
                 self.assertDictEqual(occs, ctr, "Test occupations for %s" % person)
 
     def test_legalrole(self):
@@ -709,7 +710,7 @@ select ?occ where {{
         for person, pinfo in self.td_people.items():
             # Check that the occupation assertions were created
             if 'legalrole' in pinfo:
-                roles = pinfo['legalrole']
+                roles = {Literal(k): v for k, v in pinfo['legalrole'].items()}
                 sparql = f"""
 select ?role where {{
     ?a a {c.get_assertion_for_predicate('SP26')} ;
@@ -721,7 +722,7 @@ select ?role where {{
     ?prole a {c.get_label('C13')} .
 }}"""
                 res = c.graph.query(sparql)
-                ctr = Counter([row['role'].toPython() for row in res])
+                ctr = Counter([row['role'] for row in res])
                 self.assertDictEqual(roles, ctr, "Test legal roles for %s" % person)
 
     def test_languageskill(self):
@@ -744,7 +745,7 @@ select ?kh where {{
                 rows = [x for x in res]
                 # At the moment we do only have one
                 self.assertEquals(1, len(rows))
-                self.assertEqual(pinfo['language'], rows[0]['kh'].toPython(), "Test language for %s" % person)
+                self.assertEqual(Literal(pinfo['language']), rows[0]['kh'], "Test language for %s" % person)
 
     def test_kinship(self):
         """Test the kinship assertions for one of our well-connected people"""
@@ -753,24 +754,25 @@ select ?kh where {{
             if 'kinship' in pinfo:
                 sparql = f"""
 select distinct ?kin ?kintype where {{
-    ?a a {c.get_assertion_for_predicate('SP17')} ;
-        {c.star_subject} ?kg ;
-        {c.star_object} {pinfo['uri'].n3()} .
-    ?a2 a {c.get_assertion_for_predicate('SP18')} ;
-        {c.star_subject} ?kg ;
+    ?a {c.star_object} {pinfo['uri'].n3()} ;
+        a {c.get_assertion_for_predicate('SP17')};
+        {c.star_subject} ?kg .
+    ?a2 {c.star_subject} ?kg ;
+        a {c.get_assertion_for_predicate('SP18')} ;
         {c.star_object} ?kin .
-    ?a3 a {c.get_assertion_for_predicate('SP16')} ;
-        {c.star_subject} ?kg ;
+    ?a3 {c.star_subject} ?kg  ;
+        a {c.get_assertion_for_predicate('SP16')} ;
         {c.star_object} [ a {c.get_label('C4')} ; {c.get_label('P1')} ?kintype ] .
 }}"""
                 res = c.graph.query(sparql)
+                expectedkin = {Literal(k): [Literal(x) for x in v] for k, v in pinfo['kinship'].items()}
                 foundkin = defaultdict(list)
                 for row in res:
-                    k = row['kintype'].toPython()
-                    foundkin[k].append(self.get_external_id(row['kin']).toPython())
+                    k = row['kintype']
+                    foundkin[k].append(self.get_external_id(row['kin']))
                 for k in foundkin:
                     foundkin[k] = sorted(foundkin[k])
-                self.assertDictEqual(pinfo['kinship'], foundkin, "Kinship links for %s" % person)
+                self.assertDictEqual(expectedkin, foundkin, "Kinship links for %s" % person)
 
     def test_possession(self):
         """Check possession assertions. Test the sources and authors/authorities while we are at it."""
@@ -815,13 +817,14 @@ select ?poss ?authorid ?src where {{
                 rowct = 0
                 for row in res:
                     rowct += 1
-                    poss = row['poss'].toPython()
-                    author = row['authorid'].toPython()
-                    src = row['src'].toPython()
-                    self.assertTrue(poss in pinfo['possession'], "Test possession is correct for %s" % person)
-                    (agent, reference) = pinfo['possession'][poss]
-                    self.assertEqual(author, agent, "Test possession authority is set for %s" % person)
-                    self.assertEqual(reference, src, "Test possession source ref is set for %s" % person)
+                    poss = row['poss']
+                    author = row['authorid']
+                    src = row['src']
+                    self.assertTrue(poss in [Literal(x) for x in pinfo['possession']],
+                                    "Test possession is correct for %s" % person)
+                    (agent, reference) = pinfo['possession'][poss.toPython()]
+                    self.assertEqual(Literal(agent), author, "Test possession authority is set for %s" % person)
+                    self.assertEqual(Literal(reference), src, "Test possession source ref is set for %s" % person)
                 self.assertEqual(rowct, len(pinfo['possession'].keys()),
                                  "Test %s has the right number of possessions" % person)
 
@@ -865,13 +868,13 @@ SELECT ?boul ?inscr ?src ?auth WHERE {{
             # The boulloterion should have a correct inscription (we only record the Greek)
             inscr = [v for v in c.graph.objects(row['inscr'], c.predicates['P190'])]
             self.assertEqual(1, len(inscr))
-            self.assertEqual(boulinfo['inscription'], inscr[0].toPython(),
+            self.assertEqual(Literal(boulinfo['inscription']), inscr[0],
                              f"boulloterion {boulid} inscription should match")
             # self.assertEqual('grc', inscr[0].language) ## TODO not yet
             # The boulloterion should have the correct named authority or authorities
 
             auth = self.get_object(row['auth'], 'P3')
-            # Alphabetize the authority string we got
+            # Alphabetize the authority string we got. This also de-Literals it.
             alph_auth = '; '.join(sorted(auth.split('; ')))
             real_auth = boulinfo.get('auth', 'Jeffreys, Michael J.')
             self.assertEqual(real_auth, alph_auth, f"Authority for boulloterion {boulid} correctly set")
@@ -887,8 +890,9 @@ SELECT ?boul ?inscr ?src ?auth WHERE {{
                 sources = [row['src']]
             for source in sources:
                 skey = self.get_object(source, 'P1')
-                self.assertIn(skey, boulinfo['sources'], f"Source {skey} should be there for boulloterion {boulid}")
-                self.assertEqual(self.get_object(source, 'P3'), boulinfo['sources'][skey])
+                self.assertIn(skey, [Literal(x) for x in boulinfo['sources']],
+                              f"Source {skey} should be there for boulloterion {boulid}")
+                self.assertEqual(Literal(boulinfo['sources'][skey.toPython()]), self.get_object(source, 'P3'))
 
             # Separate query to check the boulloterion seals and their respective assertions. A seal was
             # produced by a boulloterion and belongs to a collection according to the same authority as above,
@@ -916,7 +920,8 @@ select ?seal ?coll where {{
                 collid = self.get_object(row3['coll'], 'P1')
                 sealcolls[sealid] = collid
             # Check that we found all the seals
-            self.assertDictEqual(boulinfo['seals'], sealcolls)
+            expected_colls = {Literal(k): Literal(v) for k, v in boulinfo['seals'].items()}
+            self.assertDictEqual(expected_colls, sealcolls)
 
     def test_text_sources(self):
         """Spot-check different textual sources and make sure they are set up correctly"""
@@ -986,11 +991,11 @@ select ?editor ?edition where {{
             # Check that the information corresponds to what we expect
             if 'author' in sinfo:
                 self.check_class(data['author'], 'E21')
-                self.assertEqual(sinfo.get('author'), self.get_object(data['author'], 'P3'))
+                self.assertEqual(Literal(sinfo.get('author')), self.get_object(data['author'], 'P3'))
             if 'authority' in sinfo:
-                self.assertEqual(sinfo.get('authority'), self.get_object(data['authority'], 'P3'))
-            self.assertEqual(sinfo.get('edition'), self.get_object(data['edition'], 'P3'))
-            self.assertEqual(sinfo.get('editor'), self.get_object(data['editor'], 'P3'))
+                self.assertEqual(Literal(sinfo.get('authority')), self.get_object(data['authority'], 'P3'))
+            self.assertEqual(Literal(sinfo.get('edition')), self.get_object(data['edition'], 'P3'))
+            self.assertEqual(Literal(sinfo.get('editor')), self.get_object(data['editor'], 'P3'))
 
             # Now check that the passages are present & correct and have the right authority
             spq = f"""
@@ -1005,7 +1010,7 @@ select ?pbwed (count(?passage) as ?pct) where {{
             self.assertEqual(1, len(passages))
             for row in passages:
                 pbwed = self.get_object(row['pbwed'], 'P3')
-                self.assertEqual(sinfo.get('pbwed'), pbwed)
+                self.assertEqual(Literal(sinfo.get('pbwed')), pbwed)
                 # When we test against production we can't guarantee an exact number, but there should be
                 # at least the number from the test database.
                 self.assertGreaterEqual(row['pct'].toPython(), sinfo.get('passages'))
@@ -1039,7 +1044,7 @@ select (count(?a) as ?numass) ?record ?tstamp ?me where {{
 
         self.assertEqual(result['numass'].toPython(), total_assertions)
         self.assertIsNotNone(result['tstamp'])
-        self.assertEqual('Andrews, Tara Lee', self.get_object(result['me'], 'P3'))
+        self.assertEqual(Literal('Andrews, Tara Lee'), self.get_object(result['me'], 'P3'))
 
     @unittest.skip("for now")
     def test_repeat(self):

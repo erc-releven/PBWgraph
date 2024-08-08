@@ -38,11 +38,15 @@ class PBWstarConstants:
         }
 
         graph_exists = False
-        if graph is not None:
-            self.graph = graph
+        # If store and graph are defined, connect to the remote store using the given graph
+        # If only store is defined, connect to the remote store using the graph named with our base URI
+        # If only graph is defined, assume it is a local file and open it
+        if store is not None:
+            rgraph = graph or datauri
+            self.graph = Graph(store, identifier=rgraph)
             graph_exists = True
-        elif store is not None:
-            self.graph = Graph(store, identifier=datauri)
+        elif graph is not None:
+            self.graph = graph
             graph_exists = True
 
         if graph_exists:
