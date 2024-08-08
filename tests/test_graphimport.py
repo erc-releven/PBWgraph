@@ -27,6 +27,7 @@ class GraphImportTests(unittest.TestCase):
     # death, ethnicity, religion, societyrole, legalrole, language, kinship, possession
     td_people = {
         'Anna 62': {'gender': ['Female'], 'identifier': 'Ἄννα Κομνηνή',
+                    'descriptor': 'Anna Komnene, daughter of Alexios I and historian',
                     'secondname': {'Κομνηνοῦ': {'count': 2}},
                     'death': {'count': 1, 'dated': 0},
                     'religion': {'Christian': ['Georgios 25002']},
@@ -46,25 +47,34 @@ class GraphImportTests(unittest.TestCase):
                                            'Maria 171']}
                     },
         'Anna 64': {'gender': ['Female'], 'identifier': 'τῆς κουροπαλατίσσης Ἄννης',
+                    'descriptor': 'Anna the kouropalatissa, mother of Nikephoros Bryennios the usurper',
                     'occupation': {'Kouropalatissa': 1},
                     'kinship': {'grandmother': ['Anonymus 61'],
                                 'mother': ['Ioannes 61', 'Nikephoros 62']}},
         'Anna 101': {'gender': ['Female'], 'identifier': 'Ἄννα',
+                     'descriptor': 'Anna, daughter of Konstantinos X',
                      'altname': {'Ἀρετῆς': {'count': 1, 'source': 'Michel Psellos, Chronographie, 2 vols., Paris 1967'}},
                      'occupation': {'Nun': 1},
                      'kinship': {'daughter': ['Eudokia 1', 'Konstantinos 10']}},
         'Anna 102': {'gender': ['Female'], 'identifier': ' Ἄννῃ',
+                     'descriptor': 'Anna, wife of Eustathios Boilas',
                      'death': {'count': 1, 'dated': 0}, 'occupation': {'Nun': 1},
                      'kinship': {'wife': ['Eustathios 105'],
                                  'mother': ['Romanos 106']}},
-        'Apospharios 101': {'gender': ['Male'], 'identifier': ' Ἀποσφάριον', 'legalrole': {'Slave': 1},
+        'Apospharios 101': {'gender': ['Male'], 'identifier': ' Ἀποσφάριον',
+                            'descriptor': 'Apospharios, slave of Eustathios Boilas',
+                            'legalrole': {'Slave': 1},
                             'kinship': {'husband': ['Selegno 101']}},
         'Bagrat 101': {'gender': ['Male'], 'identifier': 'τῷ Παγκρατίῳ بقراط بن جرجس',
+                       'descriptor': 'Bagrat IV, king of Georgia',
                        'legalrole': {'King': 3, 'Kouropalates': 2, 'Sebastos': 1},
                        'kinship': {'son': ['Anonyma 6003', 'Georgios 105', 'Maria 103'],
                                    'husband': ['Helena 104'], 'father': ['Maria 61']}},
-        'Balaleca 101': {'gender': ['Male'], 'identifier': 'Βαλαλεχα', 'language': 'Georgian'},
+        'Balaleca 101': {'gender': ['Male'], 'identifier': 'Βαλαλεχα',
+                         'descriptor': 'Balaleca, Georgian monk on Athos (Iveron?)',
+                         'language': 'Georgian'},
         'Gagik 101': {'gender': ['Male'], 'identifier': 'Κακίκιος',
+                      'descriptor': 'Gagik II, king of Armenia',
                       'legalrole': {'Archon': 2, 'King': 1, 'Magistros': 1},
                       'kinship': {'son': ['Ashot 101'],
                                   'husband': ['Anonyma 158', 'Anonyma 159'],
@@ -74,11 +84,13 @@ class GraphImportTests(unittest.TestCase):
                                      'Estates much poorer than Ani and its territory':
                                          ['Aristakes 101', '63.8-9 (55)']}},
         'Herve 101': {'gender': ['Male'], 'identifier': 'Ἐρβέβιον τὸν Φραγγόπωλον',
+                      'descriptor': 'Hervé Phrangopoulos/Frankopoulos',
                       'secondname': {'Φραγγόπωλον': {'count': 2}},
                       'ethnicity': {'Norman': 1},
                       'legalrole': {'Stratelates': 1, 'Vestes': 1, 'Magistros': 1},
                       'possession': {'House at Dagarabe in Armeniakon': ['Ioannes 110', '485.52']}},
         'Ioannes 62': {'gender': ['Male'], 'identifier': 'Ἰωάννης',
+                       'descriptor': 'Ioannes Doukas, kaisar',
                        'secondname': {'Δούκα': {'count': 6}},
                        'altname': {'Ἰγνάτιος': {'count': 1,
                                                 'source': '“Commémoraisons des Comnènes dans le typikon liturgique du '
@@ -99,6 +111,7 @@ class GraphImportTests(unittest.TestCase):
                        'possession': {
                            'Palace in Bithynia at foot of Mount Sophon': ['Nikephoros 117', '173.7-8, 179.15']}},
         'Ioannes 68': {'gender': ['Eunuch'], 'identifier': 'τοῦ Ὀρφανοτρόφου',
+                       'descriptor': 'Ioannes the Orphanotrophos, brother of Michael IV',
                        'death': {'count': 4, 'dated': 1},
                        'legalrole': {'Praipositos': 1, 'Orphanotrophos': 12, 'Synkletikos': 1, 'Monk': 7},
                        'occupation': {'Beggar': 1, 'Servant': 1},
@@ -110,16 +123,20 @@ class GraphImportTests(unittest.TestCase):
                                    'kin': ['Konstantinos 9101']}
                        },
         'Ioannes 101': {'gender': ['Male'], 'identifier': 'Ἰωάννην',
+                        'descriptor': 'Ioannes of Lampe, monk and archbishop of all Bulgaria',
                         'death': {'count': 1, 'dated': 0},
                         'legalrole': {'Archbishop': 3, 'Monk': 3}},
         'Ioannes 102': {'gender': ['Eunuch'], 'identifier': 'Ἰωάννην',
+                        'descriptor': 'Ioannes, metropolitan of Side [1079, 1082, 1094]',
                         # Metropolitan should be 12 but is 13 currently in production, because it erroneously
                         # included an out-of-scope letter of Theophylact of Ohrid
                         'legalrole': {'Bishop': 1, 'Metropolitan': 12, 'Protoproedros': 1, 'Hypertimos': 2,
                                       'Protoproedros of the protosynkelloi': 2, 'Protosynkellos': 2}},
         'Ioannes 110': {'gender': ['Male'], 'identifier': 'Ἰωάννου...τοῦ Σκυλίτζη',
+                        'descriptor': 'Ioannes Skylitzes, historian',
                         'legalrole': {'Megas droungarios of the vigla': 1, 'Kouropalates': 1}},
         'Konstantinos 62': {'gender': ['Male'], 'identifier': 'Κωνσταντίνῳ',
+                            'descriptor': 'Konstantinos Doukas porphyrogennetos, son of Michael VII',
                             'secondname': {'Δούκα': {'count': 1,
                                                      'source': 'Annae Comnenae Alexias, Corpus fontium historiae '
                                                                'Byzantinae 40/1, Berlin – New York 2001'}},
@@ -137,6 +154,7 @@ class GraphImportTests(unittest.TestCase):
                                 'An estate, Pentegostis, near Serres, with excellent water and buildings to house the '
                                 'imperial entourage': ['Eustathios 20147', '269.60-62']}},
         'Konstantinos 64': {'gender': ['Eunuch'], 'identifier': 'Κωνσταντῖνος',
+                            'descriptor': 'Konstantinos, brother of Michael IV',
                             'altname': {'Θεοδώρῳ': {'count': 1, 'source': '“Βυζαντινὰ χρυσόβουλλα καὶ πιττάκια”,'
                                                                           ' Ἐκκλησιαστικὴ Ἀλήθεια 4 (1883-84) 431'}},
                             'death': {'count': 1, 'dated': 0},
@@ -152,6 +170,7 @@ class GraphImportTests(unittest.TestCase):
                                 'A house with a cistern near the Holy Apostles (in Constantinople)': ['Ioannes 110',
                                                                                                       '422.18']}},
         'Konstantinos 101': {'gender': ['Male'], 'identifier': 'Κωνσταντῖνος ὁ Διογένης',
+                             'descriptor': 'Konstantinos Diogenes, father of Romanos IV',
                              'secondname': {'Διογένης': {'count': 6}},
                              'death': {'count': 2, 'dated': 0},
                              'legalrole': {'Doux': 4, 'Patrikios': 2, 'Strategos': 3, 'Archon': 1, 'Monk': 1},
@@ -160,6 +179,7 @@ class GraphImportTests(unittest.TestCase):
                                          'husband of niece': ['Romanos 3'],
                                          'nephew (by marriage)': ['Romanos 3']}},
         'Konstantinos 102': {'gender': ['Male'], 'identifier': 'Κωνσταντίνῳ',
+                             'descriptor': 'Konstantinos Bodin, king of Duklja',
                              'secondname': {'Βοδίνῳ': {'count': 3}},
                              'altname': {'Πέτρον ἀντὶ Κωνσταντίνου μετονομάσαντες':
                                              {'count': 1,
@@ -170,9 +190,11 @@ class GraphImportTests(unittest.TestCase):
                              'legalrole': {'King': 2, 'Basileus': 1},
                              'kinship': {'son': ['Michael 101'], 'father': ['Georgios 20253']}},
         'Konstantinos 110': {'gender': ['Male'], 'identifier': 'Κωνσταντῖνος',
+                             'descriptor': 'Konstantinos, nephew of Michael IV',
                              'legalrole': {'Patrikios': 1},
                              'kinship': {'nephew': ['Michael 4']}},
         'Liparites 101': {'gender': ['Male'], 'identifier': 'τοῦ Λιπαρίτου قاريط ملك الابخاز',
+                          'descriptor': 'Liparit IV, duke of Trialeti',
                           'ethnicity': {'Georgian': 2}, 'legalrole': {'Lord of part of the Iberians': 1}}
     }
 
@@ -520,6 +542,9 @@ select ?p_uri ?mainid where {{
             p_uri = pinfo['uri']
             self.assertIsNotNone(identifiers.get(p_uri), f"Identifier found for {person}")
             self.assertEqual(Literal(pinfo['identifier']), identifiers[p_uri], f"Test identifier for {person}")
+            # Check that the descriptors are correct too
+            self.assertEqual(Literal(pinfo['descriptor']), self.get_object(p_uri, 'P3'))
+
 
     def test_appellation(self):
         """Test that each person has the second or alternative names assigned, as sourced assertions"""

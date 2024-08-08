@@ -530,10 +530,10 @@ class graphimportSTAR:
         else:
             url = f'https://viaf.org/viaf/{identifier}/'
 
-        # The entity should have its display name as a crm:P3 note
+        # The entity should have its display name as a crm:P3 note, without a language designation
         entitystr = f"?entity a {etype} "
         if dname is not None:
-            entitystr += f";\n            {c.get_label('P3')} {Literal(dname, lang='en').n3()} "
+            entitystr += f";\n            {c.get_label('P3')} {Literal(dname).n3()} "
         entitystr += '.'
 
         # Construct the identifier assignment that should exist
