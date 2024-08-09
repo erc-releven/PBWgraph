@@ -504,9 +504,9 @@ HAVING (COUNT(?member) = {len(members)})
             mlabel = Literal('; '.join(mnames)).n3()
             # Construct the query
             sparql = f"""
-        ?egroup a {self.get_label(gclass)} ;
+        ?egroup {self.get_label(glink)} {mlist} ;
             {self.get_label('P3')} {mlabel} ;
-            {self.get_label(glink)} {mlist} .
+            a {self.get_label(gclass)} .
             """
             answer = self.ensure_entities_existence(sparql, force_create=True)
         else:
