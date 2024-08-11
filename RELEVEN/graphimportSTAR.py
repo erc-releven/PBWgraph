@@ -296,9 +296,10 @@ class graphimportSTAR:
         # Get the sources that PBW used for this boulloterion, if any
         source_node = self.get_boulloterion_sourcelist(boulloterion)
 
-        # Make the assertion(s) concerning its inscription. TODO for the cleanup change E73 to E33
+        # Make the assertion(s) concerning its inscription.
+        # TODO for the cleanup change E73 to E33 and add language tag?
         sparql = f"""
-        ?inscription {c.get_label('P190')} {Literal(boulloterion.origLText, _get_source_lang(boulloterion)).n3()} ;
+        ?inscription {c.get_label('P190')} {Literal(boulloterion.origLText).n3()} ;
             a {c.get_label('E34')}, {c.get_label('E73')} . """
         sparql += self.create_assertion_sparql('a', 'P128', boul_node, '?inscription', pbweditor, source_node)
 
@@ -309,8 +310,8 @@ class graphimportSTAR:
             # TODO needs to change to use sealKey, since this id isn't unique
             seal_id = "%d.%d.%d" % (seal.collectionKey, seal.boulloterionKey, seal.collectionRef)
             sparql += f"""
-        ?seal{i}  {Literal(seal_id).n3()}{c.get_label('E22S')} ;
-            a {c.get_label('P3')} . """
+        ?seal{i} {c.get_label('P3')} {Literal(seal_id).n3()} ;
+            a {c.get_label('E22S')} . """
             sparql += self.create_assertion_sparql(f"a{i}c", 'P46', coll, f'?seal{i}', pbweditor)
             sparql += self.create_assertion_sparql(f"a{i}b", 'L1', boul_node, f'?seal{i}', pbweditor)
 
@@ -493,9 +494,9 @@ class graphimportSTAR:
                         # Either way, the PBW editor will be who says this passage belongs to the edition
                         aship_authority = author if afact.factoidType == 'Authorship' else pbw_authority
                         # We have to make a sourceref node, connected to this text, for
-                        # the factoid source
+                        # the factoid source. TODO we want to add the language later?
                         sparql += f"""
-        ?srcref {c.get_label('P190')} {Literal(afact.origLDesc, _get_source_lang(afact)).n3()} ;
+        ?srcref {c.get_label('P190')} {Literal(afact.origLDesc).n3()} ;
             {c.get_label('P3')} {Literal(afact.sourceRef).n3()} ;
             a {c.get_label('E33')} . """
                     aship_source = '?srcref'
@@ -518,7 +519,7 @@ class graphimportSTAR:
                 sparql += self.create_assertion_sparql('a3', 'R17', '?wc', '?work', aship_authority, aship_source)
                 sparql += self.create_assertion_sparql('a4', 'P14', '?wc', author, aship_authority, aship_source)
                 sparql += f"""
-        ?wc a {c.get_label('F27')} . """
+        ?wc a {c.get_label('F28')} . """
                 assertions_set.extend(['a3', 'a4'])
 
         # Whatever we just made, return the edition/publication, which is what we are after.
@@ -776,17 +777,30 @@ class graphimportSTAR:
         # (grouping) [:whichpred] rnode
         c = self.constants
         pbwdoc = c.pbw_uri(factoid)
-        # We have to deal with the fact that we might have duplicate assertions with different geographic
-        # scopes, which we have chopped off in the title name. TODO we should add the geographic scopes to these
-        # when we can...
+        # We will sometimes have duplicate assertions originating from different geographic
+        # scopes, which we have chopped off in the title name. For now we keep these duplicate.
+        # TODO we should add the geographic scopes to these when we can...
         sparql = self.create_assertion_sparql('a1', whopred, '?designation', graphperson, agent, sourcenode)
         sparql += self.create_assertion_sparql('a2', whichpred, '?designation', des, agent, sourcenode)
-        sparql += f"        {pbwdoc.n3()} a {c.get_label('E31')}; {c.get_label('P70')} ?a1, ?a2 ."
-        sparql += f"""
-        ?designation a {label} . """
+        sparql += f"?designation a {label} . \n"
+        opt_clause = f"""
+        OPTIONAL {{
+            {pbwdoc.n3()} {c.get_label('P70')} ?a1, ?a2 .
+        }}
+        """
+        # First see if it exists with the optional clause
+        q = f"SELECT * WHERE {{ {sparql} {opt_clause} }}"
+        hits = [row for row in self.g.query(q)]
+        if len(hits) == 0:
+            # We need to create a new set of assertions for this factoid.
+            doc_clause = f"        {pbwdoc.n3()} a {c.get_label('E31')}; {c.get_label('P70')} ?a1, ?a2 ."
+            res = c.ensure_entities_existence(sparql + doc_clause)
+        else:
+            res = hits[0]
+            # Is it coming from a different factoid? For now we are trusting not...
 
-        c.ensure_entities_existence(sparql)
-        # c.document(pbwdoc, res['a1'], res['a2'])
+        # Document it in either case as coming from this factoid
+        c.document(pbwdoc, res['a1'], res['a2'])
 
     def religion_handler(self, sourcenode, agent, factoid, graphperson):
         """Assign a group membership for the given religious confession to the person"""

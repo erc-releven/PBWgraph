@@ -470,6 +470,17 @@ class PBWstarConstants:
     def ensure_egroup_existence(self, gclass, glink, members):
         # Get the URI list
         mvalues = '\n'.join([f"({x.n3()})" for x in members])
+        # Get the group label, which is a semicolon-separated list of member labels
+        mnames = []
+        for m in members:
+            mname = self.graph.value(m, self.namespaces['crm'].P3_has_note)
+            if mname is None:
+                warn(f"Group member {m} has no label?!")
+                mnames.append('XX ANON')
+            else:
+                mnames.append(str(mname))
+        mlabel = Literal('; '.join(mnames)).n3()
+
         # Look to see if a group with exactly these members exists
         sparql = f"""
 SELECT ?egroup WHERE {{
@@ -492,16 +503,6 @@ HAVING (COUNT(?member) = {len(members)})
         if len(rows) == 0:
             # We need to create the group and its members
             mlist = ', '.join([x.n3() for x in members])
-            # Get the group label, which is a semicolon-separated list of member labels
-            mnames = []
-            for m in members:
-                mname = self.graph.value(m, self.namespaces['crm'].P3_has_note)
-                if mname is None:
-                    warn(f"Group member {m} has no label?!")
-                    mnames.append('XX ANON')
-                else:
-                    mnames.append(str(mname))
-            mlabel = Literal('; '.join(mnames)).n3()
             # Construct the query
             sparql = f"""
         ?egroup {self.get_label(glink)} {mlist} ;
@@ -512,7 +513,7 @@ HAVING (COUNT(?member) = {len(members)})
         else:
             # Make sure there is only one egroup that fits this spec
             if len(rows) > 1:
-                warn("Multiple entity groups found with exactly the given members!")
+                warn(f"Multiple entity groups found with exactly the given members {mlabel}!")
             answer = rows[0]
 
         # Either way, return the entity group
