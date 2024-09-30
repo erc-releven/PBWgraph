@@ -1,22 +1,23 @@
-from rdflib import Graph, URIRef, Literal, Namespace, RDF, SKOS
-from warnings import warn
+import pbw
 import re
 import RELEVEN.PBWSources
+from datetime import datetime
 from os.path import join, dirname
+from rdflib import Graph, URIRef, Literal, Namespace, RDF, SKOS, XSD
 from uuid import uuid4
+from warnings import warn
 
-import pbw
 
 
 # This package contains a bunch of information curated from the PBW website about authority, authorship
 # and so forth. It is a huge laundry list of data and some initialiser and accessor functions for it; the
-# class requires a graph driver in order to do the initialisation.
+# class requires an RDFlib graph or remote datastore in order to do the initialisation.
 
 
 class PBWstarConstants:
     """A class to deal with all of our constants, where the data is nicely encapsulated"""
 
-    def __init__(self, graph=None, store=None):
+    def __init__(self, graph=None, store=None, execution=None):
         # These are the modern scholars who put the source information into PBW records.
         # We need Michael and Tara on the outside
         self.mj = {'identifier': 'Jeffreys, Michael J.', 'viaf': '73866641'}
@@ -50,6 +51,7 @@ class PBWstarConstants:
             graph_exists = True
 
         if graph_exists:
+            # Bind the namespaces in our graph
             for k, v in self.namespaces.items():
                 self.graph.bind(k, v, override=True)
         else:
@@ -144,6 +146,7 @@ class PBWstarConstants:
             'P190': self.namespaces['crm']['P190_has_symbolic_content'],
             'L1': self.namespaces['spec']['L1_was_used_to_produce'],
             'L11': self.namespaces['crmdig']['L11_had_output'],
+            'L11r': self.namespaces['crmdig']['L11r_was_output_of'],
             'L12': self.namespaces['crmdig']['L12_happened_on_device'],
             'L23': self.namespaces['crmdig']['L23_used_software_or_firmware'],
             'R3': self.namespaces['lrmoo']['R3_is_realised_in'],     # is realised in
@@ -250,6 +253,30 @@ class PBWstarConstants:
 
         # Initialise our group agents and the data structures we need to start
         if graph_exists:
+            print("Setting up software execution run...")
+            # Ensure the existence of the software metadata
+            ourscript = Literal("https://github.com/erc-releven/PBWgraph/RELEVEN/graphimportSTAR.py")
+            md_query = f"""
+            ?thisurl a {self.get_label('E42')} ;
+                {self.get_label('P190')} {ourscript.n3()} .
+            ?this a {self.get_label('D14')} ;
+                {self.get_label('P1')} ?thisurl ."""
+            res = self.ensure_entities_existence(md_query)
+            # Create the software execution for this run, so that we can create the markers at the end
+            if execution is not None:
+                # If we are resuming a run, we use the same software execution entity
+                self.swrun = URIRef(execution)
+            else:
+                # If we are not resuming, we have to create the entity with the current timestamp.
+                self.swrun = self.namespaces['data'][str(uuid4())]
+                se_query = f"""
+                ?tstamp a {self.get_label('E52')} ;
+                    {self.get_label('P82a')} {Literal(datetime.now(), datatype=XSD.dateTimeStamp).n3()} .
+                {self.swrun.n3()} a {self.get_label('D10')} ;
+                    {self.get_label('P4')} ?tstamp ;
+                    {self.get_label('L23')} {res['this'].n3()} ."""
+                self.ensure_entities_existence(se_query)
+
             print("Setting up PBW constants...")
             # Ensure existence of our external authorities
             self.pbw_agent = None
@@ -520,8 +547,12 @@ HAVING (COUNT(?member) = {len(members)})
         return answer.get('egroup')
 
     def document(self, pbwpage, *assertions):
-        """Make the E31 link between the pbwpage and whatever assertions we just pulled from it."""
+        """Make the E31 link between the pbwpage and whatever assertions we just pulled from it, and
+        mark these assertions as having been made by this software run."""
         # Since we don't have to mint any new URIs in this query, we can just add them normally.
-        self.graph.add((pbwpage, RDF.type, self.entitylabels['E31']))
+        if pbwpage is not None:
+            self.graph.add((pbwpage, RDF.type, self.entitylabels['E31']))
         for a in assertions:
-            self.graph.add((pbwpage, self.predicates['P70'], a))
+            if pbwpage is not None:
+                self.graph.add((pbwpage, self.predicates['P70'], a))
+            self.graph.add((a, self.predicates['L11r'], self.swrun))

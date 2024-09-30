@@ -80,7 +80,7 @@ class graphimportSTAR:
     constants = None
     mysqlsession = None
 
-    def __init__(self, origgraph, testmode=False):
+    def __init__(self, origgraph, testmode=False, execution=None):
         # Set the testing flag
         self.testmode = testmode
         # Record the starting time
@@ -108,7 +108,7 @@ class graphimportSTAR:
             except FileNotFoundError:
                 pass
             # Make / retrieve the global nodes and self.constants
-            self.constants = RELEVEN.PBWstarConstants.PBWstarConstants(graph=self.g)
+            self.constants = RELEVEN.PBWstarConstants.PBWstarConstants(graph=self.g, execution=execution)
 
         # How many assertions do we have to start with?
         if loaded:
@@ -529,8 +529,8 @@ class graphimportSTAR:
         return res['publ']
 
     def _find_or_create_identified_entity(self, etype, agent, identifier, dname):
-        """Return an identified entity URIRef. This can be a Boulloterion (E22 subclass), an E21 Person, an E39 Agent,
-        or an E74 Group depending on context. It is labeled with the identifier via an E15 Identifier Assignment
+        """Return an identified entity URIRef. This can be a Boulloterion (E22 subclass) or an E21 Person
+        depending on context. It is labeled with the identifier via an E15 Identifier Assignment
         carried out by the given agent, with dname becoming our preferred human-readable identifier."""
         c = self.constants
         if etype == c.get_label('E22B'):
@@ -560,6 +560,7 @@ class graphimportSTAR:
 
         # Ensure its existence and return the entity in question
         res = c.ensure_entities_existence(sparql)
+        c.document(None, res['idass'])
         return res['entity']
 
     def find_or_create_pbwperson(self, sqlperson):
@@ -575,6 +576,7 @@ class graphimportSTAR:
         return self._find_or_create_identified_entity(
             self.constants.get_label('E22B'), self.constants.pbw_agent, keystr, btitle)
 
+    # This one doesn't use an E15 assertion, it is just a thing with a name
     def find_or_create_seal_collection(self, collname):
         c = self.constants
         sparql = f"""
@@ -953,18 +955,15 @@ class graphimportSTAR:
         tying each to the factoid or person record that originated it and tying all the assertion records to the
         database creation event."""
         c = self.constants
-        tla = self.get_authority_node([self.constants.ta])
 
-        # Find all assertions that haven't been created by a different software run.
-        # We are assuming that assertions and only assertions have P140 predicates.
-	# We also assume that assertions without a UUID were created by WissKI.
+        # Find all assertions that have been marked as coming from this software run. We will add the
+        # forward property to the ones that don't yet have a forward property. We can keep the reverse property
+        # as a 'touched by' indicator, or we can delete it.
         sparql_criteria = f"""
-        ?a {c.star_subject} ?subject .
+            ?a {c.get_label('L11r')} {c.swrun.n3()} .
         MINUS {{
-            ?l a {c.get_label('D10')} ;
-                {c.get_label('L11')} ?a .
+            ?l {c.get_label('L11')} ?a .
         }}
-        FILTER(!REGEX(STR(?a), "/\\\\w{{13}}$"))
         """
         res = self.g.query(f"SELECT (COUNT(?a) AS ?act) WHERE {{ {sparql_criteria} }}")
         num_new = 0
@@ -972,27 +971,19 @@ class graphimportSTAR:
             num_new = row['act'].toPython()
         if num_new > 0:
             print(f"Recording {num_new} new assertions in the graph.")
-            # Create the database record
+            # Add the ending timestamp to the execution we have
+            tstamp = self.g.value(c.swrun, c.predicates['P4'])
             timenow = datetime.now()
-            dbr_q = f"""
-            ?thisurl a {c.get_label('E42')} ;
-                {c.get_label('P190')} {Literal("https://github.com/erc-releven/PBWgraph/RELEVEN/graphimportSTAR.py").n3()} .
-            ?this a {c.get_label('D14')} ;
-                {c.get_label('P1')} ?thisurl .
-            ?tstamp a {c.get_label('E52')} ;
-                {c.get_label('P82a')} {Literal(self.starttime, datatype=XSD.dateTimeStamp).n3()} ;
-                {c.get_label('P82b')} {Literal(timenow, datatype=XSD.dateTimeStamp).n3()} .
-            ?dbr a {c.get_label('D10')} ;
-                {c.get_label('P14')} {tla.n3()} ;
-                {c.get_label('P4')} ?tstamp ;
-                {c.get_label('L23')} ?this .
-            """
-            res = c.ensure_entities_existence(dbr_q, force_create=True)
-            dbr = res['dbr']
+            self.g.add((tstamp, c.predicates['P82b'], Literal(timenow, datatype=XSD.dateTimeStamp)))
 
+            # Add the responsible person. TODO this should have more options than just tla
+            tla = self.get_authority_node([self.constants.ta])
+            self.g.add((c.swrun, c.predicates['P14'], tla))
+
+            # Put in the forward predicate. LATER delete the reverse predicate if we decide it's a good idea
             sparql_update = f"""
         INSERT {{
-            {dbr.n3()} {c.get_label('L11')} ?a .
+            {c.swrun.n3()} {c.get_label('L11')} ?a .
         }} WHERE {{
             {sparql_criteria}
         }}
@@ -1114,9 +1105,17 @@ if __name__ == '__main__':
     parser.add_argument('-r', '--resume-from',
                         default=None,
                         help="Resume from the named PBW person")
+    parser.add_argument('-x', '--execution',
+                        default=None,
+                        help="Software execution URI for run being resumed")
     args = parser.parse_args()
+    # Check that we have an execution if we are resuming
+    if args.resume_from is not None and args.execution is None:
+        print("Please specify the earlier execution URI to resume the run.")
+        exit(1)
+
     # Process the person records
-    gimport = graphimportSTAR(origgraph=args.graph, testmode=args.testing)
+    gimport = graphimportSTAR(origgraph=args.graph, testmode=args.testing, execution=args.execution)
     gimport.process_persons(skipuntil=args.resume_from)
     # Where are we writing the graph to? Default is the location in config.py
     filename = args.graph
