@@ -9,6 +9,7 @@ from rdflib import Graph, Literal, XSD
 from rdflib.plugins.stores import sparqlstore
 from sqlalchemy import create_engine, and_
 from sqlalchemy.orm import sessionmaker
+from time import sleep
 from urllib.error import URLError
 from warnings import warn
 
@@ -95,7 +96,7 @@ class graphimportSTAR:
             store = sparqlstore.SPARQLUpdateStore(origgraph, origgraph + '/statements', method='POST',
                                                   auth=(config.graphuser, config.graphpw))
             # Make / retrieve the global nodes and self.constants
-            self.constants = RELEVEN.PBWstarConstants.PBWstarConstants(store=store)
+            self.constants = RELEVEN.PBWstarConstants.PBWstarConstants(store=store, execution=execution)
             self.g = self.constants.graph
             loaded = True
         else:
@@ -524,8 +525,16 @@ class graphimportSTAR:
 
         # Whatever we just made, return the edition/publication, which is what we are after.
         res = c.ensure_entities_existence(sparql)
+        # Do a backwards-compatible post-hoc addition of the work's internal identifier for reconciliation
+        if 'work' in res:
+            c.graph.add((res['work'], c.predicates['P1'], Literal(sourcekey)))
+        # Document the assertions we just made
         if afact_src:
+            # It comes from an authorship factoid
             c.document(afact_src, *[res[x] for x in assertions_set])
+        else:
+            # It comes from our reading of the database structure
+            c.document(None, *[res[x] for x in assertions_set])
         return res['publ']
 
     def _find_or_create_identified_entity(self, etype, agent, identifier, dname):
@@ -732,6 +741,7 @@ class graphimportSTAR:
         ?de a {c.get_label('E69')} .
         """
         res = c.ensure_entities_existence(de_query)
+        c.document(pbwdoc, res['a0'])
         deathevent = res['de']
         # For ease of understanding we should give the death event a label with the person's PBW identifier.
         # Add the label if it doesn't already exist, in a backwards-compatible way
@@ -1071,18 +1081,24 @@ class graphimportSTAR:
                 else:
                     print(f"Skipping past {person_pbwstr}")
                     continue
-            try:
-                result = self._person_process_loop(person, direct_person_records, factoid_types,
-                                                   used_sources, boulloteria)
-                if result:
-                    processed += 1
-            except URLError as e:
-                print(f"Obtained URLerror {e.reason}; will retry")
-                result = self._person_process_loop(person, direct_person_records, factoid_types,
-                                                   used_sources, boulloteria)
-                # If we get another exception then it's a persistent network error and we die anyway
-                if result:
-                    processed += 1
+
+            for attempt in range(5):
+                try:
+                    result = self._person_process_loop(person, direct_person_records, factoid_types,
+                                                       used_sources, boulloteria)
+                    if result:
+                        processed += 1
+                    break
+                except URLError as e:
+                    if attempt == 4:
+                        print(f"Persistent URLerror {e.reason}.")
+                        print(f"Process started at {self.starttime} and ending at {datetime.now()}.")
+                        print(f"Restart with the arguments: -r '{person_pbwstr}' -x '{self.constants.swrun}'")
+                        exit(1)
+                    else:
+                        print(f"Obtained URLerror {e.reason}; will retry")
+                        sleep(attempt * 30)
+
 
         self.record_assertion_factoids()
         print(f"Processed {processed} person records.")
