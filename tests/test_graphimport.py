@@ -1010,7 +1010,7 @@ select ?work ?editor ?edition where {{
 }}"""
             else:
                 # The Christos Philanthropos doc: edition was created by editors according to editors based on edition.
-                # We have to match the group of editors.
+                # We have to match the group of editors. Also, we never saved the identifier key in the DB.
                 sparql = f"""
 select ?editor ?edition where {{
     ?edition a {c.get_label('F3P')} ;

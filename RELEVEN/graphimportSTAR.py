@@ -478,25 +478,24 @@ class graphimportSTAR:
                     afact_src = c.pbw_uri(afact)
                     asourcekey = c.source(afact)
                     if asourcekey != sourcekey:
-                        print("HELP: Not dealing with %s authorship factoid from different work %s" % (
+                        print("CHECK: Using %s authorship factoid from different work %s" % (
                             sourcekey, asourcekey))
-                    else:
-                        # Find the primary person for the authorship factoid
-                        fact_person = afact.main_person()
-                        if len(fact_person) > 1:
-                            print("CHECK: More than one main person in a factoid?")
-                        # Make sure that the primary factoid person is indeed our author
-                        fp0 = fact_person[0]
-                        if author != self.find_or_create_pbwperson(fp0):
-                            print("CHECK: Is %s multiply authored, and is %s %d among the authors?" % (
-                                sourcekey, fp0.name, fp0.mdbCode))
-                        # If the factoid is an authorship factoid, then the author is claiming to have written; if
-                        # it is a narrative factoid, then the PBW editor is making the claim
-                        # Either way, the PBW editor will be who says this passage belongs to the edition
-                        aship_authority = author if afact.factoidType == 'Authorship' else pbw_authority
-                        # We have to make a sourceref node, connected to this text, for
-                        # the factoid source. TODO we want to add the language later?
-                        sparql += f"""
+                    # Find the primary person for the authorship factoid
+                    fact_person = afact.main_person()
+                    if len(fact_person) > 1:
+                        print("CHECK: More than one main person in a factoid?")
+                    # Make sure that the primary factoid person is indeed our author
+                    fp0 = fact_person[0]
+                    if author != self.find_or_create_pbwperson(fp0):
+                        print("CHECK: Is %s multiply authored, and is %s %d among the authors?" % (
+                            sourcekey, fp0.name, fp0.mdbCode))
+                    # If the factoid is an authorship factoid, then the author is claiming to have written; if
+                    # it is a narrative factoid, then the PBW editor is making the claim
+                    # Either way, the PBW editor will be who says this passage belongs to the edition
+                    aship_authority = author if afact.factoidType == 'Authorship' else pbw_authority
+                    # We have to make a sourceref node, connected to this text, for
+                    # the factoid source. TODO we want to add the language later?
+                    sparql += f"""
         ?srcref {c.get_label('P190')} {Literal(afact.origLDesc).n3()} ;
             {c.get_label('P3')} {Literal(afact.sourceRef).n3()} ;
             a {c.get_label('E33')} . """
@@ -525,6 +524,7 @@ class graphimportSTAR:
 
         # Whatever we just made, return the edition/publication, which is what we are after.
         res = c.ensure_entities_existence(sparql)
+
         # Do a backwards-compatible post-hoc addition of the work's internal identifier for reconciliation
         if 'work' in res:
             c.graph.add((res['work'], c.predicates['P1'], Literal(sourcekey)))
