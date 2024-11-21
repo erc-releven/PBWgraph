@@ -117,8 +117,9 @@ class PBWSources:
         if strip:
             matchstring = refstring.replace(strip, '').lstrip()
         for k, r in ranges.items():
+            # The string should start with the item and also anything before the dot should match exactly.
             for i in r:
-                if matchstring.startswith(i):
+                if matchstring.startswith(i) and matchstring.split('.')[0] == i.split('.')[0]:
                     return k
 
     # Some of the sources are special
