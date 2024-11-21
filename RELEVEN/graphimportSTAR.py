@@ -286,10 +286,11 @@ class graphimportSTAR:
         keystr = str(boulloterion.boulloterionKey)
         btitle = f"Boulloterion of {boulloterion.title}"
         boul_node = self.find_or_create_boulloterion(keystr, btitle)
-        # See if the boulloterion already exists with an inscription
+        # See if the boulloterion already exists with an inscription. Be sure to document it if so
         sparql_check = self.create_assertion_sparql('a1', 'P128', boul_node, '?inscription', pbweditor)
-        res = self.g.query("SELECT ?inscription WHERE { " + sparql_check + "}")
+        res = self.g.query("SELECT ?a1 ?inscription WHERE { " + sparql_check + "}")
         if len(res):
+            c.document(pbwdoc, _get_single_key(res, 'a1'))
             return boul_node, _get_single_key(res, 'inscription')
 
         # If the boulloterion does not yet have an assertion that it carries any inscription, it
@@ -795,21 +796,7 @@ class graphimportSTAR:
         sparql = self.create_assertion_sparql('a1', whopred, '?designation', graphperson, agent, sourcenode)
         sparql += self.create_assertion_sparql('a2', whichpred, '?designation', des, agent, sourcenode)
         sparql += f"?designation a {label} . \n"
-        opt_clause = f"""
-        OPTIONAL {{
-            {pbwdoc.n3()} {c.get_label('P70')} ?a1, ?a2 .
-        }}
-        """
-        # First see if it exists with the optional clause
-        q = f"SELECT * WHERE {{ {sparql} {opt_clause} }}"
-        hits = [row for row in self.g.query(q)]
-        if len(hits) == 0:
-            # We need to create a new set of assertions for this factoid.
-            doc_clause = f"        {pbwdoc.n3()} a {c.get_label('E31')}; {c.get_label('P70')} ?a1, ?a2 ."
-            res = c.ensure_entities_existence(sparql + doc_clause)
-        else:
-            res = hits[0]
-            # Is it coming from a different factoid? For now we are trusting not...
+        res = c.ensure_entities_existence(sparql)
 
         # Document it in either case as coming from this factoid
         c.document(pbwdoc, res['a1'], res['a2'])
@@ -832,11 +819,11 @@ class graphimportSTAR:
     def societyrole_handler(self, sourcenode, agent, factoid, graphperson):
         if factoid.occupation is None:
             return
-        roleid = self.constants.get_societyrole(factoid.occupation)
+        roleid, roleclass = self.constants.get_societyrole(factoid.occupation)
         roletype = self.constants.get_label('C1')
         whopred = 'SP13'
         whichpred = 'SP14'
-        if factoid.occupation in self.constants.legal_designations:
+        if roleclass == self.constants.get_label('C12'):
             # We need to treat it as a legal role instead of a social role / occupation
             roletype = self.constants.get_label('C13')
             whopred = 'SP26'
@@ -849,12 +836,11 @@ class graphimportSTAR:
     def dignity_handler(self, sourcenode, agent, factoid, graphperson):
         if factoid.dignityOffice is None:
             return
-        dignity_string = factoid.dignityOffice.stdName
-        dignity_id = self.constants.get_dignity(dignity_string)
+        dignity_id, dignity_class = self.constants.get_dignity(factoid.dignityOffice.stdName)
         roletype = self.constants.get_label('C13')
         whopred = 'SP26'
         whichpred = 'SP33'
-        if dignity_string in self.constants.generic_social_roles:
+        if dignity_class == self.constants.get_label('C2'):
             # We need to treat it as a social instead of a legal role
             roletype = self.constants.get_label('C1')
             whopred = 'SP13'

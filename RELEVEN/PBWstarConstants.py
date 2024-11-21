@@ -8,10 +8,9 @@ from uuid import uuid4
 from warnings import warn
 
 
-
 # This package contains a bunch of information curated from the PBW website about authority, authorship
 # and so forth. It is a huge laundry list of data and some initialiser and accessor functions for it; the
-# class requires an RDFlib graph or remote datastore in order to do the initialisation.
+# class requires an RDFlib graph or remote datastore in order to do the initialisation steps.
 
 
 class PBWstarConstants:
@@ -244,15 +243,15 @@ class PBWstarConstants:
             '?  XI?',
         }
 
-        # Define our STAR model predicates
-        self.star_subject = self.get_label('P140')
-        self.star_object = self.get_label('P141')
-        self.star_based = self.get_label('P17')
-        self.star_auth = self.get_label('P14')
-        # self.star_src = self.get_label('P70')
 
         # Initialise our group agents and the data structures we need to start
         if graph_exists:
+            # Define our STAR model predicates
+            self.star_subject = self.get_label('P140')
+            self.star_object = self.get_label('P141')
+            self.star_based = self.get_label('P17')
+            self.star_auth = self.get_label('P14')
+            # self.star_src = self.get_label('P70')
             print("Setting up software execution run...")
             # Ensure the existence of the software metadata
             ourscript = Literal("https://github.com/erc-releven/PBWgraph/RELEVEN/graphimportSTAR.py")
@@ -438,24 +437,24 @@ class PBWstarConstants:
         return self._find_or_create_cv_entry('Kinship', self.get_label('C4'), kinlabel)
 
     def get_societyrole(self, srlabel):
+        srclass = self.get_label('C2')
         if srlabel in self.legal_designations:
-            return self._find_or_create_cv_entry('SocietyRole', self.get_label('C12'), srlabel)
-        else:
-            return self._find_or_create_cv_entry('SocietyRole', self.get_label('C2'), srlabel)
+            srclass = self.get_label('C12')
+        return self._find_or_create_cv_entry('SocietyRole', self.get_label('C2'), srlabel), srclass
 
     def get_dignity(self, dignity):
         # Dignities in PBW tend to be specific to institutions / areas;
         # make an initial selection by breaking on the 'of'
         diglabel = dignity
+        digclass = self.get_label('C12')
         if ' of the ' not in dignity:  # Don't split (yet) titles that probably don't refer to places
             diglabel = dignity.split(' of ')[0]
         if diglabel in self.generic_social_roles:
-            dig_uri = self._find_or_create_cv_entry('Dignity', self.get_label('C2'), diglabel)
-        else:
-            dig_uri = self._find_or_create_cv_entry('Dignity', self.get_label('C12'), diglabel)
+            digclass = self.get_label('C2')
+        dig_uri = self._find_or_create_cv_entry('Dignity', digclass, diglabel)
         # Make sure that the URI also appears under the original label, if we shortened it
         self.cv['Dignity'][dignity] = dig_uri
-        return dig_uri
+        return dig_uri, digclass
 
     def inrange(self, floruit):
         """Return true if the given floruit tag falls within RELEVEN's range"""
