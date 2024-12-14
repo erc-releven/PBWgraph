@@ -116,11 +116,17 @@ class PBWSources:
         matchstring = refstring
         if strip:
             matchstring = refstring.replace(strip, '').lstrip()
-        for k, r in ranges.items():
-            # The string should start with the item and also anything before the dot should match exactly.
-            for i in r:
-                if matchstring.startswith(i) and matchstring.split('.')[0] == i.split('.')[0]:
-                    return k
+        # Divide the ref string into individual items if necessary
+        to_match = re.split(r'[;,]\s+', matchstring)  # We exclude ,\S since it is usually a typo for .
+        # Return the first matching reference. TODO return all matching references...
+        for ref in to_match:
+            for k, r in ranges.items():
+                # The string should start with the item and also anything before the dot or space should match exactly.
+                for i in r:
+                    top = re.split(r'[\s.-]', ref)[0]
+                    if (ref.startswith(i)
+                            and top == re.split(r'[\s.]', i)[0]):
+                        return k
 
     # Some of the sources are special
     def parse_psellos_ref(self, refstring):
@@ -175,9 +181,9 @@ class PBWSources:
             return self.page_to_key(refstring, kstr, strip="Miklosich-Müller 5.")
 
     def parse_parthenon(self, refstring):
-        m = re.match(r'col\. \d+, no\. (\d+)', refstring)
+        m = re.match(r'cols?\. \d+( and \d+)?, nos?\. (\d+)', refstring)
         if m:
-            return 'Parthenon inscriptions %s' % m.group(1)
+            return 'Parthenon inscriptions %s' % m.group(2)
         else:
             return None
 
