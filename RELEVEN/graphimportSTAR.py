@@ -5,6 +5,7 @@ import config
 import re
 from datetime import datetime
 from functools import reduce
+from http.client import RemoteDisconnected
 from rdflib import Graph, Literal, XSD
 from rdflib.plugins.stores import sparqlstore
 from sqlalchemy import create_engine, and_
@@ -309,7 +310,7 @@ class graphimportSTAR:
         # belong to their collection and that they came from this boulloterion.
         for i, seal in enumerate(boulloterion.seals):
             coll = self.find_or_create_seal_collection(seal.collection.collectionName)
-            # TODO needs to change to use sealKey, since this id isn't unique
+            # TODO needs to change to use sealKey, since this id isn't unique. Also use DO URLs where we have them
             seal_id = "%d.%d.%d" % (seal.collectionKey, seal.boulloterionKey, seal.collectionRef)
             sparql += f"""
         ?seal{i} {c.get_label('P3')} {Literal(seal_id).n3()} ;
@@ -993,7 +994,8 @@ class graphimportSTAR:
         if person.name == 'Anonymi':
             return
         # Create or find the person node
-        print(f"*** Making/finding node for person {person.name} {person.mdbCode} ***")
+        print(f"*** {datetime.now().strftime('%d %H:%M:%S')} Making/finding node for person "
+              f"{person.name} {person.mdbCode} ***")
         graph_person = self.find_or_create_pbwperson(person)
 
         # Get the 'factoids' that are directly in the person record
@@ -1075,16 +1077,23 @@ class graphimportSTAR:
                     if result:
                         processed += 1
                     break
-                except URLError as e:
+                except (URLError, RemoteDisconnected) as e:
                     if attempt == 4:
-                        print(f"Persistent URLerror {e.reason}.")
+                        # RemoteDisconnected has no 'reason' attribute
+                        if type(e) == URLError:
+                            print(f"Persistent URLerror {e.reason}.")
+                        else:
+                            print(f"Persistent connection error {e}.")
                         print(f"Process started at {self.starttime} and ending at {datetime.now()}.")
                         print(f"Restart with the arguments: -r '{person_pbwstr}' -x '{self.constants.swrun}'")
                         exit(1)
                     else:
                         print(f"Obtained URLerror {e.reason}; will retry")
                         sleep(attempt * 30)
-
+                except Exception as e:
+                    print(f"Process started at {self.starttime} and ending at {datetime.now()}.")
+                    print(f"Restart with the arguments: -r '{person_pbwstr}' -x '{self.constants.swrun}'")
+                    raise e
 
         self.record_assertion_factoids()
         print(f"Processed {processed} person records.")
@@ -1118,6 +1127,7 @@ if __name__ == '__main__':
 
     # Process the person records
     gimport = graphimportSTAR(origgraph=args.graph, testmode=args.testing, execution=args.execution)
+    print(f"Ingestion run started at {gimport.starttime}")
     gimport.process_persons(skipuntil=args.resume_from)
     # Where are we writing the graph to? Default is the location in config.py
     filename = args.graph
