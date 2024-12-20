@@ -16,7 +16,7 @@ from warnings import warn
 class PBWstarConstants:
     """A class to deal with all of our constants, where the data is nicely encapsulated"""
 
-    def __init__(self, graph=None, store=None, execution=None):
+    def __init__(self, graph=None, store=None, execution=None, readonly=False):
         # These are the modern scholars who put the source information into PBW records.
         # We need Michael and Tara on the outside
         self.mj = {'identifier': 'Jeffreys, Michael J.', 'viaf': '73866641'}
@@ -48,6 +48,7 @@ class PBWstarConstants:
         elif graph is not None:
             self.graph = graph
             graph_exists = True
+        self.readonly = readonly
 
         if graph_exists:
             # Bind the namespaces in our graph
@@ -251,30 +252,38 @@ class PBWstarConstants:
             self.star_object = self.get_label('P141')
             self.star_based = self.get_label('P17')
             self.star_auth = self.get_label('P14')
-            # self.star_src = self.get_label('P70')
-            print("Setting up software execution run...")
-            # Ensure the existence of the software metadata
-            ourscript = Literal("https://github.com/erc-releven/PBWgraph/RELEVEN/graphimportSTAR.py")
-            md_query = f"""
-            ?thisurl a {self.get_label('E42')} ;
-                {self.get_label('P190')} {ourscript.n3()} .
-            ?this a {self.get_label('D14')} ;
-                {self.get_label('P1')} ?thisurl ."""
-            res = self.ensure_entities_existence(md_query)
-            # Create the software execution for this run, so that we can create the markers at the end
-            if execution is not None:
-                # If we are resuming a run, we use the same software execution entity
-                self.swrun = URIRef(execution)
-            else:
-                # If we are not resuming, we have to create the entity with the current timestamp.
-                self.swrun = self.namespaces['data'][str(uuid4())]
-                se_query = f"""
-                ?tstamp a {self.get_label('E52')} ;
-                    {self.get_label('P82a')} {Literal(datetime.now(), datatype=XSD.dateTimeStamp).n3()} .
-                {self.swrun.n3()} a {self.get_label('D10')} ;
-                    {self.get_label('P4')} ?tstamp ;
-                    {self.get_label('L23')} {res['this'].n3()} ."""
-                self.ensure_entities_existence(se_query)
+            self.star_src = self.get_label('P17')
+            # TODO self.star_src = self.get_label('P67')
+            if not self.readonly:
+                try:
+                    print("Setting up software execution run...")
+                    # Ensure the existence of the software metadata
+                    ourscript = Literal("https://github.com/erc-releven/PBWgraph/RELEVEN/graphimportSTAR.py")
+                    md_query = f"""
+                    ?thisurl a {self.get_label('E42')} ;
+                        {self.get_label('P190')} {ourscript.n3()} .
+                    ?this a {self.get_label('D14')} ;
+                        {self.get_label('P1')} ?thisurl ."""
+                    res = self.ensure_entities_existence(md_query)
+                    # Create the software execution for this run, so that we can create the markers at the end
+                    if execution is not None:
+                        # If we are resuming a run, we use the same software execution entity
+                        self.swrun = URIRef(execution) if execution.startswith('http') \
+                            else self.ns[execution.lstrip('data:')]
+                    else:
+                        # If we are not resuming, we have to create the entity with the current timestamp,
+                        # assuming we have a writable store.
+                        self.swrun = self.namespaces['data'][str(uuid4())]
+                        se_query = f"""
+                        ?tstamp a {self.get_label('E52')} ;
+                            {self.get_label('P82a')} {Literal(datetime.now(), datatype=XSD.dateTimeStamp).n3()} .
+                        {self.swrun.n3()} a {self.get_label('D10')} ;
+                            {self.get_label('P4')} ?tstamp ;
+                            {self.get_label('L23')} {res['this'].n3()} ."""
+                        self.ensure_entities_existence(se_query)
+                except TypeError:
+                    print("Graph is not writable! Continuing in read-only mode")
+                    self.readonly = True
 
             print("Setting up PBW constants...")
             # Ensure existence of our external authorities
@@ -312,8 +321,10 @@ class PBWstarConstants:
             'Dignity': dict(),
             'Kinship': dict()
         }
-        # Special-case 'slave' and ordained/consecrated roles out of 'occupations'
-        self.legal_designations = ['Slave', 'Monk', 'Bishops', 'Monk (Latin)', 'Patriarch', 'Hieromonk']
+        # Special-case 'slave' and ordained/consecrated roles out of 'occupations'. TODO add Nun, rethink feminine titles
+        self.legal_designations = ['Bishops', 'Cantor', 'Captain', 'Chamberlain', 'Hieromonk', 'Imperial courier',
+                                   'Judge', 'Missionary priest', 'Monk', 'Monk (Latin)', 'Patriarch',
+                                   'Presbyter', 'Priest', 'Slave', 'Tax-collector']
 
         # Special-case certain "dignities" into generic social roles, cf.
         # https://github.com/erc-releven/.github/issues/16
@@ -333,8 +344,7 @@ class PBWstarConstants:
                                      'Protovestarchissa', 'Protovestiaria', 'Protovestiarissa',
                                      'Relative of the megas domestikos', 'Scholarios', 'Scribe', 'Sebastokratorissa',
                                      'Servant of the patriarch', 'Ship\'s captain', 'Son of the archon', 'Strategissa',
-                                     'Strateutes', 'Stratiotes', 'Topoteretissa', 'Vestarchissa', 'Vestena',
-                                     'Xenodochos']
+                                     'Strateutes', 'Stratiotes', 'Topoteretissa', 'Vestarchissa', 'Vestena']
 
         # Make a list of boulloterions that are missing their references, with a link to the publication
         # that the seals come from or -1 if we should use the seal catalogues as sources
@@ -440,7 +450,7 @@ class PBWstarConstants:
         srclass = self.get_label('C2')
         if srlabel in self.legal_designations:
             srclass = self.get_label('C12')
-        return self._find_or_create_cv_entry('SocietyRole', self.get_label('C2'), srlabel), srclass
+        return self._find_or_create_cv_entry('SocietyRole', srclass, srlabel), srclass
 
     def get_dignity(self, dignity):
         # Dignities in PBW tend to be specific to institutions / areas;
@@ -471,6 +481,8 @@ class PBWstarConstants:
 
     def ensure_entities_existence(self, sparql, force_create=False):
         # print("SPARQL is:" + sparql)
+        if force_create and self.readonly:
+            raise Exception("Cannot force create triples in readonly mode!")
         try:
             if not force_create:
                 res = self.graph.query("SELECT DISTINCT * WHERE {" + sparql + "}")
@@ -481,6 +493,10 @@ class PBWstarConstants:
                     # In any case return the variables from the first row as a dictionary.
                     for row in res:
                         return row.asdict()
+
+            if self.readonly:
+                # If we got here we didn't get a result, and we can't add one.
+                return dict()
 
             # Either force_create was specified or res had zero length.
             new_uris = self.mint_uris_for_query(sparql)
