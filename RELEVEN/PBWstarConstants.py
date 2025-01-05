@@ -3,7 +3,7 @@ import re
 import RELEVEN.PBWSources
 from datetime import datetime
 from os.path import join, dirname
-from rdflib import Graph, URIRef, Literal, Namespace, RDF, SKOS, XSD
+from rdflib import Graph, URIRef, Literal, Namespace, RDF, RDFS, OWL, XSD
 from uuid import uuid4
 from warnings import warn
 
@@ -302,8 +302,8 @@ class PBWstarConstants:
             for ent in f11s:
                 f11_query = f"""
                 ?a a {self.get_label('F11')} ;
-                    {self.get_label('P1')} {ent['title'].n3()} ;
-                    {SKOS.exactMatch.n3()} {ent['uri'].n3()} ."""
+                    {RDFS.label.n3()} {ent['title'].n3()} ;
+                    {OWL.sameAs.n3()} {ent['uri'].n3()} ."""
                 uris = self.ensure_entities_existence(f11_query)
                 f11_uri = uris['a']
                 # Store it in self.[key]_agent, e.g. self.pbw_agent
@@ -419,9 +419,8 @@ class PBWstarConstants:
         # If we haven't made this label yet, do it
         if label not in self.cv[category]:
             # We have to create the node, possibly attaching it to a superclass
-            dataprop = self.get_label('P1')
-            # TODO attach language to these later
-            litlabel = Literal(label)
+            dataprop = RDFS.label.n3()
+            litlabel = Literal(label, lang='en')
             sparql = f"""
             ?cventry a {nodeclass} ;
                 {dataprop} {litlabel.n3()} ."""
