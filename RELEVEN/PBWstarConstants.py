@@ -3,7 +3,7 @@ import re
 import RELEVEN.PBWSources
 from datetime import datetime
 from os.path import join, dirname
-from rdflib import Graph, URIRef, Literal, Namespace, RDF, RDFS, OWL, XSD
+from rdflib import Graph, URIRef, Literal, Namespace, OWL, RDF, RDFS, XSD
 from uuid import uuid4
 from warnings import warn
 
@@ -126,6 +126,7 @@ class PBWstarConstants:
             'P46': self.namespaces['crm']['P46_is_composed_of'],
             'P48': self.namespaces['crm']['P48_has_preferred_identifier'],
             'P51': self.namespaces['crm']['P51_has_former_or_current_owner'],
+            'P67': self.namespaces['crm']['P67_refers_to'],
             'P70': self.namespaces['crm']['P70_documents'],
             'P80': self.namespaces['crm']['P80_end_is_qualified_by'],
             'P82a': self.namespaces['crm']['P82a_begin_of_the_begin'],
@@ -252,12 +253,17 @@ class PBWstarConstants:
             self.star_object = self.get_label('P141')
             self.star_based = self.get_label('P17')
             self.star_auth = self.get_label('P14')
-            self.star_src = self.get_label('P17')
-            # TODO self.star_src = self.get_label('P67')
+            self.star_src = self.get_label('P67')
+            self.entity_label = RDFS.label
+            self.entity_link = OWL.sameAs
+            # convenience
+            self.label_n3 = self.entity_label.n3()
+            self.link_n3 = self.entity_link.n3()
             if not self.readonly:
                 try:
                     print("Setting up software execution run...")
                     # Ensure the existence of the software metadata
+                    # TODO should this be a string?
                     ourscript = Literal("https://github.com/erc-releven/PBWgraph/RELEVEN/graphimportSTAR.py")
                     md_query = f"""
                     ?thisurl a {self.get_label('E42')} ;
@@ -302,8 +308,8 @@ class PBWstarConstants:
             for ent in f11s:
                 f11_query = f"""
                 ?a a {self.get_label('F11')} ;
-                    {RDFS.label.n3()} {ent['title'].n3()} ;
-                    {OWL.sameAs.n3()} {ent['uri'].n3()} ."""
+                    {self.entity_label} {ent['title'].n3()} ;
+                    {self.entity_link} {ent['uri'].n3()} ."""
                 uris = self.ensure_entities_existence(f11_query)
                 f11_uri = uris['a']
                 # Store it in self.[key]_agent, e.g. self.pbw_agent
@@ -419,11 +425,10 @@ class PBWstarConstants:
         # If we haven't made this label yet, do it
         if label not in self.cv[category]:
             # We have to create the node, possibly attaching it to a superclass
-            dataprop = RDFS.label.n3()
             litlabel = Literal(label, lang='en')
             sparql = f"""
             ?cventry a {nodeclass} ;
-                {dataprop} {litlabel.n3()} ."""
+                {self.entity_label} {litlabel.n3()} ."""
             res = self.ensure_entities_existence(sparql)
             self.cv[category][label] = res['cventry']
 

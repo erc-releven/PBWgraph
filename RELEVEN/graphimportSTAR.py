@@ -58,10 +58,11 @@ def _get_single_key(rdfresult, k):
         return row[k]
 
 
-def _get_source_lang(factoid):
+def _get_source_lang(dbobj):
+    """Returns the RDF language tag for any object that has an `oLangKey` property"""
     lkeys = {2: 'grc', 3: 'la', 4: 'ar', 5: 'xcl'}
     try:
-        return lkeys.get(factoid.oLangKey)
+        return lkeys.get(dbobj.oLangKey)
     except NameError:
         return None
 
@@ -142,7 +143,7 @@ class graphimportSTAR:
         print("Found %d relevant people" % len(relevant))
         return relevant
 
-    def create_assertion_sparql(self, label, ptype, subj, obj, auth, src=None):
+    def create_assertion_sparql(self, label, ptype, subj, obj, auth, src=None, based=None):
         """Create the SPARQL query that corresponds to an assertion with the given parameters.
            Note that the object might be a list of literals."""
         # Try to optimize this by putting the subject or object first, if it is a literal
@@ -181,10 +182,16 @@ class graphimportSTAR:
 
         # The assertion might or might not have a source
         if src:
-            basis = src
+            provenance = src
             if hasattr(src, 'n3'):
-                basis = src.n3()
-            sparql += f"            {c.star_based} {basis} ; \n"
+                provenance = src.n3()
+            sparql += f"            ^{c.star_src} {provenance} ; \n"
+        # ...and it might or might not be based on something
+        if based:
+            evidence = based
+            if hasattr(based, 'n3'):
+                evidence = based.n3()
+            sparql += f"            {c.star_based} {evidence} ; \n"
         # ...but it should always have an authority.
         authority = auth
         if hasattr(auth, 'n3'):
@@ -232,9 +239,8 @@ class graphimportSTAR:
 
         # Create the SPARQL expression.
         sparql = self.create_assertion_sparql('a1', 'P1', graphperson, '?appellation', c.pbw_agent)
-        # We do *not* add lang=_get_source_lang(sqlperson)).n3() to these strings (yet, TODO)
         sparql += f"""?appellation a {c.get_label('E41')} ;
-            {c.get_label('P190')} {Literal(appellation).n3()} .
+            {c.get_label('P190')} {Literal(appellation, lang=_get_source_lang(sqlperson)).n3()} .
         """
         # Check and create it if necessary
         res = c.ensure_entities_existence(sparql)
@@ -299,24 +305,30 @@ class graphimportSTAR:
         # Get the sources that PBW used for this boulloterion, if any
         source_node = self.get_boulloterion_sourcelist(boulloterion)
 
-        # Make the assertion(s) concerning its inscription.
-        # TODO for the cleanup change E73 to E33 and add language tag?
+        # Make the assertion(s) concerning its inscription. Mark the inscription explicitly as E33 as well as
+        # E34, since we can't always rely on having inferencing
         sparql = f"""
-        ?inscription {c.get_label('P190')} {Literal(boulloterion.origLText).n3()} ;
-            a {c.get_label('E34')}, {c.get_label('E73')} . """
-        sparql += self.create_assertion_sparql('a', 'P128', boul_node, '?inscription', pbweditor, source_node)
+        ?inscription {c.get_label('P190')} {Literal(boulloterion.origLText, lang=_get_source_lang(boulloterion)).n3()} ;
+            a {c.get_label('E34')}, {c.get_label('E33')} . """
+        sparql += self.create_assertion_sparql('a', 'P128', boul_node, '?inscription', pbweditor, based=source_node)
 
         # Create the seals that belong to this boulloterion; assert that they
         # belong to their collection and that they came from this boulloterion.
         for i, seal in enumerate(boulloterion.seals):
             coll = self.find_or_create_seal_collection(seal.collection.collectionName)
-            # TODO needs to change to use sealKey, since this id isn't unique. Also use DO URLs where we have them
-            seal_id = "%d.%d.%d" % (seal.collectionKey, seal.boulloterionKey, seal.collectionRef)
+            # Is it one of the happy items with a collection URL that we can construct?
+            seal_link = ''
+            if seal.collection.baseURL is not None:
+                seal_uri = seal.collection.baseURL + seal.collectionKey
+                if 'doaks' in seal_uri:  # only DOaks URIs are recoverable directly from the database
+                    seal_link = f"\n            {c.link_n3} <{seal_uri}> ;"
+            # Make an ID unique for our purposes
+            seal_id = "%d-%d-%d" % (seal.collectionKey, seal.collectionRef, seal.sealKey)
             sparql += f"""
-        ?seal{i} {c.get_label('P3')} {Literal(seal_id).n3()} ;
+        ?seal{i} {c.label_n3} {Literal(seal_id).n3()} ;{seal_link}
             a {c.get_label('E22S')} . """
-            sparql += self.create_assertion_sparql(f"a{i}c", 'P46', coll, f'?seal{i}', pbweditor)
-            sparql += self.create_assertion_sparql(f"a{i}b", 'L1', boul_node, f'?seal{i}', pbweditor)
+            sparql += self.create_assertion_sparql(f"a{i}c", 'P46', coll, f'?seal{i}', pbweditor, src=source_node)
+            sparql += self.create_assertion_sparql(f"a{i}b", 'L1', boul_node, f'?seal{i}', pbweditor, based=source_node)
 
         # Possible optimization: We have already established that this boulloterion (and therefore the
         # inscription and seals) don't exist yet, so just run the statement as an update
@@ -365,7 +377,7 @@ class graphimportSTAR:
             short_name = source.shortName if source.bibKey == 816 else re_encode(source.shortName)
             latin_bib = source.latinBib if source.bibKey == 816 else re_encode(source.latinBib)
             sn = f"""
-        ?src {c.get_label('P1')} {Literal(short_name).n3()} ;
+        ?src {c.label_n3} {Literal(short_name).n3()} ;
             {c.get_label('P3')} {Literal(latin_bib).n3()} ;
             a {c.get_label('F3P')} .
         """
@@ -529,7 +541,7 @@ class graphimportSTAR:
 
         # Do a backwards-compatible post-hoc addition of the work's internal identifier for reconciliation
         if 'work' in res:
-            c.graph.add((res['work'], c.predicates['P1'], Literal(sourcekey)))
+            c.graph.add((res['work'], c.entity_label, Literal(sourcekey)))
         # Document the assertions we just made
         if afact_src:
             # It comes from an authorship factoid
@@ -554,7 +566,7 @@ class graphimportSTAR:
         # The entity should have its display name as a crm:P3 note, without a language designation
         entitystr = f"?entity a {etype} "
         if dname is not None:
-            entitystr += f";\n            {c.get_label('P3')} {Literal(dname).n3()} "
+            entitystr += f";\n            {c.label_n3} {Literal(dname).n3()} "
         entitystr += '.'
 
         # Construct the identifier assignment that should exist
@@ -592,7 +604,7 @@ class graphimportSTAR:
         c = self.constants
         sparql = f"""
         ?collection a {c.get_label('E78')} ;
-            {c.get_label('P1')} "{collname}" .
+            {c.label_n3} "{collname}" .
         """
         res = c.ensure_entities_existence(sparql)
         return res['collection']
@@ -936,7 +948,7 @@ class graphimportSTAR:
 
         # Give the possession its description, which comes out of the factoid's engDesc
         sparql = f"""
-        ?possession {c.get_label('P1')} {Literal(factoid.replace_referents()).n3()} ;
+        ?possession {c.label_n3} {Literal(factoid.replace_referents()).n3()} ;
             a {c.get_label('E18')} ."""
         # Assert ownership of the possession
         sparql += self.create_assertion_sparql('a1', 'P51', '?possession', graphperson, agent, sourcenode)
