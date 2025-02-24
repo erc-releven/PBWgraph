@@ -119,7 +119,6 @@ class graphimportSTAR:
             ct = reduce(lambda x, y: x + 1, res, 0)
             print(f"Using graph {origgraph} with {ct} existing assertions.")
 
-
     def _urify(self, label):
         """Utility function to turn STAR predicates into real URIref objects"""
         p, c = label.split(':')
@@ -146,6 +145,8 @@ class graphimportSTAR:
     def create_assertion_sparql(self, label, ptype, subj, obj, auth, src=None, based=None):
         """Create the SPARQL query that corresponds to an assertion with the given parameters.
            Note that the object might be a list of literals."""
+        # Get the predicates for the STAR assertion in question
+
         # Try to optimize this by putting the subject or object first, if it is a literal
         c = self.constants
         subject = subj
@@ -157,7 +158,7 @@ class graphimportSTAR:
 
         # Deal with the object
         sparqlobj = ""
-        if type(obj) == list:
+        if isinstance(obj, list):
             # Ensure that the list are all literals
             disallowed = [x for x in obj if not isinstance(x, Literal)]
             if len(disallowed):
@@ -374,12 +375,12 @@ class graphimportSTAR:
         source_nodes = []
         for source in pubs:
             # Fix the encoding for the entries we didn't add
-            short_name = source.shortName if source.bibKey == 816 else re_encode(source.shortName)
+            # short_name = source.shortName if source.bibKey == 816 else re_encode(source.shortName)
             latin_bib = source.latinBib if source.bibKey == 816 else re_encode(source.latinBib)
+            # TODO work in the shortName?
             sn = f"""
-        ?src {c.label_n3} {Literal(short_name).n3()} ;
-            {c.get_label('P3')} {Literal(latin_bib).n3()} ;
-            a {c.get_label('F3P')} .
+        ?src {c.label_n3} {Literal(latin_bib).n3()} ;
+            a {c.get_label('F2P')} .
         """
             res = c.ensure_entities_existence(sn)
             source_nodes.append(res['src'])
@@ -425,7 +426,7 @@ class graphimportSTAR:
         agent = self.get_authority_node(self.constants.authorities(sourcekey))
         sparql = f"""
         ?sourceref {c.get_label('P190')} {Literal(factoid.origLDesc).n3()} ;
-            {c.get_label('P3')} {Literal(c.sourceref(factoid)).n3()} ;
+            {c.label_n3} {Literal(c.sourceref(factoid)).n3()} ;
             a {c.get_label('E33')} . """
         sparql += self.create_assertion_sparql('a', 'R15', wholesource, '?sourceref', agent)
         res = c.ensure_entities_existence(sparql)
@@ -437,9 +438,11 @@ class graphimportSTAR:
         # a CREATION event, asserted by the author.
         c = self.constants
         sourcekey = c.source(factoid)
-        workinfo = c.sourceinfo(sourcekey)  # The work is really a spec:TextExpression
+        workinfo = c.sourceinfo(sourcekey)
         pbw_authority = self.get_authority_node(c.authorities(sourcekey))
         editors = self.get_authority_node(workinfo.get('editor'))
+        # NOTE I mislabelled these in the data hash. The 'work' is actually a spec:Text_Expression
+        # and the 'expression' is actually a spec:Publication, both of which are F2s
         # The primary source identifier is the 'work' key, or else the PBW source ID string.
         text_id = workinfo.get('work')
         # The edition identifier is the 'expression' key (a citation to the edition).
@@ -455,27 +458,26 @@ class graphimportSTAR:
         afact_src = None
         # Express the edition/publication
         sparql = f"""
-        ?publ {c.get_label('P3')} {Literal(edition_id).n3()} ;
-            a {c.get_label('F3P')} . """
+        ?publ {c.label_n3} {Literal(edition_id).n3()} ;
+            a {c.get_label('F2P')} . """
 
         if text_id is None:
-            # We are dealing with a secondary source. Assert a publication (manifestation) creation instead of a
+            # We are dealing with a secondary source. Assert a publication creation instead of a
             # text (expression) creation, with the editors; we will have to go back later and say that this
             # depended on another work (the primary source).
-            # TODO remove the 'based' leg after reconciliation
-            sparql += self.create_assertion_sparql('a1', 'R24', '?ec', '?publ', editors, '?publ')
+            sparql += self.create_assertion_sparql('a1', 'R17', '?ec', '?publ', editors, '?publ')
             sparql += self.create_assertion_sparql('a2', 'P14', '?ec', editors, editors, '?publ')
             sparql += f"""
-        ?ec a {c.get_label('F30')} . """
+        ?ec a {c.get_label('F28')} . """
             assertions_set.extend(['a1', 'a2'])
         else:
             # We are dealing with a primary source, so we need to make a bunch of assertions.
             # First, the editors assert that the edition (that is, the publication) belongs to
-            # the work; this is based on, well, the edition.
+            # the work; the source for this is, well, the edition.
             sparql += f"""
-        ?work {c.get_label('P3')} {Literal(text_id).n3()} ;
+        ?work {c.label_n3} {Literal(text_id).n3()} ;
             a {c.get_label('F2T')} . """
-            sparql += self.create_assertion_sparql('a1', 'R5', '?publ', '?work', editors, '?publ')
+            sparql += self.create_assertion_sparql('a1', 'R76', '?publ', '?work', editors, '?publ')
             assertions_set.append('a1')
             # Now we need to see if authorship has to be asserted.
             author = self.get_author_node(self.constants.author(sourcekey))
@@ -508,22 +510,24 @@ class graphimportSTAR:
                     # Either way, the PBW editor will be who says this passage belongs to the edition
                     aship_authority = author if afact.factoidType == 'Authorship' else pbw_authority
                     # We have to make a sourceref node, connected to this text, for
-                    # the factoid source. TODO we want to add the language later?
+                    # the factoid source.
                     sparql += f"""
-        ?srcref {c.get_label('P190')} {Literal(afact.origLDesc).n3()} ;
-            {c.get_label('P3')} {Literal(afact.sourceRef).n3()} ;
+        ?srcref {c.get_label('P190')} {Literal(afact.origLDesc, lang=_get_source_lang(afact)).n3()} ;
+            {c.label_n3} {Literal(afact.sourceRef).n3()} ;
             a {c.get_label('E33')} . """
                     aship_source = '?srcref'
                 elif 'provenance' in workinfo:
                     # We have a page number. This makes our authorship authority the editor(s), with the source
                     # being the passage in this very edition.
                     sparql += f"""
-        ?srcref {c.get_label('P3')} {Literal(workinfo['provenance']).n3()} ;
+        ?srcref {c.label_n3} {Literal(workinfo['provenance']).n3()} ;
             a {c.get_label('E33')} . """
                     aship_source = '?srcref'
 
                 if aship_source == '?srcref':
-                    # It is the PBW editor who says that a particular passage belongs to the respective edition.
+                    # It is the PBW editor who says that a particular passage exists and belongs to the respective
+                    # edition. We have no further source or evidence of this, apart from the DB record that will get
+                    # documented via an E31 link.
                     # n.b. We will need to fix/change this manually for non-factoid provenance!
                     sparql += self.create_assertion_sparql('a2', 'R15', '?publ', aship_source, pbw_authority)
                     assertions_set.append('a2')
@@ -557,22 +561,30 @@ class graphimportSTAR:
         carried out by the given agent, with dname becoming our preferred human-readable identifier."""
         c = self.constants
         if etype == c.get_label('E22B'):
+            # Identifier is a number
             url = f'https://pbw2016.kdl.kcl.ac.uk/boulloterion/{identifier}/'
         elif agent == c.pbw_agent:
-            url = f'https://pbw2016.kdl.kcl.ac.uk/person/{identifier.replace(" ", "/")}/'
+            # Identifier is something like 'Alexios 10102' or 'Alp Arslan 51'.
+            # The URL changes it to 'Alexios/10102' or 'Alp%20Arslan/51'
+            uf = identifier.split(' ')
+            f"{'%20'.join(uf[:-1])}/{uf[-1]}"
+            url = f'https://pbw2016.kdl.kcl.ac.uk/person/{' '.join(uf[:-1])}/{uf[-1]}/'
         else:
+            # Identifier is a number
             url = f'https://viaf.org/viaf/{identifier}/'
 
-        # The entity should have its display name as a crm:P3 note, without a language designation
+        # The entity should have its display name as its label, without a language designation.
+        #
         entitystr = f"?entity a {etype} "
         if dname is not None:
             entitystr += f";\n            {c.label_n3} {Literal(dname).n3()} "
         entitystr += '.'
 
-        # Construct the identifier assignment that should exist
+        # Construct the identifier assignment that should exist.
+        # This identifier is marked sameAs the identifier we are copying from.
         sparql = f"""
-        ?ident {c.get_label('P3')} {Literal(url).n3()} ;
-            {c.get_label('P190')} {Literal(identifier).n3()} ;
+        ?ident {c.get_label('P190')} {Literal(identifier).n3()} ;
+            {c.link_n3} <{url}> ;
             a {c.get_label('E42')} .
         ?idass {c.get_label('P37')} ?ident ;
             {c.star_subject} ?entity ;
@@ -604,7 +616,7 @@ class graphimportSTAR:
         c = self.constants
         sparql = f"""
         ?collection a {c.get_label('E78')} ;
-            {c.label_n3} "{collname}" .
+            {c.label_n3} {Literal(collname).n3()} .
         """
         res = c.ensure_entities_existence(sparql)
         return res['collection']
@@ -745,7 +757,7 @@ class graphimportSTAR:
                 factoid.factoidKey, factoid.engDesc))
             return
 
-        # Set up the death event. We take for granted that every 11th-c. person has a maximum of one death,
+        # Set up the death event. We take for granted that every 11th-c. person has exactly one death,
         # so we set this event separately and we don't bother with source or authority, as those will be
         # attached to the date/place/etc. of the event.
         de_query = f"""
@@ -1002,7 +1014,7 @@ class graphimportSTAR:
             print("No new assertions created on this run.")
 
     def _person_process_loop(self, person, direct_person_records, factoid_types, used_sources, boulloteria):
-         # Skip the anonymous groups for now
+        # Skip the anonymous groups for now
         if person.name == 'Anonymi':
             return
         # Create or find the person node
@@ -1063,7 +1075,6 @@ class graphimportSTAR:
         """Go through the relevant person records and process them for factoids"""
         used_sources = set()
         boulloteria = set()
-        seals = 0
 
         # Get the classes of info that are directly in the person record
         direct_person_records = ['Gender', 'Identifier']
@@ -1092,7 +1103,7 @@ class graphimportSTAR:
                 except (URLError, RemoteDisconnected) as e:
                     if attempt == 4:
                         # RemoteDisconnected has no 'reason' attribute
-                        if type(e) == URLError:
+                        if isinstance(e, URLError):
                             print(f"Persistent URLerror {e.reason}.")
                         else:
                             print(f"Persistent connection error {e}.")
@@ -1110,7 +1121,7 @@ class graphimportSTAR:
         self.record_assertion_factoids()
         print(f"Processed {processed} person records.")
         print(f"Used the following sources: {sorted(used_sources)}")
-        print(f"Used the following boulloterion IDs: {sorted(boulloteria)}" )
+        print(f"Used the following boulloterion IDs: {sorted(boulloteria)}")
 
 
 # If we are running as main, execute the script
@@ -1144,6 +1155,6 @@ if __name__ == '__main__':
     # Where are we writing the graph to? Default is the location in config.py
     filename = args.graph
     if args.graph != config.graphuri:
-         gimport.g.serialize(args.graph)
+        gimport.g.serialize(args.graph)
     duration = datetime.now() - gimport.starttime
     print("Done! Ran in %s" % str(duration))

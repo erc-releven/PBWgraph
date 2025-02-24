@@ -104,7 +104,7 @@ class PBWstarConstants:
             'F2': self.namespaces['lrmoo']['F2_Expression'],    # Expression - e.g. a database record
             'F2T': self.namespaces['spec']['Text_Expression'],  # Text Expression - e.g.
             'F3': self.namespaces['lrmoo']['F3_Manifestation'],    # Manifestation
-            'F3P': self.namespaces['spec']['Publication'],  # Publication - e.g. an edition or journal article
+            'F2P': self.namespaces['spec']['Publication'],  # Publication - e.g. an edition or journal article
             'F11': self.namespaces['lrmoo']['F11_Corporate_Body'],  # Corporate Body
             'F27': self.namespaces['lrmoo']['F27_Work_Creation'],  # Work Creation
             'F28': self.namespaces['lrmoo']['F28_Expression_Creation'],  # Expression Creation
@@ -297,10 +297,10 @@ class PBWstarConstants:
             self.viaf_agent = None
             self.orcid_agent = None
             f11s = [{'key': 'pbw',
-                     'title': Literal('Prosopography of the Byzantine World'),
+                     'title': Literal('Prosopography of the Byzantine World', 'en'),
                      'uri': URIRef('https://pbw2016.kdl.kcl.ac.uk/')},
                     {'key': 'viaf',
-                     'title': Literal('Virtual Internet Authority File'),
+                     'title': Literal('Virtual Internet Authority File', 'en'),
                      'uri': URIRef('https://viaf.org/')},
                     {'key': 'orcid',
                      'title': Literal('ORCID', 'en'),
@@ -308,8 +308,8 @@ class PBWstarConstants:
             for ent in f11s:
                 f11_query = f"""
                 ?a a {self.get_label('F11')} ;
-                    {self.entity_label} {ent['title'].n3()} ;
-                    {self.entity_link} {ent['uri'].n3()} ."""
+                    {self.label_n3} {ent['title'].n3()} ;
+                    {self.link_n3} {ent['uri'].n3()} ."""
                 uris = self.ensure_entities_existence(f11_query)
                 f11_uri = uris['a']
                 # Store it in self.[key]_agent, e.g. self.pbw_agent
@@ -415,10 +415,20 @@ class PBWstarConstants:
     def get_assertion_for_predicate(self, p):
         """Takes a predicate key and returns the qualified assertion class string which implies that predicate.
         This will throw an exception if no predicate is defined for the key."""
+        nsstr, code = self._split_fqname(p)
+        return f"star:E13_{nsstr}_{code}"
+
+    def get_starpreds_for_predicate(self, p):
+        """Takes a predicate key and returns the subject and object predicates that go along with its bespoke
+        STAR assertion. This will throw an exception if no predicate is defined for the key."""
+        nsstr, code = self._split_fqname(p)
+        return f"star:P140_{nsstr}_{code}", f"star:P141_{nsstr}_{code}"
+
+    def _split_fqname(self, p):
         fqname = self.predicates[p].n3(self.graph.namespace_manager)
         (nsstr, name) = fqname.split(':')
         code = name.split('_')[0]
-        return f"star:E13_{nsstr}_{code}"
+        return nsstr, code
 
     # Accessors / creators for our controlled vocabularies
     def _find_or_create_cv_entry(self, category, nodeclass, label):
@@ -519,13 +529,16 @@ class PBWstarConstants:
         # Get the group label, which is a semicolon-separated list of member labels
         mnames = []
         for m in members:
-            mname = self.graph.value(m, self.namespaces['crm'].P3_has_note)
+            mname = self.graph.value(m, self.entity_label)
             if mname is None:
                 warn(f"Group member {m} has no label?!")
                 mnames.append('XX ANON')
             else:
                 mnames.append(str(mname))
         mlabel = Literal('; '.join(mnames)).n3()
+
+        # Get the assertion for the group link
+        groupass = self.get_assertion_for_predicate(glink)
 
         # Look to see if a group with exactly these members exists
         sparql = f"""
@@ -534,12 +547,14 @@ SELECT ?egroup WHERE {{
 {mvalues}
     }}
     {{
+        # Filter first to all the egroups that have the right number of members
         SELECT ?egroup WHERE {{
             ?egroup a {self.get_label(gclass)} ;
                 {self.get_label(glink)} ?item .
         }}
         GROUP BY ?egroup HAVING (COUNT(?item) = {len(members)})
     }}
+    #  Now make sure all the given members are in the right-size egroup.
     ?egroup {self.get_label(glink)} ?member .
 }}
 GROUP BY ?egroup
