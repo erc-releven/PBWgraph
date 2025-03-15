@@ -1,8 +1,7 @@
 import re
 from sqlalchemy import Column, ForeignKey, Table  # DB components
 from sqlalchemy import DateTime, Integer, SmallInteger, String, Text  # Column types
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship, backref
+from sqlalchemy.orm import declarative_base, relationship, backref
 from sqlalchemy.ext.associationproxy import association_proxy
 
 Base = declarative_base()
@@ -33,6 +32,7 @@ class Collection(Base):
     red = Column(Integer)
     collectionKey = Column(Integer, primary_key=True)
     shortName = Column(Text)
+    baseURL = Column(Text)
 
 
 class Country(Base):

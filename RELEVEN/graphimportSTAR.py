@@ -181,13 +181,7 @@ class graphimportSTAR:
             a {c.get_assertion_for_predicate(ptype)} ;
 """
 
-        # The assertion might or might not have a source
-        if src:
-            provenance = src
-            if hasattr(src, 'n3'):
-                provenance = src.n3()
-            sparql += f"            ^{c.star_src} {provenance} ; \n"
-        # ...and it might or might not be based on something
+        # The assertion might or might not be based on something
         if based:
             evidence = based
             if hasattr(based, 'n3'):
@@ -199,6 +193,12 @@ class graphimportSTAR:
             authority = auth.n3()
         sparql += f"""            {c.star_auth} {authority} .
         """
+        # It might also have a source, which needs to be in the subject position.
+        if src:
+            provenance = src
+            if hasattr(src, 'n3'):
+                provenance = src.n3()
+            sparql += f"\n        {provenance} {c.star_src} ?{label} . "
         return sparql
 
     def gender_handler(self, sqlperson, graphperson):
@@ -320,7 +320,7 @@ class graphimportSTAR:
             # Is it one of the happy items with a collection URL that we can construct?
             seal_link = ''
             if seal.collection.baseURL is not None:
-                seal_uri = seal.collection.baseURL + seal.collectionKey
+                seal_uri = f"{seal.collection.baseURL}{seal.collectionKey}"
                 if 'doaks' in seal_uri:  # only DOaks URIs are recoverable directly from the database
                     seal_link = f"\n            {c.link_n3} <{seal_uri}> ;"
             # Make an ID unique for our purposes
@@ -565,10 +565,15 @@ class graphimportSTAR:
             url = f'https://pbw2016.kdl.kcl.ac.uk/boulloterion/{identifier}/'
         elif agent == c.pbw_agent:
             # Identifier is something like 'Alexios 10102' or 'Alp Arslan 51'.
-            # The URL changes it to 'Alexios/10102' or 'Alp%20Arslan/51'
-            uf = identifier.split(' ')
-            f"{'%20'.join(uf[:-1])}/{uf[-1]}"
-            url = f'https://pbw2016.kdl.kcl.ac.uk/person/{' '.join(uf[:-1])}/{uf[-1]}/'
+            # The URL changes it to 'Alexios/10102' or 'Alp+Arslan/51'
+            # Need to deal with identifiers like Alp Arslan 51, Gostri[...] 101, Nizam al-Mulk 101
+            idparts = identifier.split()  # This deals with trailing whitespace on the name
+            code = idparts.pop()          # This leaves behind the whitespace-separated name parts
+            # This replaces spaces with + and removes [] characters
+            identifier = '+'.join(idparts).replace('[', '').replace(']', '')
+            # Now we have Alp+Arslan/51, Gostri.../101, and Nizam+al-Mulk/101 respectively.
+            # Even if none of these URLs actually work in PBW.
+            url = f'https://pbw2016.kdl.kcl.ac.uk/person/{identifier}/{code}/'
         else:
             # Identifier is a number
             url = f'https://viaf.org/viaf/{identifier}/'

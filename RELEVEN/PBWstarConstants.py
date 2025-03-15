@@ -257,8 +257,8 @@ class PBWstarConstants:
             self.entity_label = RDFS.label
             self.entity_link = OWL.sameAs
             # convenience
-            self.label_n3 = self.entity_label.n3()
-            self.link_n3 = self.entity_link.n3()
+            self.label_n3 = self.entity_label.n3(self.graph.namespace_manager)
+            self.link_n3 = self.entity_link.n3(self.graph.namespace_manager)
             if not self.readonly:
                 try:
                     print("Setting up software execution run...")
@@ -438,7 +438,7 @@ class PBWstarConstants:
             litlabel = Literal(label, lang='en')
             sparql = f"""
             ?cventry a {nodeclass} ;
-                {self.entity_label} {litlabel.n3()} ."""
+                {self.label_n3} {litlabel.n3()} ."""
             res = self.ensure_entities_existence(sparql)
             self.cv[category][label] = res['cventry']
 
