@@ -570,10 +570,10 @@ class graphimportSTAR:
             idparts = identifier.split()  # This deals with trailing whitespace on the name
             code = idparts.pop()          # This leaves behind the whitespace-separated name parts
             # This replaces spaces with + and removes [] characters
-            identifier = '+'.join(idparts).replace('[', '').replace(']', '')
+            id_urified = '+'.join(idparts).replace('[', '').replace(']', '')
             # Now we have Alp+Arslan/51, Gostri.../101, and Nizam+al-Mulk/101 respectively.
             # Even if none of these URLs actually work in PBW.
-            url = f'https://pbw2016.kdl.kcl.ac.uk/person/{identifier}/{code}/'
+            url = f'https://pbw2016.kdl.kcl.ac.uk/person/{id_urified}/{code}/'
         else:
             # Identifier is a number
             url = f'https://viaf.org/viaf/{identifier}/'
