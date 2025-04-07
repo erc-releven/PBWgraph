@@ -18,7 +18,8 @@ class PBWstarConstants:
 
     def __init__(self, graph=None, store=None, execution=None, readonly=False):
         # These are the modern scholars who put the source information into PBW records.
-        # We need Michael and Tara on the outside
+        # We need Charlotte, Michael, and Tara on the outside
+        self.cr = {'identifier': 'Roueché, Charlotte', 'viaf': '44335536'}
         self.mj = {'identifier': 'Jeffreys, Michael J.', 'viaf': '73866641'}
         self.ta = {'identifier': 'Andrews, Tara Lee', 'viaf': '316505144'}
 
@@ -32,6 +33,7 @@ class PBWstarConstants:
             'lrmoo': Namespace('http://iflastandards.info/ns/lrm/lrmoo/'),
             'pbw':   Namespace('https://pbw2016.kdl.kcl.ac.uk/'),
             'sdhss': Namespace('https://r11.eu/ns/prosopography/'),
+            'so': Namespace('http://purl.org/twc/ontologies/similarity/'),
             'spec':  Namespace('https://r11.eu/ns/spec/'),
             'star':  Namespace('https://r11.eu/ns/star/'),
             'data':  self.ns
@@ -82,6 +84,7 @@ class PBWstarConstants:
             'E22': self.namespaces['crm']['E22_Human-Made_Object'],
             'E22B': self.namespaces['spec']['Boulloterion'],
             'E22S': self.namespaces['spec']['Lead_Seal'],
+            'E27': self.namespaces['crm']['E27_Site'],
             'E31': self.namespaces['crm']['E31_Document'],
             'E33': self.namespaces['crm']['E33_Linguistic_Object'],
             'E34': self.namespaces['crm']['E34_Inscription'],
@@ -113,10 +116,13 @@ class PBWstarConstants:
 
         # The properties we are using, keyed by their short forms.
         self.predicates = {
+            'ID7': self.namespaces['so']['ID7_matches'],
             'P1': self.namespaces['crm']['P1_is_identified_by'],
             'P2': self.namespaces['crm']['P2_has_type'],
             'P3': self.namespaces['crm']['P3_has_note'],
             'P4': self.namespaces['crm']['P4_has_time-span'],
+            'P11': self.namespaces['crm']['P11_had_participant'],
+            'P12': self.namespaces['crm']['P12_occurred_in_the_presence_of'],
             'P14': self.namespaces['crm']['P14_carried_out_by'],
             'P16': self.namespaces['crm']['P16_used_specific_object'],
             'P17': self.namespaces['crm']['P17_was_motivated_by'],
@@ -150,13 +156,13 @@ class PBWstarConstants:
             'L11r': self.namespaces['crmdig']['L11r_was_output_of'],
             'L12': self.namespaces['crmdig']['L12_happened_on_device'],
             'L23': self.namespaces['crmdig']['L23_used_software_or_firmware'],
-            'R3': self.namespaces['lrmoo']['R3_is_realised_in'],     # is realised in
-            'R5': self.namespaces['lrmoo']['R5_has_component'],     # has component
-            'R15': self.namespaces['lrmoo']['R15_has_fragment'],   # has fragment
+            'R3': self.namespaces['lrmoo']['R3_is_realised_in'],
+            'R5': self.namespaces['lrmoo']['R5_has_component'],
+            'R15': self.namespaces['lrmoo']['R15_has_fragment'],
             'R16': self.namespaces['lrmoo']['R16_created'],   # created [work]
             'R17': self.namespaces['lrmoo']['R17_created'],   # created [expression]
             'R24': self.namespaces['lrmoo']['R24_created'],   # created [manifestation]
-            'R76': self.namespaces['lrmoo']['R76_is_derivative_of'],   # is derivative of
+            'R76': self.namespaces['lrmoo']['R76_is_derivative_of'],
             'SP13': self.namespaces['sdhss']['P13'],  # pertains to [person, social quality]
             'SP14': self.namespaces['sdhss']['P14'],  # has social quality
             'SP16': self.namespaces['sdhss']['P16'],  # has relationship type

@@ -6,7 +6,7 @@ import re
 from datetime import datetime
 from functools import reduce
 from http.client import RemoteDisconnected
-from rdflib import Graph, Literal, XSD
+from rdflib import Graph, Literal, XSD, URIRef
 from rdflib.plugins.stores import sparqlstore
 from sqlalchemy import create_engine, and_
 from sqlalchemy.orm import sessionmaker
@@ -563,6 +563,9 @@ class graphimportSTAR:
         if etype == c.get_label('E22B'):
             # Identifier is a number
             url = f'https://pbw2016.kdl.kcl.ac.uk/boulloterion/{identifier}/'
+        elif etype == c.get_label('E27'):
+            # Identifier is a number
+            url = f'https://pbw2016.kcl.ac.uk/location/{identifier}/'
         elif agent == c.pbw_agent:
             # Identifier is something like 'Alexios 10102' or 'Alp Arslan 51'.
             # The URL changes it to 'Alexios/10102' or 'Alp+Arslan/51'
@@ -603,6 +606,23 @@ class graphimportSTAR:
         c.document(None, res['idass'])
         return res['entity']
 
+    def _add_identifier_to_entity(self, ent, identifier, agent):
+        """Given an entity that we know exists already, add a new external identifier to it.
+        This doesn't return anything."""
+        c = self.constants
+        # HACK: Break the last part of the path off and use it as the identifier content
+        idparts = identifier.split('/')
+        sparql = f"""
+        ?ident {c.get_label('P190')} {Literal(idparts[-1]).n3()} ;
+            {c.link_n3} <{identifier}> ;
+            a {c.get_label('E42')} .
+        ?idass {c.get_label('P37')} ?ident ;
+            {c.star_subject} {ent.n3()} ;
+            {c.star_auth} {agent.n3()} ;
+            a {c.get_label('E15')} .
+        """
+        c.ensure_entities_existence(sparql)
+
     def find_or_create_pbwperson(self, sqlperson):
         return self._find_or_create_identified_entity(
             self.constants.get_label('E21'), self.constants.pbw_agent,
@@ -615,6 +635,21 @@ class graphimportSTAR:
     def find_or_create_boulloterion(self, keystr, btitle):
         return self._find_or_create_identified_entity(
             self.constants.get_label('E22B'), self.constants.pbw_agent, keystr, btitle)
+
+    def find_or_create_location(self, pbwloc):
+        c = self.constants
+        # Make the location with a PBW URI and PBW's authority
+        l = self._find_or_create_identified_entity(c.get_label('E27'), c.pbw_agent, pbwloc.locationKey, pbwloc.locName)
+        # Make Charlotte's links. LATER this is inefficient; we shouldn't re-make the links if the loc already exists
+        cmr = self.get_authority_node([c.cr])
+        if pbwloc.geonames_id:
+            gnuri = URIRef(f"https://sws.geonames.org/{pbwloc.geonames_id}/")
+            self._add_identifier_to_entity(l, gnuri, cmr)
+        if pbwloc.pleiades_id:
+            pluri = URIRef(f"https://pleiades.stoa.org/places/{pbwloc.pleiades_id}/")
+            self._add_identifier_to_entity(l, pluri, cmr)
+        return l
+
 
     # This one doesn't use an E15 assertion, it is just a thing with a name
     def find_or_create_seal_collection(self, collname):
@@ -965,7 +1000,7 @@ class graphimportSTAR:
 
         # Give the possession its description, which comes out of the factoid's engDesc
         sparql = f"""
-        ?possession {c.label_n3} {Literal(factoid.replace_referents()).n3()} ;
+        ?possession {c.label_n3} {Literal(factoid.replace_referents(), 'en').n3()} ;
             a {c.get_label('E18')} ."""
         # Assert ownership of the possession
         sparql += self.create_assertion_sparql('a1', 'P51', '?possession', graphperson, agent, sourcenode)
@@ -975,6 +1010,25 @@ class graphimportSTAR:
         ?a1 {c.get_label('P3')} {Literal(factoid.possession).n3()}"""
         res = c.ensure_entities_existence(sparql)
         c.document(pbwdoc, res['a1'])
+
+    def location_handler(self, sourcenode, agent, factoid, graphperson):
+        """Note the association of a person with a location, in some form or another. The most we can
+        assign it is an E7 Event."""
+        c = self.constants
+        pbwdoc = c.pbw_uri(factoid)
+
+        # Get the location
+        loc = self.find_or_create_location(factoid.locationInfo.location)
+        # Assign a new event and give it the description of the factoid
+        sparql = f"?locevent {c.label_n3} {Literal(factoid.replace_referents(), 'en').n3()} . \n"
+        # Make the assertion that the person was associated with the event and that the event was at a site
+        sparql += self.create_assertion_sparql('a1', 'P11', '?locevent', graphperson, agent, sourcenode)
+        sparql += self.create_assertion_sparql('a2', 'P12', '?locevent', loc, agent, sourcenode)
+        res = c.ensure_entities_existence(sparql)
+        c.document(pbwdoc, res['a1'], res['a2'])
+
+    def uncertainident_handler(self, sourcenode, agent, factoid, graphperson):
+        """Note the possibility that one person is the same as another person. """
 
     def record_assertion_factoids(self):
         """To be run after everything else is done. Creates the assertion record for all assertions created here,
