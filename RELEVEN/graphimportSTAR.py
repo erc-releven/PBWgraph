@@ -221,7 +221,7 @@ class graphimportSTAR:
             # Create the SPARQL expression
             sparql = self.create_assertion_sparql('a1', 'P41', '?gass', graphperson, c.pbw_agent)
             sparql += self.create_assertion_sparql('a2', 'P42', '?gass', c.get_gender(pbw_sex), c.pbw_agent)
-            sparql += f"?gass a {c.get_label('E17')} . "
+            sparql += f"?gass a {c.get_label('E17G')} . "
             # Check and create it if necessary
             res = c.ensure_entities_existence(sparql)
             c.document(pbwdoc, res['a1'], res['a2'])
@@ -240,7 +240,7 @@ class graphimportSTAR:
 
         # Create the SPARQL expression.
         sparql = self.create_assertion_sparql('a1', 'P1', graphperson, '?appellation', c.pbw_agent)
-        sparql += f"""?appellation a {c.get_label('E41')} ;
+        sparql += f"""?appellation a {c.get_label('E33A')} ;
             {c.get_label('P190')} {Literal(appellation, lang=_get_source_lang(sqlperson)).n3()} .
         """
         # Check and create it if necessary
@@ -725,7 +725,7 @@ class graphimportSTAR:
         sparql = f"""
         ?appel {c.get_label('P190')} {Literal(name_ol, olang).n3()} ;
             {c.get_label('P190')} {Literal(name_en, 'en').n3()} ;
-            a {c.get_label('E41')} . """
+            a {c.get_label('E33A')} . """
         sparql += self.create_assertion_sparql('a1', 'P1', graphperson, '?appel', agent, sourcenode)
         res = c.ensure_entities_existence(sparql)
         c.document(pbwdoc, res['a1'])
