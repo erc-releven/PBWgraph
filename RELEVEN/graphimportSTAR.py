@@ -1116,7 +1116,10 @@ class graphimportSTAR:
                         print(f"Restart with the arguments: -r '{person_pbwstr}' -x '{self.constants.swrun}'")
                         exit(1)
                     else:
-                        print(f"Obtained URLerror {e.reason}; will retry")
+                        if isinstance(e, URLError):
+                            print(f"Obtained URLerror {e.reason}; will retry")
+                        else:
+                            print(f"Persistent connection error {e}; will retry")
                         sleep(attempt * 30)
                 except Exception as e:
                     print(f"Process started at {self.starttime} and ending at {datetime.now()}.")

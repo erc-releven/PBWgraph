@@ -159,7 +159,7 @@ class PBWSources:
 
     @staticmethod
     def parse_romaios(refstring):
-        parts = re.split(r',\s*', refstring, 1)
+        parts = re.split(r',\s*', refstring, maxsplit=1)
         # If there is no comma, it's the Peira
         if len(parts) == 1 or parts[0] == 'Peira':
             return 'Eustathios Romaios Peira'
@@ -275,7 +275,12 @@ class PBWSources:
                 source_data = dict()
                 add_authors(source_data, source_id, row['Author(ity)'], self.authorities)
                 add_provenance(source_data, source_id, row['Evidence of authorship'])
-                add_pbw_authorities(source_data, row['PBW editor'], self.authorities)
+                try:
+                    add_pbw_authorities(source_data, row['PBW editor'], self.authorities)
+                except KeyError:
+                    # We don't yet have a hardcoded entry for this authority
+                    warn(f"Skipping source '{source_id}' due to unknown PBW authority")
+                    continue
                 add_if_exists(source_data, 'work', row['Source canonical name'])
                 add_if_exists(source_data, 'expression', row['Source edition used'])
                 add_if_exists(source_data, 'url', row['Edition URL'])
