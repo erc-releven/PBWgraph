@@ -525,22 +525,22 @@ class PBWstarConstants:
             print(f"EXCEPTION {e}; SPARQL was {sparql}")
             raise e
 
-    def ensure_egroup_existence(self, gclass, glink, members):
+    def ensure_egroup_existence(self, gclass, glink, members, title=None):
         # Get the URI list
         mvalues = '\n'.join([f"({x.n3()})" for x in members])
         # Get the group label, which is a semicolon-separated list of member labels
-        mnames = []
-        for m in members:
-            mname = self.graph.value(m, self.entity_label)
-            if mname is None:
-                warn(f"Group member {m} has no label?!")
-                mnames.append('XX ANON')
-            else:
-                mnames.append(str(mname))
-        mlabel = Literal('; '.join(mnames)).n3()
-
-        # Get the assertion for the group link
-        groupass = self.get_assertion_for_predicate(glink)
+        if title is None:
+            mnames = []
+            for m in members:
+                mname = self.graph.value(m, self.entity_label)
+                if mname is None:
+                    warn(f"Group member {m} has no label?!")
+                    mnames.append('XX ANON')
+                else:
+                    mnames.append(str(mname))
+            mlabel = Literal('; '.join(mnames)).n3()
+        else:
+            mlabel = Literal(title).n3()
 
         # Look to see if a group with exactly these members exists
         sparql = f"""
@@ -569,7 +569,7 @@ HAVING (COUNT(?member) = {len(members)})
             # Construct the query
             sparql = f"""
         ?egroup {self.get_label(glink)} {mlist} ;
-            {self.get_label('P3')} {mlabel} ;
+            {self.label_n3} {mlabel} ;
             a {self.get_label(gclass)} .
             """
             answer = self.ensure_entities_existence(sparql, force_create=True)

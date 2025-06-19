@@ -386,7 +386,8 @@ class graphimportSTAR:
             source_nodes.append(res['src'])
         if len(source_nodes) > 1:
             # Find or create a matching bibliography/publication list with only these publication nodes.
-            return c.ensure_egroup_existence('E73B', 'P165', source_nodes)
+            return c.ensure_egroup_existence('E73B', 'P165', source_nodes,
+                                             f"Bibliography for boulloterion {boulloterion.boulloterionKey}")
 
         else:
             # There was only a single source. We just return it.
