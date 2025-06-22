@@ -1106,7 +1106,7 @@ class graphimportSTAR:
                     if result:
                         processed += 1
                     break
-                except (URLError, RemoteDisconnected) as e:
+                except (URLError, RemoteDisconnected, ConnectionResetError) as e:
                     if attempt == 4:
                         # RemoteDisconnected has no 'reason' attribute
                         if isinstance(e, URLError):

@@ -4,6 +4,7 @@ import RELEVEN.PBWSources
 from datetime import datetime
 from os.path import join, dirname
 from rdflib import Graph, URIRef, Literal, Namespace, OWL, RDF, RDFS, XSD
+from rdflib.query import Result
 from uuid import uuid4
 from warnings import warn
 
@@ -503,6 +504,9 @@ class PBWstarConstants:
             if not force_create:
                 res = self.graph.query("SELECT DISTINCT * WHERE {" + sparql + "}")
                 if len(res):
+                    # Did we actually get a result?
+                    if not isinstance(res, Result):
+                        raise RuntimeError(f"Got unexpected result on query: {res}\nSPARQL was: {sparql}")
                     # We should hopefully have only one row...
                     if len(res) > 1:
                         warn(f"More than one row returned for SPARQL expression:\n{sparql}")
