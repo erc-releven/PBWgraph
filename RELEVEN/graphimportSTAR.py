@@ -6,7 +6,7 @@ import re
 from datetime import datetime
 from functools import reduce
 from http.client import RemoteDisconnected
-from rdflib import Graph, Literal, XSD
+from rdflib import Graph, Literal, XSD, URIRef
 from rdflib.plugins.stores import sparqlstore
 from sqlalchemy import create_engine, and_
 from sqlalchemy.orm import sessionmaker
@@ -41,7 +41,7 @@ def _smooth_labels(label):
     if label == 'Second Name' or label == 'Alternative Name':
         return 'Appellation'
     if label == 'Uncertain Ident':
-        return 'UncertainIdent'
+        return 'maka' # "maybe also known as"
     return label
 
 
@@ -118,6 +118,13 @@ class graphimportSTAR:
             res = self.g.triples((None, self.constants.predicates['P140'], None))
             ct = reduce(lambda x, y: x + 1, res, 0)
             print(f"Using graph {origgraph} with {ct} existing assertions.")
+
+        # Keep lookup tables of our persistent entities, which hopefully improves performance
+        self.resolved_authorities = dict()
+        self.resolved_persons = dict()
+        self.resolved_locations = dict()
+        self.resolved_boulloteria = dict()
+        self.resolved_publications = dict()
 
     def _urify(self, label):
         """Utility function to turn STAR predicates into real URIref objects"""
@@ -454,6 +461,10 @@ class graphimportSTAR:
             print("Cannot ingest factoid with source %s until work/edition info is specified" % sourcekey)
             return None
 
+        # Have we already retrieved / created this publication?
+        if edition_id in self.resolved_publications:
+            return self.resolved_publications[edition_id]
+
         # Keep track of the assertions we may have created
         assertions_set = []
         afact_src = None
@@ -554,6 +565,7 @@ class graphimportSTAR:
         else:
             # It comes from our reading of the database structure
             c.document(None, *[res[x] for x in assertions_set])
+        self.resolved_publications[edition_id] = res['publ']
         return res['publ']
 
     def _find_or_create_identified_entity(self, etype, agent, identifier, dname):
@@ -563,7 +575,10 @@ class graphimportSTAR:
         c = self.constants
         if etype == c.get_label('E22B'):
             # Identifier is a number
-            url = f'https://pbw2016.kdl.kcl.ac.uk/boulloterion/{identifier}/'
+            url = URIRef(f'https://pbw2016.kdl.kcl.ac.uk/boulloterion/{identifier}/').n3()
+        elif etype == c.get_label('E27'):
+            # Identifier is also a number
+            url = URIRef(f'https://pbw2016.kcl.ac.uk/location/{identifier}/').n3()
         elif agent == c.pbw_agent:
             # Identifier is something like 'Alexios 10102' or 'Alp Arslan 51'.
             # The URL changes it to 'Alexios/10102' or 'Alp+Arslan/51'
@@ -574,10 +589,10 @@ class graphimportSTAR:
             id_urified = '+'.join(idparts).replace('[', '').replace(']', '')
             # Now we have Alp+Arslan/51, Gostri.../101, and Nizam+al-Mulk/101 respectively.
             # Even if none of these URLs actually work in PBW.
-            url = f'https://pbw2016.kdl.kcl.ac.uk/person/{id_urified}/{code}/'
+            url = URIRef(f'https://pbw2016.kdl.kcl.ac.uk/person/{id_urified}/{code}/').n3()
         else:
-            # Identifier is a number
-            url = f'https://viaf.org/viaf/{identifier}/'
+            # Identifier is again a number
+            url = URIRef(f'https://viaf.org/viaf/{identifier}/').n3()
 
         # The entity should have its display name as its label, without a language designation.
         #
@@ -590,7 +605,7 @@ class graphimportSTAR:
         # This identifier is marked sameAs the identifier we are copying from.
         sparql = f"""
         ?ident {c.get_label('P190')} {Literal(identifier).n3()} ;
-            {c.link_n3} <{url}> ;
+            {c.link_n3} {url} ;
             a {c.get_label('E42')} .
         ?idass {c.get_label('P37')} ?ident ;
             {c.star_subject} ?entity ;
@@ -605,17 +620,50 @@ class graphimportSTAR:
         return res['entity']
 
     def find_or_create_pbwperson(self, sqlperson):
-        return self._find_or_create_identified_entity(
-            self.constants.get_label('E21'), self.constants.pbw_agent,
-            "%s %d" % (sqlperson.name, sqlperson.mdbCode), sqlperson.descName)
+        # Cache these
+        textkey = f"{sqlperson.name} {sqlperson.mdbCode}"
+        if textkey not in self.resolved_persons:
+            self.resolved_persons[textkey] = self._find_or_create_identified_entity(
+                self.constants.get_label('E21'), self.constants.pbw_agent, textkey, sqlperson.descName)
+        return self.resolved_persons[textkey]
 
     def find_or_create_viafperson(self, name, viafid):
-        return self._find_or_create_identified_entity(
-            self.constants.get_label('E21'), self.constants.viaf_agent, viafid, name)
+        if viafid not in self.resolved_persons:
+            self.resolved_persons[viafid] = self._find_or_create_identified_entity(
+                self.constants.get_label('E21'), self.constants.viaf_agent, viafid, name)
+        return self.resolved_persons[viafid]
 
     def find_or_create_boulloterion(self, keystr, btitle):
-        return self._find_or_create_identified_entity(
-            self.constants.get_label('E22B'), self.constants.pbw_agent, keystr, btitle)
+        if keystr not in self.resolved_boulloteria:
+            self.resolved_boulloteria[keystr] = self._find_or_create_identified_entity(
+                self.constants.get_label('E22B'), self.constants.pbw_agent, keystr, btitle)
+        return self.resolved_boulloteria[keystr]
+
+    def find_or_create_location(self, sqlloc):
+        c = self.constants
+        k = sqlloc.locationKey
+        if k not in self.resolved_locations:
+            # If we haven't seen it yet, make it
+            self.resolved_locations[k] = self._find_or_create_identified_entity(
+                self.constants.get_label('E27'), self.constants.pbw_agent,
+                k, sqlloc.locName)
+            loc_ent = self.resolved_locations[k]
+            # ...and add the gazetteer links that Charlotte made
+            geoagent = self.get_authority_node([c.cr])
+            loc_sparql = ''
+            to_doc = []
+            if sqlloc.pleiades_id:
+                pleiades_uri = URIRef(f'https://pleiades.stoa.org/places/{sqlloc.pleiades_id}')
+                loc_sparql += self.create_assertion_sparql('ap', 'ID7', loc_ent, pleiades_uri, geoagent)
+                to_doc.append('ap')
+            if sqlloc.geonames_id:
+                geonames_uri = URIRef(f'https://www.geonames.org/{sqlloc.geonames_id}')
+                loc_sparql += self.create_assertion_sparql('ag', 'ID7', loc_ent, geonames_uri, geoagent)
+                to_doc.append('ag')
+            if loc_sparql:
+                res = c.ensure_entities_existence(loc_sparql)
+                c.document(None, *[res[x] for x in to_doc])
+        return self.resolved_locations[k]
 
     # This one doesn't use an E15 assertion, it is just a thing with a name
     def find_or_create_seal_collection(self, collname):
@@ -640,7 +688,7 @@ class graphimportSTAR:
             if len(str(pcode)) > 5:
                 authors.append(self.find_or_create_viafperson(pname, pcode))
             else:
-                # We need to get the SQL record for the author in case they aren't in the DB yet
+                # We need to get the SQL record for the author since we might still need to create them in the graphdb
                 sqlperson = self.mysqlsession.query(pbw.Person).filter_by(name=pname, mdbCode=pcode).scalar()
                 authors.append(self.find_or_create_pbwperson(sqlperson))
         if len(authors) > 1:
@@ -655,13 +703,20 @@ class graphimportSTAR:
             return None
         if len(authoritylist) == 1:
             authority = authoritylist[0]
-            return self.find_or_create_viafperson(authority['identifier'], authority['viaf'])
+            # We have a cache of these things
+            return self._lookup_authority_node(authority)
         # If we get here, we have more than one authority for this source.
         # Ensure the existence of the people, and then ensure the existence of their group
         scholars = []
         for p in authoritylist:
-            scholars.append(self.find_or_create_viafperson(p['identifier'], p['viaf']))
+            scholars.append(self._lookup_authority_node(p))
         return self._find_or_create_authority_group(scholars)
+
+    def _lookup_authority_node(self, authority):
+        viaf_id = authority['viaf']
+        if viaf_id not in self.resolved_authorities:
+            self.resolved_authorities[viaf_id] = self.find_or_create_viafperson(authority['identifier'], viaf_id)
+        return self.resolved_authorities[viaf_id]
 
     def _find_or_create_authority_group(self, members):
         if len(members) < 2:
@@ -670,6 +725,38 @@ class graphimportSTAR:
 
         c = self.constants
         return c.ensure_egroup_existence('E74A', 'P107', members)
+
+    def maka_handler(self, factoid, graphperson):
+        """Associate the person with another person, provisionally. This is the one use of the
+        uncertainty typing on assertions that we use here."""
+        c = self.constants
+        pbwdoc = c.pbw_uri(factoid)
+        # Avoid 'uncertain' identity factoids where
+        exclude_strings = ['the two collectively are',
+            'included in',
+            'was one of'
+        ]
+        for xs in exclude_strings:
+            if xs in factoid.engDesc:
+                print(f"Skipping evident group membership factoid {factoid.factoidKey}: {factoid.replace_referents()}")
+                return
+
+        # Fish out the other person(s) with whom identity is being asserted
+        assertions = []
+        for otherperson in factoid.referents():
+            if otherperson.name in ['Anonymi', 'Anonymae']:
+                print(f"Skipping group membership for uncertain identity in factoid {factoid.factoidKey}: {factoid.replace_referents()}")
+                return
+            sparql = self.create_assertion_sparql('a1', 'ID8', graphperson,
+                                                  self.find_or_create_pbwperson(otherperson), c.pbw_agent)
+            # Mark it as a suggestion rather than a full-on assertion
+            sparql += f"        ?a1 a {c.get_label('S5')} .\n"
+            res = c.ensure_entities_existence(sparql)
+            assertions.append(res['a1'])
+
+        if len(assertions):
+            # Mark the uncertainty
+            c.document(pbwdoc, *assertions)
 
     def appellation_handler(self, sourcenode, agent, factoid, graphperson):
         """This handler deals with Second Name factoids and also Alternative Name factoids.
@@ -900,6 +987,28 @@ class graphimportSTAR:
         res = c.ensure_entities_existence(sparql)
         c.document(pbwdoc, res['a1'], res['a2'])
 
+    def location_handler(self, sourcenode, agent, factoid, graphperson):
+        """Associate the person with a location. These are honestly very inexact factoids, so we
+        represent this with a generic event taking place at the location that involved the person.
+        This will need to be refined with spreadsheet data."""
+        c = self.constants
+        pbwdoc = c.pbw_uri(factoid)
+        if factoid.locationInfo is None or factoid.locationInfo.location is None:
+            # We can't assign any location without the location info
+            warn("Empty location factoid found: id %s" % factoid.factoidKey)
+            return
+        # Get the location in question
+        loc_ent = self.find_or_create_location(factoid.locationInfo.location)
+        # Now connect the person to the location via the extremely generic 'event', as that is all PBW gives us
+        # Label the event with the factoid key for easier resolution from the spreadsheets later
+        lfactlabel = Literal(f"Location event for factoid {factoid.factoidKey}")
+        sparql = f"""?locevent {c.label_n3} {lfactlabel.n3()}; a {c.get_label('E5')} . """
+        sparql += self.create_assertion_sparql('a1', 'P7', '?locevent', loc_ent, agent, sourcenode)
+        sparql += self.create_assertion_sparql('a2', 'P11', '?locevent', graphperson, agent, sourcenode)
+
+        res = c.ensure_entities_existence(sparql)
+        c.document(pbwdoc, res['a1'], res['a2'])
+
     def _find_or_create_kinship(self, graphperson, graphkin):
         # See if there is an existing kinship group of any sort with the person as source and their
         # kin as target. If not, return a new (not yet connected) C3 Social Relationship node.
@@ -1037,6 +1146,7 @@ class graphimportSTAR:
             except AttributeError:
                 warn(f"No handler for {ourftype} record info; skipping.")
 
+
         # Now get the factoids that are really factoids
         for ftype in factoid_types:
             ourftype = _smooth_labels(ftype)
@@ -1046,9 +1156,15 @@ class graphimportSTAR:
                 continue
             fprocessed = 0
             for f in person.main_factoids(ftype):
+                if ftype in ['Uncertain Ident']:
+                    # There is no source, so no individual agent. Just run the factoid processing method.
+                    method(f, graph_person)
+                    fprocessed = fprocessed+1
+                    continue
+
                 # Find out what sources we are actually using and make note of them
                 source_key = self.constants.source(f)
-                if source_key is None:
+                if source_key is None and ourftype != 'UncertainIdent':
                     print(f"Skipping factoid {f.factoidKey} with unlisted source {f.source}")
                     continue
                 elif source_key == 'OUT_OF_SCOPE':
@@ -1077,7 +1193,7 @@ class graphimportSTAR:
                 print(f"Ingested {fprocessed} {ftype} factoid(s)")
         return True
 
-    def process_persons(self, skipuntil=None, processed=0):
+    def process_persons(self, facttype=None, skipuntil=None, processed=0):
         """Go through the relevant person records and process them for factoids"""
         used_sources = set()
         boulloteria = set()
@@ -1085,8 +1201,12 @@ class graphimportSTAR:
         # Get the classes of info that are directly in the person record
         direct_person_records = ['Gender', 'Identifier']
         # Get the list of factoid types in the PBW DB
-        factoid_types = [x.typeName for x in self.mysqlsession.query(pbw.FactoidType).all() if
-                         x.typeName != '(Unspecified)']
+        if facttype is not None:
+            factoid_types = [facttype]
+            direct_person_records = []
+        else:
+            factoid_types = [x.typeName for x in self.mysqlsession.query(pbw.FactoidType).all() if
+                             x.typeName != '(Unspecified)']
         # Are we skipping?
         started = skipuntil is None
         for person in self.collect_person_records():
@@ -1094,9 +1214,10 @@ class graphimportSTAR:
             person_pbwstr = f"{person.name} {person.mdbCode}"
             if not started:
                 if skipuntil == f"{person_pbwstr}":
+                    print(f"Reached {skipuntil}, resuming")
                     started = True
                 else:
-                    print(f"Skipping past {person_pbwstr}")
+                    # print(f"Skipping past {person_pbwstr}")
                     continue
 
             for attempt in range(5):
@@ -1145,6 +1266,9 @@ if __name__ == '__main__':
     parser.add_argument('-g', '--graph',
                         default=config.graphuri,
                         help="Graph containing existing STAR assertions, if any")
+    parser.add_argument('-f', '--factoid-type',
+                        default=None,
+                        help="Process factoids of the single given type")
     parser.add_argument('-r', '--resume-from',
                         default=None,
                         help="Resume from the named PBW person")
@@ -1160,7 +1284,7 @@ if __name__ == '__main__':
     # Process the person records
     gimport = graphimportSTAR(origgraph=args.graph, testmode=args.testing, execution=args.execution)
     print(f"Ingestion run started at {gimport.starttime}")
-    gimport.process_persons(skipuntil=args.resume_from)
+    gimport.process_persons(facttype=args.factoid_type, skipuntil=args.resume_from)
     # Where are we writing the graph to? Default is the location in config.py
     filename = args.graph
     if args.graph != config.graphuri:

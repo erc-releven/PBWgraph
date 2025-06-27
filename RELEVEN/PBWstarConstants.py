@@ -18,12 +18,13 @@ class PBWstarConstants:
     """A class to deal with all of our constants, where the data is nicely encapsulated"""
 
     def __init__(self, graph=None, store=None, execution=None, readonly=False):
-        # These are the modern scholars who put the source information into PBW records.
-        # We need Michael and Tara on the outside
-        self.mj = {'identifier': 'Jeffreys, Michael J.', 'viaf': '73866641'}
-        self.ta = {'identifier': 'Andrews, Tara Lee', 'viaf': '316505144'}
-
         self.sourcelist = RELEVEN.PBWSources.PBWSources(join(dirname(__file__), 'pbw_sources.csv'))
+
+        # These are the modern scholars who put the source information into PBW records.
+        # We need Michael, Charlotte, and Tara on the outside
+        self.mj = self.sourcelist.authorities['mj']
+        self.ta = self.sourcelist.authorities['ta']
+        self.cr = self.sourcelist.authorities['cr']
 
         datauri = 'https://r11.eu/rdf/resource/'
         self.ns = Namespace(datauri)
@@ -33,6 +34,7 @@ class PBWstarConstants:
             'lrmoo': Namespace('http://iflastandards.info/ns/lrm/lrmoo/'),
             'pbw':   Namespace('https://pbw2016.kdl.kcl.ac.uk/'),
             'sdhss': Namespace('https://r11.eu/ns/prosopography/'),
+            'so': Namespace('https://r11.eu/ns/similarity/'),
             'spec':  Namespace('https://r11.eu/ns/spec/'),
             'star':  Namespace('https://r11.eu/ns/star/'),
             'data':  self.ns
@@ -75,6 +77,7 @@ class PBWstarConstants:
             'C29': self.namespaces['sdhss']['C29'],  # Know-How
             'D10': self.namespaces['crmdig']['D10_Software_Execution'],
             'D14': self.namespaces['crmdig']['D14_Software'],
+            'E5': self.namespaces['crm']['E5_Event'],
             'E13': self.namespaces['crm']['E13_Attribute_Assignment'],
             'E15': self.namespaces['crm']['E15_Identifier_Assignment'],
             'E17': self.namespaces['crm']['E17_Type_Assignment'],
@@ -84,6 +87,7 @@ class PBWstarConstants:
             'E22': self.namespaces['crm']['E22_Human-Made_Object'],
             'E22B': self.namespaces['spec']['Boulloterion'],
             'E22S': self.namespaces['spec']['Lead_Seal'],
+            'E27': self.namespaces['crm']['E27_Site'],
             'E31': self.namespaces['crm']['E31_Document'],
             'E33': self.namespaces['crm']['E33_Linguistic_Object'],
             'E33A': self.namespaces['crm']['E33_E41_Linguistic_Appellation'],
@@ -111,7 +115,8 @@ class PBWstarConstants:
             'F11': self.namespaces['lrmoo']['F11_Corporate_Body'],  # Corporate Body
             'F27': self.namespaces['lrmoo']['F27_Work_Creation'],  # Work Creation
             'F28': self.namespaces['lrmoo']['F28_Expression_Creation'],  # Expression Creation
-            'F30': self.namespaces['lrmoo']['F30_Manifestation_Creation']
+            'F30': self.namespaces['lrmoo']['F30_Manifestation_Creation'],
+            'S5': self.namespaces['star']['S5_Suggestion']
         }
 
         # The properties we are using, keyed by their short forms.
@@ -120,6 +125,8 @@ class PBWstarConstants:
             'P2': self.namespaces['crm']['P2_has_type'],
             'P3': self.namespaces['crm']['P3_has_note'],
             'P4': self.namespaces['crm']['P4_has_time-span'],
+            'P7': self.namespaces['crm']['P7_took_place_at'],
+            'P11': self.namespaces['crm']['P11_had_participant'],
             'P14': self.namespaces['crm']['P14_carried_out_by'],
             'P16': self.namespaces['crm']['P16_used_specific_object'],
             'P17': self.namespaces['crm']['P17_was_motivated_by'],
@@ -170,7 +177,10 @@ class PBWstarConstants:
             'SP35': self.namespaces['sdhss']['P35'],  # is defined by [person, religious identity]
             'SP36': self.namespaces['sdhss']['P36'],  # pertains to [religious identity]
             'SP37': self.namespaces['sdhss']['P37'],  # concerns [know-how]
-            'SP38': self.namespaces['sdhss']['P38']   # has skill
+            'SP38': self.namespaces['sdhss']['P38'],  # has skill
+            'ID5': self.namespaces['so']['ID5_related'],    # symmetric
+            'ID7': self.namespaces['so']['ID7_matches'],    # symmetric and transitive
+            'ID8': self.namespaces['so']['ID8_identical']   # symmetric, reflexive, and transitive
         }
 
         # The floruit strings for the people we want to include
