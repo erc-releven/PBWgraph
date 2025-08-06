@@ -231,7 +231,7 @@ class graphimportSTAR:
             sparql += f"?gass a {c.get_label('E17G')} . "
             # Check and create it if necessary
             res = c.ensure_entities_existence(sparql)
-            c.document(pbwdoc, res['a1'], res['a2'])
+            return c.document(pbwdoc, res['a1'], res['a2'])
 
     def identifier_handler(self, sqlperson, graphperson):
         """The identifier in this context is the 'origName' field, thus an identifier assigned by PBW
@@ -252,7 +252,7 @@ class graphimportSTAR:
         """
         # Check and create it if necessary
         res = c.ensure_entities_existence(sparql)
-        c.document(pbwdoc, res['a1'])
+        return c.document(pbwdoc, res['a1'])
 
     def get_source_and_agent(self, factoid):
         """Returns a pair of entities that represent the documentary source and the agent for this factoid.
@@ -290,7 +290,7 @@ class graphimportSTAR:
                 auths = self.constants.authorities(pub.bibSource.shortName) or [self.constants.mj]
                 for a in auths:
                     alist[a['identifier']] = a
-        return self.get_authority_node(list(alist.values()))
+        return self.get_viaf_agent_node(list(alist.values()))
 
     def get_boulloterion(self, boulloterion, pbweditor):
         """Helper function to find a boulloterion with a given ID. Creates its seals and sources
@@ -414,9 +414,9 @@ class graphimportSTAR:
         # Do we have a known author for this text?
         author = self.get_author_node(self.constants.author(fsource))
         # If not, we use the editor(s) as the authority.
-        editor = self.get_authority_node(self.constants.editor(fsource))
-        # And if that doesn't exist, we use the PBW authority.
-        agent = self.get_authority_node(self.constants.authorities(fsource))
+        editor = self.get_viaf_agent_node(self.constants.editor(fsource))
+        # And if that doesn't exist, we use the PBW editor of the text.
+        agent = self.get_viaf_agent_node(self.constants.authorities(fsource))
         # If there is no PBW scholar known for this source, we use the generic PBW agent.
         if agent is None:
             agent = self.constants.pbw_agent
@@ -439,7 +439,7 @@ class graphimportSTAR:
             return None
         # In this context, the agent is the PBW editor for this source.
         sourcekey = self.constants.source(factoid)
-        agent = self.get_authority_node(self.constants.authorities(sourcekey))
+        agent = self.get_viaf_agent_node(self.constants.authorities(sourcekey))
         sparql = f"""
         ?sourceref {c.get_label('P190')} {Literal(factoid.origLDesc).n3()} ;
             {c.label_n3} {Literal(c.sourceref(factoid)).n3()} ;
@@ -456,8 +456,8 @@ class graphimportSTAR:
         orig_sourcekey = factoid.source
         sourcekey = c.source(factoid)
         workinfo = c.sourceinfo(sourcekey)
-        pbw_authority = self.get_authority_node(c.authorities(sourcekey))
-        editors = self.get_authority_node(workinfo.get('editor'))
+        pbw_authority = self.get_viaf_agent_node(c.authorities(sourcekey))
+        editors = self.get_viaf_agent_node(workinfo.get('editor'))
         # NOTE I mislabelled these in the data hash. The 'work' is actually a spec:Text_Expression
         # and the 'expression' is actually a spec:Publication, both of which are F2s
         # The primary source identifier is the 'work' key, or else the PBW source ID string.
@@ -672,7 +672,7 @@ class graphimportSTAR:
                 k, sqlloc.locName)
             self.resolved_locations[k] = loc_ent
             # ...and add the gazetteer links that Charlotte made
-            geoagent = self.get_authority_node([c.cr])
+            geoagent = self.get_viaf_agent_node([c.cr])
             loc_sparql = ''
             to_doc = []
             if sqlloc.pleiades_id:
@@ -720,7 +720,7 @@ class graphimportSTAR:
         else:
             return authors[0]
 
-    def get_authority_node(self, authoritylist):
+    def get_viaf_agent_node(self, authoritylist):
         """Create or find the node for the given authority in our (modern) authority list."""
         if authoritylist is None or len(authoritylist) == 0:
             return None
@@ -839,7 +839,7 @@ class graphimportSTAR:
             a {c.get_label('E33A')} . """
         sparql += self.create_assertion_sparql('a1', 'P1', graphperson, '?appel', agent, sourcenode)
         res = c.ensure_entities_existence(sparql)
-        c.document(pbwdoc, res['a1'])
+        return c.document(pbwdoc, res['a1'])
 
     def description_handler(self, sourcenode, agent, factoid, graphperson):
         """Record the descriptions given in the sources as P3 data-property assertions."""
@@ -850,7 +850,7 @@ class graphimportSTAR:
         descriptions = [Literal(factoid.replace_referents(), 'en'), Literal(factoid.origLDesc, olang)]
         sparql = self.create_assertion_sparql('a1', 'P3', graphperson, descriptions, agent, sourcenode)
         res = c.ensure_entities_existence(sparql)
-        c.document(pbwdoc, res['a1'])
+        return c.document(pbwdoc, res['a1'])
 
     def death_handler(self, sourcenode, agent, factoid, graphperson):
         # Each factoid is its own set of assertions pertaining to the single death of a person.
@@ -858,6 +858,7 @@ class graphimportSTAR:
         # proxies for the death event as necessary.
         c = self.constants
         pbwdoc = c.pbw_uri(factoid)
+        assertions_created = []
 
         # Create the new assertion that says the death happened. Start by gathering all our existing
         # nodes and reified predicates:
@@ -883,7 +884,7 @@ class graphimportSTAR:
         ?de a {c.get_label('E69')} .
         """
         res = c.ensure_entities_existence(de_query)
-        c.document(pbwdoc, res['a0'])
+        assertions_created.extend(c.document(pbwdoc, res['a0']))
         deathevent = res['de']
         # For ease of understanding we should give the death event a label with the person's PBW identifier.
         # Add the label if it doesn't already exist, in a backwards-compatible way
@@ -906,9 +907,10 @@ class graphimportSTAR:
             sparql += self.create_assertion_sparql('a2', 'P4', deathevent, '?deathdate', agent, sourcenode)
 
         res = c.ensure_entities_existence(sparql)
-        c.document(pbwdoc, res['a1'])
+        assertions_created.extend(c.document(pbwdoc, res['a1']))
         if deathdate:
-            c.document(pbwdoc, res['a2'])
+            assertions_created.extend(c.document(pbwdoc, res['a2']))
+        return assertions_created
 
     def ethnicity_handler(self, sourcenode, agent, factoid, graphperson):
         """Assign a group membership for the given ethnicity to the person"""
@@ -922,7 +924,7 @@ class graphimportSTAR:
         groupid = c.get_ethnicity(elabel)
         sparql = self.create_assertion_sparql('a1', 'P107', groupid, graphperson, agent, sourcenode)
         res = c.ensure_entities_existence(sparql)
-        c.document(pbwdoc, res['a1'])
+        return c.document(pbwdoc, res['a1'])
 
     # Helper to create the assertions for our various social designation groups
     def _find_or_create_social_designation(self, sourcenode, agent, factoid, graphperson, des, label, whopred,
@@ -940,7 +942,7 @@ class graphimportSTAR:
         res = c.ensure_entities_existence(sparql)
 
         # Document it in either case as coming from this factoid
-        c.document(pbwdoc, res['a1'], res['a2'])
+        return c.document(pbwdoc, res['a1'], res['a2'])
 
     def religion_handler(self, sourcenode, agent, factoid, graphperson):
         """Assign a group membership for the given religious confession to the person"""
@@ -954,7 +956,7 @@ class graphimportSTAR:
         relid = self.constants.get_religion(rlabel)
         # (r:C23 Religious identity) [rwho:P36 pertains to] person
         # (r:C23 Religious identity) [rwhich:P35 is defined by] rnode
-        self._find_or_create_social_designation(sourcenode, agent, factoid, graphperson, relid,
+        return self._find_or_create_social_designation(sourcenode, agent, factoid, graphperson, relid,
                                                 self.constants.get_label('C23'), 'SP36', 'SP35')
 
     def societyrole_handler(self, sourcenode, agent, factoid, graphperson):
@@ -971,7 +973,7 @@ class graphimportSTAR:
             whichpred = 'SP33'
         # (r:C1 Social Quality of an Actor) [rwho:P13 pertains to] person
         # (r:C1) [rwhich:P14 is defined by] rnode
-        self._find_or_create_social_designation(sourcenode, agent, factoid, graphperson, roleid, roletype,
+        return self._find_or_create_social_designation(sourcenode, agent, factoid, graphperson, roleid, roletype,
                                                 whopred, whichpred)
 
     def dignity_handler(self, sourcenode, agent, factoid, graphperson):
@@ -989,7 +991,7 @@ class graphimportSTAR:
         # We treat (most) dignities as legal roles
         # (r:C13 Social Role Embodiment) [dwho:P26 is embodied by] person
         # (r:C13) [dwhich:P33 is embodiment of] dignity
-        self._find_or_create_social_designation(sourcenode, agent, factoid, graphperson, dignity_id, roletype,
+        return self._find_or_create_social_designation(sourcenode, agent, factoid, graphperson, dignity_id, roletype,
                                                 whopred, whichpred)
 
     def languageskill_handler(self, sourcenode, agent, factoid, graphperson):
@@ -1008,7 +1010,7 @@ class graphimportSTAR:
         sparql += f"""
         ?lskill a {c.get_label('C21')} ."""
         res = c.ensure_entities_existence(sparql)
-        c.document(pbwdoc, res['a1'], res['a2'])
+        return c.document(pbwdoc, res['a1'], res['a2'])
 
     def location_handler(self, sourcenode, agent, factoid, graphperson):
         """Associate the person with a location. These are honestly very inexact factoids, so we
@@ -1030,7 +1032,7 @@ class graphimportSTAR:
         sparql += self.create_assertion_sparql('a2', 'P11', '?locevent', graphperson, agent, sourcenode)
 
         res = c.ensure_entities_existence(sparql)
-        c.document(pbwdoc, res['a1'], res['a2'])
+        return c.document(pbwdoc, res['a1'], res['a2'])
 
     def _find_or_create_kinship(self, graphperson, graphkin):
         # See if there is an existing kinship group of any sort with the person as source and their
@@ -1087,7 +1089,7 @@ class graphimportSTAR:
                 # Make one if it doesn't exist.
                 sparql += f"        ?kstate a {c.get_label('C3')} ."
             res = c.ensure_entities_existence(sparql)
-            c.document(pbwdoc, res['a1'], res['a2'], res['a3'])
+            return c.document(pbwdoc, res['a1'], res['a2'], res['a3'])
 
     def possession_handler(self, sourcenode, agent, factoid, graphperson):
         """Ensure the existence of an E18 Physical Thing (we don't have any more category info about
@@ -1107,7 +1109,7 @@ class graphimportSTAR:
             sparql += f"""
         ?a1 {c.get_label('P3')} {Literal(factoid.possession).n3()}"""
         res = c.ensure_entities_existence(sparql)
-        c.document(pbwdoc, res['a1'])
+        return c.document(pbwdoc, res['a1'])
 
     def record_assertion_factoids(self):
         """To be run after everything else is done. Creates the assertion record for all assertions created here,
@@ -1136,7 +1138,7 @@ class graphimportSTAR:
             self.g.add((tstamp, c.predicates['P82b'], Literal(timenow, datatype=XSD.dateTimeStamp)))
 
             # Add the responsible person. TODO this should have more options than just tla
-            tla = self.get_authority_node([self.constants.ta])
+            tla = self.get_viaf_agent_node([self.constants.ta])
             self.g.add((c.swrun, c.predicates['P14'], tla))
 
             # Put in the forward predicate. LATER delete the reverse predicate if we decide it's a good idea
@@ -1152,6 +1154,7 @@ class graphimportSTAR:
             print("No new assertions created on this run.")
 
     def _person_process_loop(self, person, direct_person_records, factoid_types, used_sources, boulloteria):
+        c = self.constants
         # Skip the anonymous groups for now
         if person.name == 'Anonymi':
             return
@@ -1186,7 +1189,7 @@ class graphimportSTAR:
                     continue
 
                 # Find out what sources we are actually using and make note of them
-                source_key = self.constants.source(f)
+                source_key = c.source(f)
                 if source_key is None and ourftype != 'UncertainIdent':
                     print(f"Skipping factoid {f.factoidKey} with unlisted source {f.source}")
                     continue
@@ -1208,10 +1211,53 @@ class graphimportSTAR:
                     continue
                 # If the factoid has no authority then we assign it to the generic PBW agent
                 if authority_node is None:
-                    authority_node = self.constants.pbw_agent
+                    authority_node = c.pbw_agent
                 # Call the handler for this factoid type
-                method(source_node, authority_node, f, graph_person)
+                assertions_created = method(source_node, authority_node, f, graph_person)
+                # Keep track of how many factoids we have converted
                 fprocessed += 1
+
+                # Now see if we can assign a reading interpretation event.
+                if assertions_created:
+                    # Who read this source to create this factoid?
+                    if f.boulloterion is not None:
+                        # The authority is already the PBW reader.
+                        source_reader = authority_node
+                    elif c.sourceinfo(source_key):
+                        # We should have the record of who read this source.
+                        source_reader = self.get_viaf_agent_node(c.sourceinfo(source_key).get('authority'))
+                    else:
+                        # If we don't, we need to make a warning for the time being, and move on
+                        warn(f"No PBW reader/editor found for source {source_key} on factoid {f.factoidKey}")
+                        continue
+
+                    # First get the timestamp on the factoid. Do this separately so we don't have duplicate timestamps
+                    ts_sparql = f"?ts a {c.get_label('E52')}; {c.get_label('P82b')} {Literal(f.creationDate).n3()} ."
+                    factoid_ts = c.ensure_entities_existence(ts_sparql)['ts']
+
+                    # An I16 Meaning Comprehension was P14 carried out by the authority on the given date,
+                    # which P16 used specific object the source,
+                    # created an I13 Intended Meaning Belief and J5 holds (it) to be true,
+                    # J4 that an I4 proposition set which J28 contains entity reference the assertion.
+                    # We will give these deterministic names, to aid performance.
+                    pset = c.ns[f'proposition_set/pbw{f.factoidKey}'].n3()
+                    mbelief = c.ns[f'meaning/pbw{f.factoidKey}'].n3()
+                    reading = c.ns[f'reading/pbw{f.factoidKey}'].n3()
+                    sparql = f"""
+    INSERT DATA {{
+            {pset} a {c.get_label('I4')} ;
+                {c.get_label('J28')} {', '.join(x.n3() for x in assertions_created)} .
+            {mbelief} a {c.get_label('I13')} ;
+                {c.get_label('J4')} {pset} ;
+                {c.get_label('J5')} {Literal(True).n3()} .
+            {reading} a {c.get_label('I16')} ;
+                {c.get_label('P4')} {factoid_ts.n3()} ;
+                {c.get_label('P14')} {source_reader.n3()} ;
+                {c.get_label('P16')} {source_node.n3()} ;
+                {c.get_label('J23')} {mbelief} .
+    }}"""
+                    c.graph.update(sparql)
+
             if fprocessed > 0:
                 print(f"Ingested {fprocessed} {ftype} factoid(s)")
         return True

@@ -31,6 +31,7 @@ class PBWstarConstants:
         self.namespaces = {
             'crm':   Namespace('http://www.cidoc-crm.org/cidoc-crm/'),
             'crmdig': Namespace('http://www.ics.forth.gr/isl/CRMdig/'),
+            'crminf': Namespace('http://www.cidoc-crm.org/extensions/crminf/'),
             'lrmoo': Namespace('http://iflastandards.info/ns/lrm/lrmoo/'),
             'pbw':   Namespace('https://pbw2016.kdl.kcl.ac.uk/'),
             'sdhss': Namespace('https://r11.eu/ns/prosopography/'),
@@ -116,6 +117,12 @@ class PBWstarConstants:
             'F27': self.namespaces['lrmoo']['F27_Work_Creation'],  # Work Creation
             'F28': self.namespaces['lrmoo']['F28_Expression_Creation'],  # Expression Creation
             'F30': self.namespaces['lrmoo']['F30_Manifestation_Creation'],
+            'I2': self.namespaces['crminf']['I2_Belief'],
+            'I3': self.namespaces['crminf']['I3_Inference_Logic'],
+            'I4': self.namespaces['crminf']['I4_Proposition_Set'],
+            'I5': self.namespaces['crminf']['I5_Inference_Making'],
+            'I13': self.namespaces['crminf']['I13_Intended_Meaning_Belief'],
+            'I16': self.namespaces['crminf']['I16_Meaning_Comprehension'],
             'S5': self.namespaces['star']['S5_Suggestion']
         }
 
@@ -155,6 +162,13 @@ class PBWstarConstants:
             'P165': self.namespaces['crm']['P165_incorporates'],
             'P177': self.namespaces['crm']['P177_assigned_property_type'],
             'P190': self.namespaces['crm']['P190_has_symbolic_content'],
+            'J1': self.namespaces['crminf']['J1_used_as_premise'],
+            'J2': self.namespaces['crminf']['J2_concluded_that'],
+            'J3': self.namespaces['crminf']['J3_applies'],
+            'J4': self.namespaces['crminf']['J4_that'],
+            'J5': self.namespaces['crminf']['J5_holds_to_be'],
+            'J23': self.namespaces['crminf']['J23_interpreted_meaning_as'],
+            'J28': self.namespaces['crminf']['J28_contains_entity_reference'],
             'L1': self.namespaces['spec']['L1_was_used_to_produce'],
             'L11': self.namespaces['crmdig']['L11_had_output'],
             'L11r': self.namespaces['crmdig']['L11r_was_output_of'],
@@ -598,7 +612,8 @@ GROUP BY ?egroup HAVING (COUNT(?member) = {len(members)})
 
     def document(self, pbwpage, *assertions):
         """Make the E31 link between the pbwpage and whatever assertions we just pulled from it, and
-        mark these assertions as having been made by this software run."""
+        mark these assertions as having been made by this software run. Return the assertions that
+        were documented."""
         # Since we don't have to mint any new URIs in this query, we can just add them normally.
         if pbwpage is not None:
             self.graph.add((pbwpage, RDF.type, self.entitylabels['E31']))
@@ -606,3 +621,4 @@ GROUP BY ?egroup HAVING (COUNT(?member) = {len(members)})
             if pbwpage is not None:
                 self.graph.add((pbwpage, self.predicates['P70'], a))
             self.graph.add((a, self.predicates['L11r'], self.swrun))
+        return assertions
