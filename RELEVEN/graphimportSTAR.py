@@ -62,8 +62,8 @@ def _get_source_lang(dbobj):
     """Returns the RDF language tag for any object that has an `oLangKey` property"""
     lkeys = {2: 'grc', 3: 'la', 4: 'ar', 5: 'xcl'}
     try:
-        return lkeys.get(dbobj.oLangKey)
-    except NameError:
+        return lkeys.get(int(dbobj.oLangKey))
+    except (ValueError, NameError):
         return None
 
 
@@ -382,14 +382,22 @@ class graphimportSTAR:
         source_nodes = []
         for source in pubs:
             # Fix the encoding for the entries we didn't add
-            # short_name = source.shortName if source.bibKey == 816 else re_encode(source.shortName)
+            short_name = source.shortName if source.bibKey == 816 else re_encode(source.shortName)
             latin_bib = source.latinBib if source.bibKey == 816 else re_encode(source.latinBib)
-            # TODO work in the shortName?
+            # Write the entry for the publication. The short name is an identifier assigned by PBW,
+            # so we will record it as such.
             sn = f"""
         ?src {c.label_n3} {Literal(latin_bib).n3()} ;
             a {c.get_label('F2P')} .
+        ?srcref {c.get_label('P190')} {Literal(short_name).n3()} ;
+            a {c.get_label('E42')} .
+        ?a1 {c.star_auth} {c.pbw_agent.n3()};
+            {c.star_subject} ?src ;
+            {c.get_label('P37')} ?srcref ;
+            a {c.get_label('E15')}  .
         """
             res = c.ensure_entities_existence(sn)
+            c.document(res['a1'])
             source_nodes.append(res['src'])
         if len(source_nodes) > 1:
             # Find or create a matching bibliography/publication list with only these publication nodes.
@@ -445,6 +453,7 @@ class graphimportSTAR:
         # Ensure the existence of the work and, if it has a declared author, link the author to it via
         # a CREATION event, asserted by the author.
         c = self.constants
+        orig_sourcekey = factoid.source
         sourcekey = c.source(factoid)
         workinfo = c.sourceinfo(sourcekey)
         pbw_authority = self.get_authority_node(c.authorities(sourcekey))
@@ -468,10 +477,27 @@ class graphimportSTAR:
         # Keep track of the assertions we may have created
         assertions_set = []
         afact_src = None
-        # Express the edition/publication
+        # Express the edition/publication, and assign it the identifier from PBW
         sparql = f"""
+        ?pub_ref {c.get_label('P190')} {Literal(orig_sourcekey).n3()}; 
+            a {c.get_label('E42')} .
         ?publ {c.label_n3} {Literal(edition_id).n3()} ;
-            a {c.get_label('F2P')} . """
+            a {c.get_label('F2P')} . 
+        ?aid {c.star_subject} ?publ ;
+            {c.get_label('P37')} ?pub_ref ;
+            {c.star_auth} {c.pbw_agent.n3()} ;
+            a {c.get_label('E15')} ."""
+        assertions_set.append('aid')
+        # If we modified the identifier, record that too
+        if orig_sourcekey != sourcekey:
+            sparql += f"""
+        ?our_ref {c.get_label('P190')} {Literal(sourcekey).n3()}; 
+            a {c.get_label('E42')} .
+        ?aid2 {c.star_subject} ?publ ;
+            {c.get_label('P37')} ?our_ref ;
+            {c.star_auth} {c.r11_agent.n3()} ;
+            a {c.get_label('E15')}  ."""
+            assertions_set.append('aid2')
 
         if text_id is None:
             # We are dealing with a secondary source. Assert a publication creation instead of a
@@ -555,9 +581,6 @@ class graphimportSTAR:
         # Whatever we just made, return the edition/publication, which is what we are after.
         res = c.ensure_entities_existence(sparql)
 
-        # Do a backwards-compatible post-hoc addition of the work's internal identifier for reconciliation
-        if 'work' in res:
-            c.graph.add((res['work'], c.entity_label, Literal(sourcekey)))
         # Document the assertions we just made
         if afact_src:
             # It comes from an authorship factoid
@@ -644,10 +667,10 @@ class graphimportSTAR:
         k = sqlloc.locationKey
         if k not in self.resolved_locations:
             # If we haven't seen it yet, make it
-            self.resolved_locations[k] = self._find_or_create_identified_entity(
+            loc_ent = self._find_or_create_identified_entity(
                 self.constants.get_label('E27'), self.constants.pbw_agent,
                 k, sqlloc.locName)
-            loc_ent = self.resolved_locations[k]
+            self.resolved_locations[k] = loc_ent
             # ...and add the gazetteer links that Charlotte made
             geoagent = self.get_authority_node([c.cr])
             loc_sparql = ''

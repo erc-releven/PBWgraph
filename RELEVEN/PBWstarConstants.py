@@ -309,6 +309,7 @@ class PBWstarConstants:
             self.pbw_agent = None
             self.viaf_agent = None
             self.orcid_agent = None
+            self.r11_agent = None
             f11s = [{'key': 'pbw',
                      'title': Literal('Prosopography of the Byzantine World', 'en'),
                      'uri': URIRef('https://pbw2016.kdl.kcl.ac.uk/')},
@@ -317,7 +318,10 @@ class PBWstarConstants:
                      'uri': URIRef('https://viaf.org/')},
                     {'key': 'orcid',
                      'title': Literal('ORCID', 'en'),
-                     'uri': URIRef('https://orcid.org/')}]
+                     'uri': URIRef('https://orcid.org/')},
+                    {'key': 'r11',
+                     'title': Literal('RELEVEN project', 'en'),
+                     'uri': URIRef('https://r11.eu/')}]
             for ent in f11s:
                 f11_query = f"""
                 ?a a {self.get_label('F11')} ;
@@ -541,7 +545,7 @@ class PBWstarConstants:
 
     def ensure_egroup_existence(self, gclass, glink, members, title=None):
         # Get the URI list
-        mvalues = '\n'.join([f"({x.n3()})" for x in members])
+        mvalues = ', '.join([x.n3() for x in members])
         # Get the group label, which is a semicolon-separated list of member labels
         if title is None:
             mnames = []
@@ -559,22 +563,18 @@ class PBWstarConstants:
         # Look to see if a group with exactly these members exists
         sparql = f"""
 SELECT ?egroup WHERE {{
-    VALUES (?member) {{
-{mvalues}
-    }}
     {{
-        # Filter first to all the egroups that have the right number of members
-        SELECT ?egroup WHERE {{
+        # Filter first to egroups that have our particular members
+        SELECT DISTINCT ?egroup WHERE {{
             ?egroup a {self.get_label(gclass)} ;
-                {self.get_label(glink)} ?item .
+                {self.label_n3} {mlabel} ;
+                {self.get_label(glink)} {mvalues} .
         }}
-        GROUP BY ?egroup HAVING (COUNT(?item) = {len(members)})
     }}
-    #  Now make sure all the given members are in the right-size egroup.
+    #  Now make sure the group doesn't have any further members.
     ?egroup {self.get_label(glink)} ?member .
 }}
-GROUP BY ?egroup
-HAVING (COUNT(?member) = {len(members)})
+GROUP BY ?egroup HAVING (COUNT(?member) = {len(members)})
 """
         rows = [x for x in self.graph.query(sparql)]
         if len(rows) == 0:
