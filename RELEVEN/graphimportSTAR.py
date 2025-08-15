@@ -397,7 +397,7 @@ class graphimportSTAR:
             a {c.get_label('E15')}  .
         """
             res = c.ensure_entities_existence(sn)
-            c.document(res['a1'])
+            c.document(None, res['a1'])
             source_nodes.append(res['src'])
         if len(source_nodes) > 1:
             # Find or create a matching bibliography/publication list with only these publication nodes.

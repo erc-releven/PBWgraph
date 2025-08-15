@@ -549,8 +549,10 @@ class PBWstarConstants:
             # Either force_create was specified or res had zero length.
             new_uris = self.mint_uris_for_query(sparql)
             q = sparql
-            for k, v in new_uris.items():
-                q = q.replace(f'?{k}', v.n3(self.graph.namespace_manager))
+            # Sort the variable keys by descending length to avoid replacing subsets of variable names.
+            # Yes this is a cheap hack.
+            for k in sorted(new_uris.keys(), key=len, reverse=True):
+                q = q.replace(f'?{k}', new_uris[k].n3(self.graph.namespace_manager))
             self.graph.update("INSERT DATA {" + q + "}")
             return new_uris
         except Exception as e:

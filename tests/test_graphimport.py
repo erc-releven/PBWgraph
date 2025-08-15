@@ -1109,7 +1109,7 @@ select ?pbwed (count(?passage) as ?pct) where {{
         total_assertions = len([x for x in c.graph.subjects(c.predicates['P140'])])
         # No assertion should have more than one P140
         total_unique = len([x for x in c.graph.subjects(c.predicates['P140'], unique=True)])
-        # Actually there are two duplicates in the PBW data that we have to deal with in testing. Sigh
+        self.assertEqual(total_assertions, total_unique)
 
         # Find the assertions that are connected to a database record. There should in theory only
         # be one record.
