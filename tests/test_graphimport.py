@@ -44,7 +44,8 @@ class GraphImportTests(unittest.TestCase):
                                 'granddaughter': ['Anna 61', 'Ioannes 63', 'Maria 62'],
                                 'kin': ['Michael 7'],
                                 'mother': ['Alexios 17005', 'Andronikos 118', 'Eirene 25003', 'Konstantinos 285',
-                                           'Maria 171']}
+                                           'Maria 171']},
+                    'maybe': ['']
                     },
         'Anna 64': {'gender': ['Female'], 'identifier': 'τῆς κουροπαλατίσσης Ἄννης',
                     'descriptor': 'Anna the kouropalatissa, mother of Nikephoros Bryennios the usurper',
@@ -55,7 +56,8 @@ class GraphImportTests(unittest.TestCase):
                      'descriptor': 'Anna, daughter of Konstantinos X',
                      'altname': {'Ἀρετῆς': {'count': 1, 'source': 'Michel Psellos, Chronographie, 2 vols., Paris 1967'}},
                      'occupation': {'Nun': 1},
-                     'kinship': {'daughter': ['Eudokia 1', 'Konstantinos 10']}},
+                     'kinship': {'daughter': ['Eudokia 1', 'Konstantinos 10']},
+                     'maybe': ['']},
         'Anna 102': {'gender': ['Female'], 'identifier': ' Ἄννῃ',
                      'descriptor': 'Anna, wife of Eustathios Boilas',
                      'death': {'count': 1, 'dated': 0}, 'occupation': {'Nun': 1},
@@ -156,7 +158,8 @@ class GraphImportTests(unittest.TestCase):
                                    'relative by marriage': ['Nikephoros 101']
                                    },
                        'possession': {
-                           'Palace in Bithynia at foot of Mount Sophon': ['Nikephoros 117', '173.7-8, 179.15']}},
+                           'Palace in Bithynia at foot of Mount Sophon': ['Nikephoros 117', '173.7-8, 179.15']},
+                       'maybe': ['Ioannes, protoproedros and doux of Antioch']},
         'Ioannes 68': {'gender': ['Eunuch'], 'identifier': 'τοῦ Ὀρφανοτρόφου',
                        'descriptor': 'Ioannes the Orphanotrophos, brother of Michael IV',
                        'death': {'count': 4, 'dated': 1},
@@ -177,7 +180,8 @@ class GraphImportTests(unittest.TestCase):
                                    'uncle': ['Michael 5'], 'uncle (maternal)': ['Michael 5'],
                                    'brother (first)': ['Michael 4'],
                                    'cousin of parent': ['Konstantinos 9101'],
-                                   'kin': ['Konstantinos 9101']}
+                                   'kin': ['Konstantinos 9101']},
+                       'maybe': ['orphanotrophos']
                        },
         'Ioannes 101': {'gender': ['Male'], 'identifier': 'Ἰωάννην',
                         'descriptor': 'Ioannes of Lampe, monk and archbishop of all Bulgaria',
@@ -185,6 +189,7 @@ class GraphImportTests(unittest.TestCase):
                         'legalrole': {'Archbishop': 3, 'Monk': 3},
                         # 'location': {'Bulgaria|': 3,
                         #              'Lampe (Phrygia)|': 1}
+                        'maybe': ['archbishop of Ohrid in 1078']
                         },
         'Ioannes 102': {'gender': ['Eunuch'], 'identifier': 'Ἰωάννην',
                         'descriptor': 'Ioannes, metropolitan of Side [1079, 1082, 1094]',
@@ -192,7 +197,8 @@ class GraphImportTests(unittest.TestCase):
                         # included an out-of-scope letter of Theophylact of Ohrid
                         'legalrole': {'Bishop': 1, 'Metropolitan': 12, 'Protoproedros': 1, 'Hypertimos': 2,
                                       'Protoproedros of the protosynkelloi': 2, 'Protosynkellos': 2},
-                        # 'location': {'Side|': 14, 'Constantinople: Blachernai|': 1}
+                        # 'location': {'Side|': 14, 'Constantinople: Blachernai|': 1},
+                        'maybe': ['Ioannes, metropolitan of Side [1079, 1082, 1094]']
                         },
         'Ioannes 110': {'gender': ['Male'], 'identifier': 'Ἰωάννου...τοῦ Σκυλίτζη',
                         'descriptor': 'Ioannes Skylitzes, historian',
@@ -247,7 +253,8 @@ class GraphImportTests(unittest.TestCase):
                             'possession': {
                                 'Estates in Opsikion where he was banished by <Zoe 1>': ['Ioannes 110', '416.77'],
                                 'A house with a cistern near the Holy Apostles (in Constantinople)': ['Ioannes 110',
-                                                                                                      '422.18']}},
+                                                                                                      '422.18']},
+                            'maybe': ['unidentified brother of Michael IV']},
         'Konstantinos 101': {'gender': ['Male'], 'identifier': 'Κωνσταντῖνος ὁ Διογένης',
                              'descriptor': 'Konstantinos Diogenes, father of Romanos IV',
                              'secondname': {'Διογένης': {'count': 6}},
@@ -291,7 +298,8 @@ class GraphImportTests(unittest.TestCase):
                              'descriptor': 'Konstantinos, nephew of Michael IV',
                              'legalrole': {'Patrikios': 1},
                              'location': {'Thessalonike|https://pleiades.stoa.org/places/491741': 1},
-                             'kinship': {'nephew': ['Michael 4']}},
+                             'kinship': {'nephew': ['Michael 4']},
+                             'maybe': ['doux of Thessalonike in 1040']},
         'Liparites 101': {'gender': ['Male'], 'identifier': 'τοῦ Λιπαρίτου قاريط ملك الابخاز',
                           'descriptor': 'Liparit IV, duke of Trialeti',
                           'ethnicity': {'Georgian': 2},
@@ -1018,6 +1026,27 @@ select ?poss ?authorid ?src where {{
                     self.assertEqual(reference, src, "Test possession source ref is set for %s" % person)
                 self.assertEqual(rowct, len(pinfo['possession'].keys()),
                                  "Test %s has the right number of possessions" % person)
+
+    def test_uncertain_ident(self):
+        """Check that the uncertain identifications were set up correctly, and that
+        none of the Anonymi/Anonymae made it in."""
+        c = self.constants
+        for person, pinfo in self.td_people.items():
+            if 'maybe' in pinfo:
+                sparql = f"""
+SELECT ?alternate WHERE {{
+    ?a1 {c.star_subject} {pinfo['uri'].n3()} ;
+        a {c.get_assertion_for_predicate('ID8')}, {c.get_label('S5')} ;
+        {c.star_object} [a {c.get_label('E21')} ; {c.label_n3} ?alternate] ;
+        {c.star_auth} {c.pbw_agent.n3()} .
+}}"""
+                res = c.graph.query(sparql)
+                if pinfo['maybe'] == ['']:
+                    # There should be zero results.
+                    self.assertEqual(0, count_result(res), "Test that %s has no uncertain identities" % person)
+                else:
+                    self.assertCountEqual(pinfo['maybe'], [row['alternate'].toPython() for row in res],
+                                         "Test that %s has the right uncertain identities" % person)
 
     def test_boulloterions(self):
         """For each boulloterion, check that it exists only once and has only one inscription."""
