@@ -59,6 +59,7 @@ class GraphImportTests(unittest.TestCase):
         'Anna 102': {'gender': ['Female'], 'identifier': ' Ἄννῃ',
                      'descriptor': 'Anna, wife of Eustathios Boilas',
                      'death': {'count': 1, 'dated': 0}, 'occupation': {'Nun': 1},
+                     # 'location': {'Cappadocia|https://pleiades.stoa.org/places/628949': 1},
                      'kinship': {'wife': ['Eustathios 105'],
                                  'mother': ['Romanos 106']}},
         'Apospharios 101': {'gender': ['Male'], 'identifier': ' Ἀποσφάριον',
@@ -68,6 +69,14 @@ class GraphImportTests(unittest.TestCase):
         'Bagrat 101': {'gender': ['Male'], 'identifier': 'τῷ Παγκρατίῳ بقراط بن جرجس',
                        'descriptor': 'Bagrat IV, king of Georgia',
                        'legalrole': {'King': 3, 'Kouropalates': 2, 'Sebastos': 1},
+                       'location': {'Abchasia|https://www.geonames.org/6643410': 5,
+                                    # 'Iberia (Kartli)': 2,
+                                    'Caucasus|https://pleiades.stoa.org/places/863766': 1,
+                                    'Svanetia|https://www.geonames.org/611804': 1,
+                                    'Phasis (Abchasia)|https://pleiades.stoa.org/places/857275': 1,
+                                    # 'Lazika': 1,
+                                    'Trebizond|https://pleiades.stoa.org/places/857359': 1,
+                                    'Constantinople|https://pleiades.stoa.org/places/520998': 1},
                        'kinship': {'son': ['Anonyma 6003', 'Georgios 105', 'Maria 103'],
                                    'husband': ['Helena 104'], 'father': ['Maria 61']}},
         'Balaleca 101': {'gender': ['Male'], 'identifier': 'Βαλαλεχα',
@@ -78,6 +87,14 @@ class GraphImportTests(unittest.TestCase):
                       # Archon should be 1 but is 2 in production, because one of the two factoids had a
                       # geographical designation but they have the same authority and source string.
                       'legalrole': {'Archon': 1, 'King': 1, 'Magistros': 1},
+                      'locations': {'Ani|https://pleiades.stoa.org/places/874322': 8,
+                                    'Armenia|https://pleiades.stoa.org/places/874350': 3,
+                                    'Constantinople|https://pleiades.stoa.org/places/520998': 3,
+                                    'Cappadocia|https://pleiades.stoa.org/places/628949': 1,
+                                    # 'Charsianon': 1,
+                                    'Lykandos (eastern Anatolia)|https://pleiades.stoa.org/places/629028': 1,
+                                    # 'Surmarhi': 1,
+                                    'Melitene|https://pleiades.stoa.org/places/629039': 1},
                       'kinship': {'son': ['Ashot 101'],
                                   'husband': ['Anonyma 158', 'Anonyma 159'],
                                   'son (in fact, nephew)': ['Ioannes 106']},
@@ -90,6 +107,11 @@ class GraphImportTests(unittest.TestCase):
                       'secondname': {'Φραγγόπωλον': {'count': 2}},
                       'ethnicity': {'Norman': 1},
                       'legalrole': {'Stratelates': 1, 'Vestes': 1, 'Magistros': 1},
+                      'location': {# 'Dagarabe|': 1,
+                                   # 'Orient|': 1,
+                                   'Medeia|https://pleiades.stoa.org/places/903080': 1,
+                                   'Chliat|https://www.geonames.org/325103': 1
+                                   },
                       'possession': {'House at Dagarabe in Armeniakon': ['Ioannes 110', '485.52']}},
         'Ioannes 62': {'gender': ['Male'], 'identifier': 'Ἰωάννης',
                        'descriptor': 'Ioannes Doukas, kaisar',
@@ -101,6 +123,29 @@ class GraphImportTests(unittest.TestCase):
                        'death': {'count': 1, 'dated': 0},
                        'legalrole': {'Stratarches': 1, 'Kaisar': 21, 'Basileopator': 1, 'Strategos autokrator': 2,
                                      'Basileus': 3, 'Monk': 4},
+                       'location': {'Constantinople: Hagia Sophia|https://pleiades.stoa.org/places/307220778': 1,
+                                    'Constantinople|https://pleiades.stoa.org/places/520998': 6,
+                                    'Dorylaion|https://pleiades.stoa.org/places/609367': 3,
+                                    # 'Zompos': 4,
+                                    # 'Sangarios (river)': 4,
+                                    'Marmara|https://pleiades.stoa.org/places/511378': 3,
+                                    # 'Constantinople: Great Palace': 5,
+                                    # 'Constantinople: Agora (Forum of Constantine?)': 1,
+                                    # 'Constantinople: Great Palace, Chrysotriklinos': 1,
+                                    # 'Piperoudion (Kyperoudes, on Bosporos)': 1,
+                                    'Chrysopolis (Bithynia)|https://pleiades.stoa.org/places/520995': 1,
+                                    # 'Bithynia': 3,
+                                    # 'Asia Minor': 1,
+                                    'Bosporos|https://pleiades.stoa.org/places/520977': 1,
+                                    # 'Asia': 2,
+                                    'Sophon, Mount (Bithynia)|https://pleiades.stoa.org/places/511422': 1,
+                                    'Phrygia|https://pleiades.stoa.org/places/609502': 1,
+                                    # "Princes' Islands: Tragonesion": 1,
+                                    # 'Constantinople: Blachernai': 1,
+                                    # 'Choirobakchoi': 1,
+                                    # 'Moroboundou': 1,
+                                    'Edessa (Rohas, Mesopotamia)|https://pleiades.stoa.org/places/658457': 1,
+                                    'Antioch (on the Orontes)|https://pleiades.stoa.org/places/658381': 2},
                        'kinship': {'brother': ['Konstantinos 10'],
                                    'husband': ['Eirene 20117'],
                                    'uncle': ['Andronikos 62', 'Konstantios 61', 'Michael 7'],
@@ -116,6 +161,16 @@ class GraphImportTests(unittest.TestCase):
                        'descriptor': 'Ioannes the Orphanotrophos, brother of Michael IV',
                        'death': {'count': 4, 'dated': 1},
                        'legalrole': {'Praipositos': 1, 'Orphanotrophos': 12, 'Synkletikos': 1, 'Monk': 7},
+                       'location': {# 'Constantinople: Blachernai': 4,
+                                    'Myra (Lycia)|https://pleiades.stoa.org/places/639005': 1,
+                                    'Myra (Lycia): Hagios Nikolaos|https://www.geonames.org/8077562': 1,
+                                    # 'Constantinople: Great Palace': 5,
+                                    # 'Peloponnesos': 1,
+                                    'Hellas|https://pleiades.stoa.org/places/1001896': 1,
+                                    # 'Monobatai': 2,
+                                    'Mitylene|https://pleiades.stoa.org/places/550763': 3,
+                                    # 'Marykatou Chorion (Bithynia)': 1,
+                                    'Constantinople|https://pleiades.stoa.org/places/520998': 2},
                        'occupation': {'Beggar': 1, 'Servant': 1},
                        'kinship': {'brother': ['Georgios 106', 'Konstantinos 64', 'Maria 104', 'Michael 4',
                                                'Niketas 104', 'Stephanos 101'],
@@ -127,13 +182,18 @@ class GraphImportTests(unittest.TestCase):
         'Ioannes 101': {'gender': ['Male'], 'identifier': 'Ἰωάννην',
                         'descriptor': 'Ioannes of Lampe, monk and archbishop of all Bulgaria',
                         'death': {'count': 1, 'dated': 0},
-                        'legalrole': {'Archbishop': 3, 'Monk': 3}},
+                        'legalrole': {'Archbishop': 3, 'Monk': 3},
+                        # 'location': {'Bulgaria|': 3,
+                        #              'Lampe (Phrygia)|': 1}
+                        },
         'Ioannes 102': {'gender': ['Eunuch'], 'identifier': 'Ἰωάννην',
                         'descriptor': 'Ioannes, metropolitan of Side [1079, 1082, 1094]',
                         # Metropolitan should be 12 but is 13 currently in production, because it erroneously
                         # included an out-of-scope letter of Theophylact of Ohrid
                         'legalrole': {'Bishop': 1, 'Metropolitan': 12, 'Protoproedros': 1, 'Hypertimos': 2,
-                                      'Protoproedros of the protosynkelloi': 2, 'Protosynkellos': 2}},
+                                      'Protoproedros of the protosynkelloi': 2, 'Protosynkellos': 2},
+                        # 'location': {'Side|': 14, 'Constantinople: Blachernai|': 1}
+                        },
         'Ioannes 110': {'gender': ['Male'], 'identifier': 'Ἰωάννου...τοῦ Σκυλίτζη',
                         'descriptor': 'Ioannes Skylitzes, historian',
                         'legalrole': {'Megas droungarios of the vigla': 1, 'Kouropalates': 1}},
@@ -144,6 +204,7 @@ class GraphImportTests(unittest.TestCase):
                                                                'Byzantinae 40/1, Berlin – New York 2001'}},
                             'death': {'count': 2, 'dated': 0},
                             'legalrole': {'Basileus': 3, 'Basileus (co-emperor)': 3},
+                            # 'location': {'Constantinople: Blachernai|': 2, 'Constantinople: Mangana|': 1},
                             'occupation': {'Porphyrogennetos': 5},
                             'kinship': {'son': ['Maria 61', 'Michael 7'],
                                         'fiancé': ['Anna 62'],
@@ -165,6 +226,22 @@ class GraphImportTests(unittest.TestCase):
                                           'Domestikos': 4, 'Megas domestikos': 2, 'Doux': 4, 'Patrikios': 1, 'Monk': 2,
                                           'Domestikos of the scholai of Orient': 1,
                                           'Domestikos of the scholai of the East': 1},
+                            'location': {'Antioch (on the Orontes)|https://pleiades.stoa.org/places/658381': 5,
+                                         'Edessa (Rohas, Mesopotamia)|https://pleiades.stoa.org/places/658457': 2,
+                                         # 'Constantinople: Great Palace': 4,
+                                         'Constantinople|https://pleiades.stoa.org/places/520998': 5,
+                                         # 'Opsikion': 1,
+                                         # 'Constantinople: Stoudios': 8,
+                                         # 'Constantinople: Peribleptos': 1,
+                                         # 'Constantinople: Sigma': 5,
+                                         # 'Constantinople: Holy Apostles': 1,
+                                         # 'Samos (Aegean)': 1,
+                                         # 'Constantinople: Agora (Forum of Constantine?)': 1,
+                                         'Constantinople: Hippodrome|https://pleiades.stoa.org/places/773739435': 1,
+                                         # 'Constantinople: Dios (Stoudios?)': 1,
+                                         # 'Syria': 1,
+                                         # 'Orient': 2
+                                         },
                             'occupation': {'Beggar': 1},
                             'kinship': {'brother': ['Ioannes 68', 'Michael 4'], 'uncle': ['Michael 5']},
                             'possession': {
@@ -176,6 +253,17 @@ class GraphImportTests(unittest.TestCase):
                              'secondname': {'Διογένης': {'count': 6}},
                              'death': {'count': 2, 'dated': 0},
                              'legalrole': {'Doux': 4, 'Patrikios': 2, 'Strategos': 3, 'Archon': 1, 'Monk': 1},
+                             'location': {# 'Sirmium': 3,
+                                          # 'Bulgaria': 2,
+                                          'Danube|https://pleiades.stoa.org/places/226577': 2,
+                                          'Thessalonike|https://pleiades.stoa.org/places/491741': 1,
+                                          # 'Thrakesion': 1,
+                                          'Constantinople|https://pleiades.stoa.org/places/520998': 1,
+                                          # 'Constantinople: Stoudios': 1,
+                                          'Illyricum|https://pleiades.stoa.org/places/481865': 2,
+                                          # 'Constantinople: Blachernai': 1,
+                                          # 'Serbia': 1
+                                          },
                              'kinship': {'husband': ['Anonyma 108'],
                                          'father': ['Romanos 4'],
                                          'husband of niece': ['Romanos 3'],
@@ -190,14 +278,29 @@ class GraphImportTests(unittest.TestCase):
                                                         'Μελετῶν Χερσονήσου τοῦ Αἵμου 105, Thessalonike (1968) 103-186'}
                                          },
                              'legalrole': {'King': 2, 'Basileus': 1},
+                             'location': {'Prizren|https://www.geonames.org/786712': 1,
+                                          # 'Bulgaria': 1,
+                                          # 'Nis (Naissus)': 1,
+                                          'Daonion (Thrace)|https://www.geonames.org/746398': 1,
+                                          # 'Constantinople: Sergios and Bakchos': 1,
+                                          'Antioch (on the Orontes)|https://pleiades.stoa.org/places/658381': 1,
+                                          # 'Dalmatia': 1
+                                          },
                              'kinship': {'son': ['Michael 101'], 'father': ['Georgios 20253']}},
         'Konstantinos 110': {'gender': ['Male'], 'identifier': 'Κωνσταντῖνος',
                              'descriptor': 'Konstantinos, nephew of Michael IV',
                              'legalrole': {'Patrikios': 1},
+                             'location': {'Thessalonike|https://pleiades.stoa.org/places/491741': 1},
                              'kinship': {'nephew': ['Michael 4']}},
         'Liparites 101': {'gender': ['Male'], 'identifier': 'τοῦ Λιπαρίτου قاريط ملك الابخاز',
                           'descriptor': 'Liparit IV, duke of Trialeti',
-                          'ethnicity': {'Georgian': 2}, 'legalrole': {'Lord of part of the Iberians': 1}}
+                          'ethnicity': {'Georgian': 2},
+                          'legalrole': {'Lord of part of the Iberians': 1},
+                          # 'location': {'Iberia (Kartli)': 1,
+                          #              'Meschia (Georgia)': 1,
+                          #              'Kastrokome': 1,
+                          #              'Iberia (theme)': 1}
+                          }
     }
 
     td_boulloterions = {
@@ -788,6 +891,31 @@ select ?role where {{
                 res = c.graph.query(sparql)
                 ctr = Counter([row['role'].toPython() for row in res])
                 self.assertDictEqual(pinfo['legalrole'], ctr, "Test legal roles for %s" % person)
+
+    def test_locations(self):
+        """Check location assertions."""
+        c = self.constants
+        for person, pinfo in self.td_people.items():
+            if 'location' in pinfo:
+                sparql = f"""
+select ?locid ?locuri where {{
+    ?a1 {c.star_object} {pinfo['uri'].n3()} ;
+        a {c.get_assertion_for_predicate('P11')} ;
+        {c.star_subject} ?locevent ;
+        {c.star_auth} ?locauth .
+    ?a2 {c.star_subject} ?locevent ;
+        a {c.get_assertion_for_predicate('P7')} ;
+        {c.star_object} ?loc ;
+        {c.star_auth} ?locauth .
+    ?locsrc {c.star_src} ?a1, ?a2 .
+    ?loc {c.label_n3} ?locid .
+    ?locis {c.star_subject} ?loc ;
+           a {c.get_assertion_for_predicate('ID7')} ;
+           {c.star_object} ?locuri .
+}}"""
+                res = c.graph.query(sparql)
+                ctr = Counter([f"{row['locid'].toPython()}|{row['locuri']}" for row in res])
+                self.assertDictEqual(pinfo['location'], ctr, "Test location assertions for %s" % person)
 
     def test_languageskill(self):
         """Test that our Georgian monk has his language skill set correctly"""
