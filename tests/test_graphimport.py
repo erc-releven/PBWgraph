@@ -1255,6 +1255,54 @@ select ?pbwed (count(?passage) as ?pct) where {{
                 # at least the number from the test database.
                 self.assertGreaterEqual(row['pct'].toPython(), sinfo.get('passages'))
 
+    def test_readings(self):
+        """Check that the CRMinf structures for interpretative readings are set up correctly."""
+        c = self.constants
+        # First make sure that the assertion types without interpretative reading shouldn't have them
+        exempt = [c.get_assertion_for_predicate(x) for x in ('P41', 'P42',  # gender, no explicit editor
+                                                             'P1',  # identifier, no explicit editor
+                                                             'L1', 'P46', 'P128',  # setting up boulloteria
+                                                             'P14', 'R15', 'R17', 'R76',  # setting up text  metadata
+                                                             'ID7',  # mapping to external ID, no explicit source
+                                                             'ID8'  # uncertain ident, no explicit editor
+                                                            )]
+        exempt.extend((c.get_label('E15'), c.get_label('S5'))) # S5 for the suggestions, E15 for DB identifiers
+        sparql = f"""
+select distinct ?type where {{
+        ?a a ?type ; {c.star_subject} ?sth .
+        MINUS {{
+            ?propset {c.get_label('J28')} ?a .
+        }}
+}}
+"""
+        res = c.graph.query(sparql)
+        for row in res:
+            self.assertIn(row['type'].n3(c.graph.namespace_manager), exempt,
+                          "unread assertion type %s in types exempt from reading" % row['type'])
+
+        # Any assertion that originated from one of our sample sources should have an interpretative reading
+        # structure where the interpretation was carried out by the respective PBW editor
+        for s, sinfo in self.spot_sources.items():
+            # The text is linked to its passages via R15; the passages are linked to assertions via P67;
+            # the assertions should belong to some I4 which belongs to an I13 which belongs to an I16
+            # which was P14 carried out by the PBW editor.
+            reader = sinfo['pbwed']
+            sparql = f"""
+SELECT DISTINCT ?reader WHERE {{
+    ?srcass {c.star_subject} [a {c.get_label('F2P')} ; {c.label_n3} {Literal(sinfo['edition']).n3()}] ;
+            {c.star_object} ?passage .
+    ?passage {c.star_src} ?assertion .
+    ?propset {c.get_label('J28')} ?assertion ;
+             a {c.get_label('I4')} .
+    ?reading a {c.get_label('I16')} ;
+             {c.get_label('P14')} [{c.label_n3} ?reader] ;
+             {c.get_label('J23')} [a {c.get_label('I13')} ; {c.get_label('J4')} ?propset ] .
+}}"""
+            res = c.graph.query(sparql)
+            for row in res:
+                self.assertEqual(reader, row['reader'].toPython(),
+                                 f"Correct PBW editor read source {sinfo['textid']}")
+
     def test_db_entry(self):
         """All the assertions in the database should be attached to DB records, linked to the single entry
         that created them."""
