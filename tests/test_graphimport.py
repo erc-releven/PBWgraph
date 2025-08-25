@@ -1326,13 +1326,26 @@ select (count(?a) as ?numass) ?record ?tstamp ?me where {{
         {c.get_label('P14')} ?me ;
         {c.get_label('P4')} ?tstamp .
 }} group by ?record ?tstamp ?me"""
-        linked = [x for x in c.graph.query(sparql)]
+        linked = list(c.graph.query(sparql))
         self.assertEqual(1, len(linked))
         result = linked[0]
 
         self.assertEqual(result['numass'].toPython(), total_assertions)
         self.assertIsNotNone(result['tstamp'])
         self.assertEqual(Literal('Andrews, Tara Lee'), self.get_object(result['me'], 'label'))
+
+        # Now find the readings that are connected to the same database record. They all should be.
+        readings = list(c.graph.subjects(RDF.type, c.entitylabels['I16']))
+        self.assertGreater(len(readings), 0)
+        record = result['record'].n3()
+        sparql = f"""
+select (count(?r) as ?numrdg) where {{
+    ?r a {c.get_label('I16')}.
+    {record} {c.get_label('L11')} ?r.
+}}
+"""
+        r2 = list(c.graph.query(sparql))[0]
+        self.assertEqual(len(readings), r2['numrdg'].toPython())
 
     @unittest.skip("for now")
     def test_repeat(self):

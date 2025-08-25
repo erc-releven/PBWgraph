@@ -1117,7 +1117,7 @@ class graphimportSTAR:
         database creation event."""
         c = self.constants
 
-        # Find all assertions that have been marked as coming from this software run. We will add the
+        # Find all assertions and readings that have been marked as coming from this software run. We will add the
         # forward property to the ones that don't yet have a forward property. We can keep the reverse property
         # as a 'touched by' indicator, or we can delete it.
         sparql_criteria = f"""
@@ -1251,6 +1251,7 @@ class graphimportSTAR:
                 {c.get_label('J4')} {pset} ;
                 {c.get_label('J5')} {Literal(True).n3()} .
             {reading} a {c.get_label('I16')} ;
+                {c.get_label('L11r')} {c.swrun.n3()} ;
                 {c.get_label('P4')} {factoid_ts.n3()} ;
                 {c.get_label('P14')} {source_reader.n3()} ;
                 {c.get_label('P16')} {source_node.n3()} ;
