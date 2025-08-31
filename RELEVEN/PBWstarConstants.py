@@ -1,8 +1,9 @@
 import pbw
 import re
 import RELEVEN.PBWSources
+import sys
 from datetime import datetime
-from os.path import join, dirname
+from os.path import join, dirname, basename
 from rdflib import Graph, URIRef, Literal, Namespace, OWL, RDF, RDFS, XSD
 from rdflib.query import Result
 from uuid import uuid4
@@ -291,7 +292,8 @@ class PBWstarConstants:
                     print("Setting up software execution run...")
                     # Ensure the existence of the software metadata
                     # TODO should this be a string?
-                    ourscript = Literal("https://github.com/erc-releven/PBWgraph/RELEVEN/graphimportSTAR.py")
+                    whoarewe = basename(sys.argv[0])
+                    ourscript = Literal(f"https://github.com/erc-releven/PBWgraph/RELEVEN/{whoarewe}")
                     md_query = f"""
                     ?thisurl a {self.get_label('E42')} ;
                         {self.get_label('P190')} {ourscript.n3()} .
@@ -624,3 +626,42 @@ GROUP BY ?egroup HAVING (COUNT(?member) = {len(members)})
                 self.graph.add((pbwpage, self.predicates['P70'], a))
             self.graph.add((a, self.predicates['L11r'], self.swrun))
         return assertions
+
+    def record_script_run(self, responsible):
+        """To be run after everything else is done. Creates the assertion record for all assertions created here,
+        tying each to the factoid or person record that originated it and tying all the assertion records to the
+        database creation event."""
+        # Find all assertions and readings that have been marked as coming from this software run. We will add the
+        # forward property to the ones that don't yet have a forward property. We can keep the reverse property
+        # as a 'touched by' indicator, or we can delete it.
+        sparql_criteria = f"""
+            ?a {self.get_label('L11r')} {self.swrun.n3()} .
+        MINUS {{
+            ?l {self.get_label('L11')} ?a .
+        }}
+        """
+        res = self.graph.query(f"SELECT (COUNT(?a) AS ?act) WHERE {{ {sparql_criteria} }}")
+        num_new = 0
+        for row in res:  # there is only one row
+            num_new = row['act'].toPython()
+        if num_new > 0:
+            print(f"Recording {num_new} new assertions in the graph.")
+            # Add the ending timestamp to the execution we have
+            tstamp = self.graph.value(self.swrun, self.predicates['P4'])
+            timenow = datetime.now()
+            self.graph.add((tstamp, self.predicates['P82b'], Literal(timenow, datatype=XSD.dateTimeStamp)))
+
+            # Add the responsible person. TODO this should have more options than just tla
+            self.graph.add((self.swrun, self.predicates['P14'], responsible))
+
+            # Put in the forward predicate. LATER delete the reverse predicate if we decide it's a good idea
+            sparql_update = f"""
+        INSERT {{
+            {self.swrun.n3()} {self.get_label('L11')} ?a .
+        }} WHERE {{
+            {sparql_criteria}
+        }}
+            """
+            self.graph.update(sparql_update)
+        else:
+            print("No new assertions created on this run.")

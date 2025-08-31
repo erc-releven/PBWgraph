@@ -1115,43 +1115,10 @@ class graphimportSTAR:
         """To be run after everything else is done. Creates the assertion record for all assertions created here,
         tying each to the factoid or person record that originated it and tying all the assertion records to the
         database creation event."""
-        c = self.constants
 
-        # Find all assertions and readings that have been marked as coming from this software run. We will add the
-        # forward property to the ones that don't yet have a forward property. We can keep the reverse property
-        # as a 'touched by' indicator, or we can delete it.
-        sparql_criteria = f"""
-            ?a {c.get_label('L11r')} {c.swrun.n3()} .
-        MINUS {{
-            ?l {c.get_label('L11')} ?a .
-        }}
-        """
-        res = self.g.query(f"SELECT (COUNT(?a) AS ?act) WHERE {{ {sparql_criteria} }}")
-        num_new = 0
-        for row in res:  # there is only one row
-            num_new = row['act'].toPython()
-        if num_new > 0:
-            print(f"Recording {num_new} new assertions in the graph.")
-            # Add the ending timestamp to the execution we have
-            tstamp = self.g.value(c.swrun, c.predicates['P4'])
-            timenow = datetime.now()
-            self.g.add((tstamp, c.predicates['P82b'], Literal(timenow, datatype=XSD.dateTimeStamp)))
-
-            # Add the responsible person. TODO this should have more options than just tla
-            tla = self.get_viaf_agent_node([self.constants.ta])
-            self.g.add((c.swrun, c.predicates['P14'], tla))
-
-            # Put in the forward predicate. LATER delete the reverse predicate if we decide it's a good idea
-            sparql_update = f"""
-        INSERT {{
-            {c.swrun.n3()} {c.get_label('L11')} ?a .
-        }} WHERE {{
-            {sparql_criteria}
-        }}
-            """
-            c.graph.update(sparql_update)
-        else:
-            print("No new assertions created on this run.")
+        # Add the responsible person. TODO this should have more options than just tla
+        tla = self.get_viaf_agent_node([self.constants.ta])
+        return self.constants.record_script_run(tla)
 
     def _person_process_loop(self, person, direct_person_records, factoid_types, used_sources, boulloteria):
         c = self.constants
