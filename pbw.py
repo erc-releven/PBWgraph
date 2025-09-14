@@ -207,10 +207,10 @@ class Location(Base):
     creationDate = Column(DateTime)
     notes = Column(Text)
     locationKey = Column(Integer, primary_key=True)
-    ## latitude = Column(String)
-    ## longitude = Column(String)
-    ## radius = Column(String)
-    ## geosource = Column(String)
+    # latitude = Column(String)
+    # longitude = Column(String)
+    # radius = Column(String)
+    # geosource = Column(String)
     geonames_id = Column(Integer)
     pleiades_id = Column(Integer)
     # Direct foreign key associations
@@ -234,8 +234,8 @@ class HierarchyUnit(Base):
     hierarchyUnitID = Column(Integer, primary_key=True)
     parentID = Column(Integer, ForeignKey('HierarchyUnit.hierarchyUnitID'))
     Chronorder = Column(Integer)
-    lft = Column(Integer)  # TODO What is this??
-    rgt = Column(Integer)  # TODO What is this??
+    lft = Column(Integer)  # used for ordering of narrative units in a year?
+    rgt = Column(Integer)  # unused in the code
     treeID = Column(Integer)  # Unused
     # Direct foreign key associations
     narrativeUnit = relationship('NarrativeUnit', backref='hierarchyRecords')
@@ -403,7 +403,7 @@ class FactoidPerson(Base):
 
 class NarrativeFactoid(Base):
     __tablename__ = 'NarrativeFactoid'
-    fmKey = Column(Integer)  # TODO What is this?
+    fmKey = Column(Integer)  # unused in the code
     narrativeUnitID = Column(Integer, ForeignKey('NarrativeUnit.narrativeUnitID'), primary_key=True)
     hide = Column(Integer)
     factoidKey = Column(Integer, ForeignKey('Factoid.factoidKey'), primary_key=True)
@@ -484,11 +484,11 @@ class DignityOffice(Base):
     oLangKey = Column(Integer, ForeignKey(OrigLangAuth.oLangKey))
     stdNameOL = Column(String)
     creationDate = Column(DateTime)
-    lft = Column(SmallInteger)  # TODO what is this??
+    lft = Column(SmallInteger)  # unused in the code
     dotKey = Column(Integer, ForeignKey(DignityOfficeType.dotKey))
     stdShortOL = Column(String)
     stdName = Column(String)
-    rgt = Column(SmallInteger)  # TODO what is this??
+    rgt = Column(SmallInteger)  # unused in the code
     doKey = Column(SmallInteger, primary_key=True)
 
     # Direct foreign key associations
@@ -561,23 +561,28 @@ class Factoid(Base):
     possession = association_proxy('possessionRecord', 'possessionName')
     narrativeUnit = association_proxy('_assoc_nunit', 'narrativeUnit')
 
-    def associated_person(self, refKey):
+    def associated_person(self, ref_key):
         """Return the Person object for the given key, which comes out of a PERSREF
         in the factoid text.
-        :param refKey: the associated key"""
+        :param ref_key: the associated key"""
         for pf in self._assoc_persons:
-            if pf.fpKey == refKey:
+            if pf.fpKey == ref_key:
                 return pf.person
         return None
 
     def main_person(self):
         """Return the Person objects for the primary person of this factoid.
         There will almost, but not quite, always be one, so we return a list."""
-        main_persons = []
-        for pf in self._assoc_persons:
-            if pf.fpType == 'Primary':
-                main_persons.append(pf.person)
-        return main_persons
+        return [x.person for x in self._assoc_persons if x.fpType == 'Primary']
+
+    def descref_persons(self):
+        """Return the Person objects for the person(s) described in this factoid who are
+        not the main person."""
+        return [x.person for x in self._assoc_persons if x.fpType == 'DescRef']
+
+    def vname_persons(self):
+        """Return the Person objects for the person(s) listed as a variant name of the main person."""
+        return [x.person for x in self._assoc_persons if x.fpType == 'VariantName']
 
     def referents(self, check_persref=True):
         referent_objects = []
@@ -585,7 +590,7 @@ class Factoid(Base):
             if pf.fpType == 'DescRef':
                 referent_objects.append(pf.person)
         if check_persref:
-            pattern = re.compile('<PERSREF ID="(\d+)"/>')
+            pattern = re.compile(r'<PERSREF ID="(\d+)"/>')
             persref_persons = set()
             for fpid in pattern.findall(self.engDesc):
                 this_person = self.associated_person(int(fpid))
@@ -600,7 +605,7 @@ class Factoid(Base):
 
     def replace_referents(self):
         desc = self.engDesc
-        pattern = re.compile('(<PERSREF ID="(\d+)"/>)')
+        pattern = re.compile(r'(<PERSREF ID="(\d+)"/>)')
         return re.sub(pattern, self._persref_as_str, desc)
 
 
@@ -648,11 +653,11 @@ class NarrativeUnit(Base):
     _childUnitGroups = association_proxy('hierarchyRecords', 'childUnits')
 
     @property
-    def childUnits(self):
-        childSet = set()
+    def child_units(self):
+        child_set = set()
         for c in self._childUnitGroups:
-            childSet.update(c)
-        return childSet
+            child_set.update(c)
+        return child_set
 
 
 class Person(Base):
