@@ -118,6 +118,7 @@ class PBWstarConstants:
             'F27': self.namespaces['lrmoo']['F27_Work_Creation'],  # Work Creation
             'F28': self.namespaces['lrmoo']['F28_Expression_Creation'],  # Expression Creation
             'F30': self.namespaces['lrmoo']['F30_Manifestation_Creation'],
+            'I1': self.namespaces['crminf']['I1_Argumentation'],
             'I2': self.namespaces['crminf']['I2_Belief'],
             'I3': self.namespaces['crminf']['I3_Inference_Logic'],
             'I4': self.namespaces['crminf']['I4_Proposition_Set'],

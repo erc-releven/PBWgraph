@@ -30,13 +30,13 @@ SELECT DISTINCT ?author ?expression ?label WHERE {{
 
     # Now cycle through the expressions and bundle the assertions that were made by their authors
     # into individual viewpoints.
-    for e in expressions.keys():
-        print(f"Adding viewpoint structure for: {e['label']}")
-        an3 = e['author'].n3()
+    for e, edata in expressions.items():
+        print(f"Adding viewpoint structure for: {edata['label']}")
+        an3 = edata['author'].n3()
         en3 = e.n3()
-        pset = c.ns[f"proposition_set/text{e['tag']}"].n3()
-        mbelief = c.ns[f"meaning/pbw{e['tag']}"].n3()
-        claim = c.ns[f"claim/pbw{e['tag']}"].n3()
+        pset = c.ns[f"proposition_set/text{edata['tag']}"].n3()
+        mbelief = c.ns[f"meaning/pbw{edata['tag']}"].n3()
+        claim = c.ns[f"claim/pbw{edata['tag']}"].n3()
         viewpoint_sparql = f"""
 INSERT {{
         {pset} a {c.get_label('I4')} ;    # A set of assertions come from a single text.
@@ -52,7 +52,7 @@ INSERT {{
 }} WHERE {{
         ?a {c.star_auth} {an3} ;       # some assertion has our author as an authority
            ^{c.star_src} ?passage .    # the assertion was based on some passage... 
-        ?a1 a {c.get_assertion_for_predicate('P15')} ;   # which comes from some publication... 
+        ?a1 a {c.get_assertion_for_predicate('R15')} ;   # which comes from some publication... 
             {c.star_subject} ?edition ;
             {c.star_object} ?passage .
         ?a2 a {c.get_assertion_for_predicate('R76')} ;   # which is the publication of our text expression.
