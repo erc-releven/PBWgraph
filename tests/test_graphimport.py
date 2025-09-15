@@ -1303,6 +1303,57 @@ SELECT DISTINCT ?reader WHERE {{
                 self.assertEqual(reader, row['reader'].toPython(),
                                  f"Correct PBW editor read source {sinfo['textid']}")
 
+    def test_viewpoints(self):
+        """Our authored spot texts should each have a viewpoint attributed to that author with all the
+        assertions from that text. Un-authored sources should not."""
+        c = self.constants
+        for s, sinfo in self.spot_sources.items():
+            if 'author' not in sinfo:
+                # There should be no I2 Belief connected with the assertions arising from this text.
+                sparql = f"""
+SELECT DISTINCT ?belief WHERE {{
+    ?srcass {c.star_subject} [a {c.get_label('F2P')} ; {c.label_n3} {Literal(sinfo['edition']).n3()}] ;
+            {c.star_object} ?passage .
+    ?passage {c.star_src} ?assertion .
+    ?propset {c.get_label('J28')} ?assertion ;
+             a {c.get_label('I4')} .
+    ?belief a {c.get_label('I2')} ;
+            {c.get_label('J4')} ?propset .
+}}"""
+                res = c.graph.query(sparql)
+                self.assertEqual(0, len(res), f"No I2 Belief should be connected with assertions from {sinfo['textid']}")
+            else:
+                # There should be a single viewpoint attributed to that author with that text as a source.
+
+                sparql = f"""
+ SELECT DISTINCT ?vp ?belief ?propset WHERE {{
+     ?vp a {c.get_label('I1')} ;
+         {c.get_label('P14')} [{c.label_n3} {Literal(sinfo['author']).n3()}] ;
+         ^{c.star_src} [{c.label_n3} {Literal(sinfo['edition']).n3()}] ;
+         {c.get_label('J2')} ?belief .
+     ?belief a {c.get_label('I2')} ;
+             {c.get_label('J4')} ?propset ;
+             {c.get_label('J5')} true .
+}}"""
+                res = c.graph.query(sparql)
+                self.assertEqual(1, len(res), f"One viewpoint for {sinfo['textid']} by {sinfo['author']}")
+                # Pull out the URI for this viewpoint
+                author_vp_propset = list(res)[0]['propset']
+                # Collect all assertions arising from this text, apart from the assertion about the creation of the text itself
+                sparql = f"""
+SELECT DISTINCT ?assertion WHERE {{
+    ?srcass {c.star_subject} [a {c.get_label('F2P')} ; {c.label_n3} {Literal(sinfo['edition']).n3()}] ;
+            {c.star_object} [{c.star_src} ?assertion] .
+    ?assertion {c.star_auth} [{c.label_n3} {Literal(sinfo['author']).n3()}] .
+}}
+"""
+                res = c.graph.query(sparql)
+                assertions_from_source = {x['assertion'] for x in res}
+                self.assertNotEqual(0, len(assertions_from_source), "Some assertions came from this source")
+                # Collect all assertions in a viewpoint sourced from this text
+                assertions_in_propset = set(c.graph.objects(author_vp_propset, c.predicates['J28']))
+                self.assertSetEqual(assertions_from_source, assertions_in_propset, f"Assertion difference for {sinfo['textid']} by {sinfo['author']}")
+
     def test_db_entry(self):
         """All the assertions in the database should be attached to DB records, linked to the single entry
         that created them."""

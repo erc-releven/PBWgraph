@@ -1,12 +1,13 @@
 import argparse
 import pbw
 import RELEVEN.PBWstarConstants
+import RELEVEN.author_viewpoints
 import config
 import re
 from datetime import datetime
 from functools import reduce
 from http.client import RemoteDisconnected
-from rdflib import Graph, Literal, XSD, URIRef
+from rdflib import Graph, Literal, URIRef
 from rdflib.plugins.stores import sparqlstore
 from sqlalchemy import create_engine, and_
 from sqlalchemy.orm import sessionmaker
@@ -50,12 +51,11 @@ def _matchid(var, val):
 
 
 def _get_single_key(rdfresult, k):
-    if len(rdfresult) == 0:
-        return None
     if len(rdfresult) > 1:
         warn(f"Query result had multiple rows!")
     for row in rdfresult:
         return row[k]
+    return None
 
 
 def _get_source_lang(dbobj):
@@ -232,6 +232,7 @@ class graphimportSTAR:
             # Check and create it if necessary
             res = c.ensure_entities_existence(sparql)
             return c.document(pbwdoc, res['a1'], res['a2'])
+        return None
 
     def identifier_handler(self, sqlperson, graphperson):
         """The identifier in this context is the 'origName' field, thus an identifier assigned by PBW
@@ -872,7 +873,7 @@ class graphimportSTAR:
         if factoid.deathRecord is None:
             warn("Someone has a death factoid (%d, \"%s\") without a death record! Go check it out." % (
                 factoid.factoidKey, factoid.engDesc))
-            return
+            return None
 
         # Set up the death event. We take for granted that every 11th-c. person has exactly one death,
         # so we set this event separately and we don't bother with source or authority, as those will be
@@ -919,7 +920,7 @@ class graphimportSTAR:
         if factoid.ethnicityInfo is None or factoid.ethnicityInfo.ethnicity is None:
             # We can't assign any ethnicity without the ethnicity info
             warn("Empty ethnicity factoid found: id %s" % factoid.factoidKey)
-            return
+            return None
         elabel = factoid.ethnicityInfo.ethnicity.ethName
         groupid = c.get_ethnicity(elabel)
         sparql = self.create_assertion_sparql('a1', 'P107', groupid, graphperson, agent, sourcenode)
@@ -948,7 +949,7 @@ class graphimportSTAR:
         """Assign a group membership for the given religious confession to the person"""
         if factoid.religion is None:
             warn("Empty religion factoid found: id %d" % factoid.factoidKey)
-            return
+            return None
         rlabel = factoid.religion
         # Special case, database had an error
         if factoid.religion == '':
@@ -961,7 +962,7 @@ class graphimportSTAR:
 
     def societyrole_handler(self, sourcenode, agent, factoid, graphperson):
         if factoid.occupation is None:
-            return
+            return None
         roleid, roleclass = self.constants.get_societyrole(factoid.occupation)
         roletype = self.constants.get_label('C1')
         whopred = 'SP13'
@@ -978,7 +979,7 @@ class graphimportSTAR:
 
     def dignity_handler(self, sourcenode, agent, factoid, graphperson):
         if factoid.dignityOffice is None:
-            return
+            return None
         dignity_id, dignity_class = self.constants.get_dignity(factoid.dignityOffice.stdName)
         roletype = self.constants.get_label('C13')
         whopred = 'SP26'
@@ -999,7 +1000,7 @@ class graphimportSTAR:
         c = self.constants
         pbwdoc = c.pbw_uri(factoid)
         if factoid.languageSkill is None:
-            return
+            return None
         # Language know-how ID
         lkhid = self.constants.get_language(factoid.languageSkill)
         # This doesn't chain quite the same way as the others do
@@ -1021,7 +1022,7 @@ class graphimportSTAR:
         if factoid.locationInfo is None or factoid.locationInfo.location is None:
             # We can't assign any location without the location info
             warn("Empty location factoid found: id %s" % factoid.factoidKey)
-            return
+            return None
         # Get the location in question
         loc_ent = self.find_or_create_location(factoid.locationInfo.location)
         # Now connect the person to the location via the extremely generic 'event', as that is all PBW gives us
@@ -1064,7 +1065,7 @@ class graphimportSTAR:
         pbwdoc = c.pbw_uri(factoid)
         if factoid.kinshipType is None:
             warn("Empty kinship factoid found: id %d" % factoid.factoidKey)
-            return
+            return None
         ktype = c.get_kinship(factoid.kinshipType.gspecRelat)
 
         for kin in factoid.referents():
@@ -1090,6 +1091,7 @@ class graphimportSTAR:
                 sparql += f"        ?kstate a {c.get_label('C3')} ."
             res = c.ensure_entities_existence(sparql)
             return c.document(pbwdoc, res['a1'], res['a2'], res['a3'])
+        return None
 
     def possession_handler(self, sourcenode, agent, factoid, graphperson):
         """Ensure the existence of an E18 Physical Thing (we don't have any more category info about
@@ -1124,7 +1126,7 @@ class graphimportSTAR:
         c = self.constants
         # Skip the anonymous groups for now
         if person.name == 'Anonymi':
-            return
+            return None
         # Create or find the person node
         print(f"*** {datetime.now().strftime('%d %H:%M:%S')} Making/finding node for person "
               f"{person.name} {person.mdbCode} ***")
@@ -1284,6 +1286,9 @@ class graphimportSTAR:
                     print(f"Process started at {self.starttime} and ending at {datetime.now()}.")
                     print(f"Restart with the arguments: -r '{person_pbwstr}' -x '{self.constants.swrun}'")
                     raise e
+
+        # Make a pass through the authored sources and add viewpoints for all of them
+        RELEVEN.author_viewpoints.add_viewpoint_structures(self.constants)
 
         self.record_assertion_factoids()
         print(f"Processed {processed} person records.")
