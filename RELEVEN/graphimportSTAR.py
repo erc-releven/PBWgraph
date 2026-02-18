@@ -1035,7 +1035,7 @@ class graphimportSTAR:
         res = c.ensure_entities_existence(sparql)
         return c.document(pbwdoc, res['a1'], res['a2'])
 
-    def _find_or_create_kinship(self, graphperson, graphkin):
+    def _find_kinship(self, graphperson, graphkin):
         # See if there is an existing kinship group of any sort with the person as source and their
         # kin as target. If not, return a new (not yet connected) C3 Social Relationship node.
         c = self.constants
@@ -1078,17 +1078,19 @@ class graphimportSTAR:
                 warn("Person %s listed as related to self" % kin)
                 continue
             # Look for any existing kinship state between these two persons
-            kstate = self._find_or_create_kinship(graphperson, graphkin)
+            kstate = self._find_kinship(graphperson, graphkin)
+            kscreate = ""
             if kstate is None:
-                # We will then have to refer to it by variable name instead of URIref.
+                # We don't have a URIref yet; the kinship state is a new variable.
                 kstate = '?kstate'
+                # We will also have to append the class of the new kinship state to the SPARQL query.
+                kscreate = f"        ?kstate a {c.get_label('C3')} ."
             # Now set up the three kinship assertions
             sparql = self.create_assertion_sparql('a1', 'SP16', kstate, ktype, agent, sourcenode)
             sparql += self.create_assertion_sparql('a2', 'SP17', kstate, graphperson, agent, sourcenode)
             sparql += self.create_assertion_sparql('a3', 'SP18', kstate, graphkin, agent, sourcenode)
-            if kstate == '?kstate':
-                # Give the newly created kinship state its class
-                sparql += f"        ?kstate a {c.get_label('C3')} ."
+            sparql += kscreate
+
             res = c.ensure_entities_existence(sparql)
             return c.document(pbwdoc, res['a1'], res['a2'], res['a3'])
         return None

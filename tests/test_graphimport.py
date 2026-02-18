@@ -963,6 +963,7 @@ select distinct ?kin ?kintype where {{
     ?a3 {c.star_subject} ?kg  ;
         a {c.get_assertion_for_predicate('SP16')} ;
         {c.star_object} [ a {c.get_label('C4')} ; {c.label_n3} ?kintype ] .
+    ?kg a {c.get_label('C3')} .
 }}"""
                 res = c.graph.query(sparql)
                 foundkin = defaultdict(list)
