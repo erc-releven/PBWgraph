@@ -1086,8 +1086,8 @@ class graphimportSTAR:
             sparql = self.create_assertion_sparql('a1', 'SP16', kstate, ktype, agent, sourcenode)
             sparql += self.create_assertion_sparql('a2', 'SP17', kstate, graphperson, agent, sourcenode)
             sparql += self.create_assertion_sparql('a3', 'SP18', kstate, graphkin, agent, sourcenode)
-            if kstate is None:
-                # Make one if it doesn't exist.
+            if kstate == '?kstate':
+                # Give the newly created kinship state its class
                 sparql += f"        ?kstate a {c.get_label('C3')} ."
             res = c.ensure_entities_existence(sparql)
             return c.document(pbwdoc, res['a1'], res['a2'], res['a3'])
