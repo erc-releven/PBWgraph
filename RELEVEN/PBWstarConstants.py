@@ -30,6 +30,7 @@ class PBWstarConstants:
 
         datauri = 'https://r11.eu/rdf/resource/'
         self.ns = Namespace(datauri)
+        self.make_uri = URIConstructor(datauri)
         self.namespaces = {
             'crm':   Namespace('http://www.cidoc-crm.org/cidoc-crm/'),
             'crmdig': Namespace('http://www.ics.forth.gr/isl/CRMdig/'),
@@ -356,11 +357,11 @@ class PBWstarConstants:
         self.cv = {
             'Gender': dict(),
             'Ethnicity': dict(),
-            'Religion': dict(),
+            'Religious affiliation': dict(),
             'Language': dict(),
-            'SocietyRole': dict(),
-            'Dignity': dict(),
-            'Kinship': dict()
+            'Social role (C2)': dict(),
+            'Legal role (C12)': dict(),
+            'Social relationship': dict()
         }
         # Special-case 'slave' and ordained/consecrated roles out of 'occupations'. TODO add Nun, rethink feminine titles
         self.legal_designations = ['Bishops', 'Cantor', 'Captain', 'Chamberlain', 'Hieromonk', 'Imperial courier',
@@ -470,12 +471,13 @@ class PBWstarConstants:
         # If we haven't made this label yet, do it
         if label not in self.cv[category]:
             # We have to create the node, possibly attaching it to a superclass
+            cv_uri = self.make_uri(category, label)
             litlabel = Literal(label, lang='en')
-            sparql = f"""
-            ?cventry a {nodeclass} ;
-                {self.label_n3} {litlabel.n3()} ."""
-            res = self.ensure_entities_existence(sparql)
-            self.cv[category][label] = res['cventry']
+            sparql = f"""INSERT DATA {{
+            {cv_uri.n3()} a {nodeclass} ;
+                {self.label_n3} {litlabel.n3()} . }}"""
+            self.graph.update(sparql)
+            self.cv[category][label] = cv_uri
 
         # Return the label we have
         return self.cv[category][label]
@@ -484,7 +486,7 @@ class PBWstarConstants:
         return self._find_or_create_cv_entry('Gender', self.get_label('C11'), gender)
 
     def get_religion(self, rel):
-        return self._find_or_create_cv_entry('Religion', self.get_label('C24'), rel)
+        return self._find_or_create_cv_entry('Religious affiliation', self.get_label('C24'), rel)
 
     def get_ethnicity(self, ethlabel):
         return self._find_or_create_cv_entry('Ethnicity', self.get_label('E74E'), ethlabel)
@@ -493,26 +495,33 @@ class PBWstarConstants:
         return self._find_or_create_cv_entry('Language', self.get_label('C29'), lang)
 
     def get_kinship(self, kinlabel):
-        return self._find_or_create_cv_entry('Kinship', self.get_label('C4'), kinlabel)
+        return self._find_or_create_cv_entry('Social relationship', self.get_label('C4'), kinlabel)
+
+    # "Dignity" and "occupation" from PBW aren't clean mappings onto C2 and C12 social roles, so we have to
+    # handle this in a more complicated way
+    def _get_social_designation(self, requested, rolelabel):
+        c2class = self.get_label('C2')
+        c12class = self.get_label('C12')
+        sdhsscat = {c2class: 'Social role (C2)', c12class: 'Legal role (C12)'}
+        sdhssclass = c2class if requested == 'C2' else c12class
+        if requested == 'C2' and rolelabel in self.legal_designations:
+            sdhssclass = c12class
+        elif requested == 'C12' and rolelabel in self.generic_social_roles:
+            sdhssclass = c2class
+        return self._find_or_create_cv_entry(sdhsscat[sdhssclass], sdhssclass, rolelabel), sdhssclass
 
     def get_societyrole(self, srlabel):
-        srclass = self.get_label('C2')
-        if srlabel in self.legal_designations:
-            srclass = self.get_label('C12')
-        return self._find_or_create_cv_entry('SocietyRole', srclass, srlabel), srclass
+        return self._get_social_designation('C2', srlabel)
 
     def get_dignity(self, dignity):
         # Dignities in PBW tend to be specific to institutions / areas;
         # make an initial selection by breaking on the 'of'
         diglabel = dignity
-        digclass = self.get_label('C12')
         if ' of the ' not in dignity:  # Don't split (yet) titles that probably don't refer to places
             diglabel = dignity.split(' of ')[0]
-        if diglabel in self.generic_social_roles:
-            digclass = self.get_label('C2')
-        dig_uri = self._find_or_create_cv_entry('Dignity', digclass, diglabel)
+        dig_uri, digclass = self._get_social_designation('C12', diglabel)
         # Make sure that the URI also appears under the original label, if we shortened it
-        self.cv['Dignity'][dignity] = dig_uri
+        self.cv['Legal role (C12)'][dignity] = dig_uri
         return dig_uri, digclass
 
     def inrange(self, floruit):
@@ -686,20 +695,18 @@ class URIConstructor:
     else a URIRef with a unique component will be generated using UUID4.
     """
 
-    def __init__(
-        self,
-        namespace: str,
-    ) -> None:
+    def __init__(self, namespace):
         self.namespace = Namespace(namespace)
 
-    def __call__(self, hash_value: str | bytes | None = None) -> URIRef:
-        if hash_value is None:
+    def __call__(self, *hash_values):
+        if not hash_values:
             segment = str(uuid4())
-        else:
-            if isinstance(hash_value, str):
-                hash_value = hash_value.encode("utf8")
+            return self.namespace[segment]
 
-            digest = sha256(hash_value).hexdigest()
-            segment = digest[:36]
+        _hash_values = map(lambda x: x.strip().lower(), hash_values)
+        hash_value = " / ".join(_hash_values).encode("utf8")
+
+        digest = sha256(hash_value).hexdigest()
+        segment = digest[:36]
 
         return self.namespace[segment]
