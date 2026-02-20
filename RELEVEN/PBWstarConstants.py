@@ -345,10 +345,11 @@ class PBWstarConstants:
                      'title': Literal('RELEVEN project', 'en'),
                      'uri': URIRef('https://r11.eu/')}]
             for ent in f11s:
-                f11_query = f"""
-                {ent['uri'].n3()} a {self.get_label('F11')} ;
-                    {self.label_n3} {ent['title'].n3()} ."""
-                self.graph.update("INSERT DATA {" + f11_query + "}")
+                if not self.readonly:
+                    # Make sure our entities exist
+                    f11_query = f"""{ent['uri'].n3()} a {self.get_label('F11')} ;
+                        {self.label_n3} {ent['title'].n3()} ."""
+                    self.graph.update("INSERT DATA {" + f11_query + "}")
                 # Store it in self.[key]_agent, e.g. self.pbw_agent
                 self.__setattr__(f"{ent['key']}_agent", ent['uri'])
 

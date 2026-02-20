@@ -1371,15 +1371,15 @@ SELECT DISTINCT ?assertion WHERE {{
         # Find the assertions that are connected to a database record. There should in theory only
         # be one record.
         sparql = f"""
-select (count(?a) as ?numass) ?record ?tstamp ?me ?script where {{
+select (count(?a) as ?numass) ?record ?tstamp ?me ?software where {{
     ?a {c.star_subject} ?somesubj .
     ?record a {c.get_label('D10')} ;
         {c.get_label('L11')} ?a ;
         {c.get_label('P14')} ?me ;
         {c.get_label('P4')} ?tstamp ;
         {c.get_label('L23')} ?software .
-    ?software {c.get_label('P1')} [a {c.get_label('E42')} ; {c.get_label('P190')} ?script ] .
-}} group by ?record ?tstamp ?me ?script"""
+    ?software {c.label_n3} "RELEVEN import script for PBW data" .
+}} group by ?record ?tstamp ?me ?software"""
         linked = list(c.graph.query(sparql))
         self.assertEqual(1, len(linked))
         result = linked[0]
@@ -1387,7 +1387,8 @@ select (count(?a) as ?numass) ?record ?tstamp ?me ?script where {{
         self.assertEqual(result['numass'].toPython(), total_assertions)
         self.assertIsNotNone(result['tstamp'])
         self.assertEqual(Literal('Andrews, Tara Lee'), self.get_object(result['me'], 'label'))
-        self.assertEqual(Literal('https://github.com/erc-releven/PBWgraph/RELEVEN/graphimportSTAR.py'), result['script'])
+        self.assertRegex(str(result['software']),
+                             r"https://github.com/erc-releven/PBWgraph/blob/\w+/RELEVEN/graphimportSTAR.py")
 
         # Now find the readings that are connected to the same database record. They all should be.
         readings = list(c.graph.subjects(RDF.type, c.entitylabels['I16']))
