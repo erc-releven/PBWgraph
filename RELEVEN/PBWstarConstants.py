@@ -1,6 +1,7 @@
 import pbw
 import re
 import RELEVEN.PBWSources
+import subprocess
 import sys
 from datetime import datetime
 from hashlib import sha256
@@ -294,15 +295,15 @@ class PBWstarConstants:
                 try:
                     print("Setting up software execution run...")
                     # Ensure the existence of the software metadata
-                    # TODO should this be a string?
                     whoarewe = basename(sys.argv[0])
-                    ourscript = Literal(f"https://github.com/erc-releven/PBWgraph/RELEVEN/{whoarewe}")
-                    md_query = f"""
-                    ?thisurl a {self.get_label('E42')} ;
-                        {self.get_label('P190')} {ourscript.n3()} .
-                    ?this a {self.get_label('D14')} ;
-                        {self.get_label('P1')} ?thisurl ."""
-                    res = self.ensure_entities_existence(md_query)
+                    commit_sha = subprocess.check_output(
+                        ["git", "rev-parse", "HEAD"],
+                        text=True
+                    ).strip()
+                    ourscript = URIRef(f"https://github.com/erc-releven/PBWgraph/blob/{commit_sha}/RELEVEN/{whoarewe}")
+                    scriptlabel = Literal("RELEVEN import script for PBW data").n3()
+                    md_query = f"""{ourscript.n3()} a {self.get_label('D14')} ; {self.label_n3} {scriptlabel} ."""
+                    self.graph.update("INSERT DATA {" + md_query + "};")
                     # Create the software execution for this run, so that we can create the markers at the end
                     if execution is not None:
                         # If we are resuming a run, we use the same software execution entity
@@ -312,13 +313,15 @@ class PBWstarConstants:
                         # If we are not resuming, we have to create the entity with the current timestamp,
                         # assuming we have a writable store.
                         self.swrun = self.namespaces['data'][str(uuid4())]
+                        start_literal = Literal(datetime.now(), datatype=XSD.dateTimeStamp).n3()
+                        start_tstamp = self.make_uri("timestamp", start_literal)
                         se_query = f"""
-                        ?tstamp a {self.get_label('E52')} ;
-                            {self.get_label('P82a')} {Literal(datetime.now(), datatype=XSD.dateTimeStamp).n3()} .
+                        {start_tstamp.n3()} a {self.get_label('E52')} ;
+                            {self.get_label('P82a')} {start_literal} .
                         {self.swrun.n3()} a {self.get_label('D10')} ;
-                            {self.get_label('P4')} ?tstamp ;
-                            {self.get_label('L23')} {res['this'].n3()} ."""
-                        self.ensure_entities_existence(se_query)
+                            {self.get_label('P4')} {start_tstamp.n3()} ;
+                            {self.get_label('L23')} {ourscript.n3()} ."""
+                        self.graph.update("INSERT DATA {" + se_query + "};")
                 except TypeError:
                     print("Graph is not writable! Continuing in read-only mode")
                     self.readonly = True
@@ -343,13 +346,11 @@ class PBWstarConstants:
                      'uri': URIRef('https://r11.eu/')}]
             for ent in f11s:
                 f11_query = f"""
-                ?a a {self.get_label('F11')} ;
-                    {self.label_n3} {ent['title'].n3()} ;
-                    {self.link_n3} {ent['uri'].n3()} ."""
-                uris = self.ensure_entities_existence(f11_query)
-                f11_uri = uris['a']
+                {ent['uri'].n3()} a {self.get_label('F11')} ;
+                    {self.label_n3} {ent['title'].n3()} ."""
+                self.graph.update("INSERT DATA {" + f11_query + "}")
                 # Store it in self.[key]_agent, e.g. self.pbw_agent
-                self.__setattr__(f"{ent['key']}_agent", f11_uri)
+                self.__setattr__(f"{ent['key']}_agent", ent['uri'])
 
         # Some of these factoid types have their own controlled vocabularies.
         # Set up our structure for retaining these; we will define them when we encounter them
