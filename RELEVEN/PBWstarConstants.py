@@ -303,7 +303,7 @@ class PBWstarConstants:
                     ourscript = URIRef(f"https://github.com/erc-releven/PBWgraph/blob/{commit_sha}/RELEVEN/{whoarewe}")
                     scriptlabel = Literal("RELEVEN import script for PBW data").n3()
                     md_query = f"""{ourscript.n3()} a {self.get_label('D14')} ; {self.label_n3} {scriptlabel} ."""
-                    self.graph.update("INSERT DATA {" + md_query + "};")
+                    self.update(md_query)
                     # Create the software execution for this run, so that we can create the markers at the end
                     if execution is not None:
                         # If we are resuming a run, we use the same software execution entity
@@ -321,7 +321,7 @@ class PBWstarConstants:
                         {self.swrun.n3()} a {self.get_label('D10')} ;
                             {self.get_label('P4')} {start_tstamp.n3()} ;
                             {self.get_label('L23')} {ourscript.n3()} ."""
-                        self.graph.update("INSERT DATA {" + se_query + "};")
+                        self.update(se_query)
                 except TypeError:
                     print("Graph is not writable! Continuing in read-only mode")
                     self.readonly = True
@@ -349,7 +349,7 @@ class PBWstarConstants:
                     # Make sure our entities exist
                     f11_query = f"""{ent['uri'].n3()} a {self.get_label('F11')} ;
                         {self.label_n3} {ent['title'].n3()} ."""
-                    self.graph.update("INSERT DATA {" + f11_query + "}")
+                    self.update(f11_query)
                 # Store it in self.[key]_agent, e.g. self.pbw_agent
                 self.__setattr__(f"{ent['key']}_agent", ent['uri'])
 
@@ -475,10 +475,8 @@ class PBWstarConstants:
             # We have to create the node, possibly attaching it to a superclass
             cv_uri = self.make_uri(category, label)
             litlabel = Literal(label, lang='en')
-            sparql = f"""INSERT DATA {{
-            {cv_uri.n3()} a {nodeclass} ;
-                {self.label_n3} {litlabel.n3()} . }}"""
-            self.graph.update(sparql)
+            sparql = f"""{cv_uri.n3()} a {nodeclass} ; {self.label_n3} {litlabel.n3()} ."""
+            self.update(sparql)
             self.cv[category][label] = cv_uri
 
         # Return the label we have
@@ -539,6 +537,9 @@ class PBWstarConstants:
                 minted[var] = self.ns[str(uuid4())]
         return minted
 
+    def update(self, sparql):
+        self.graph.update("INSERT DATA { " + sparql + " }")
+
     def ensure_entities_existence(self, sparql, force_create=False):
         # print("SPARQL is:" + sparql)
         if force_create and self.readonly:
@@ -568,7 +569,7 @@ class PBWstarConstants:
             # Yes this is a cheap hack.
             for k in sorted(new_uris.keys(), key=len, reverse=True):
                 q = q.replace(f'?{k}', new_uris[k].n3(self.graph.namespace_manager))
-            self.graph.update("INSERT DATA {" + q + "}")
+            self.update(q)
             return new_uris
         except Exception as e:
             print(f"EXCEPTION {e}; SPARQL was {sparql}")

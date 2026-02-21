@@ -597,12 +597,17 @@ class graphimportSTAR:
         depending on context. It is labeled with the identifier via an E15 Identifier Assignment
         carried out by the given agent, with dname becoming our preferred human-readable identifier."""
         c = self.constants
+        hash_id = identifier
         if etype == c.get_label('E22B'):
-            # Identifier is a number
+            # Identifier is a number, thus possibly not unique
             url = URIRef(f'https://pbw2016.kdl.kcl.ac.uk/boulloterion/{identifier}/').n3()
+            # ...so for hashing, we want to prepend 'boulloterion'.
+            hash_id = f'boulloterion / {identifier}'
         elif etype == c.get_label('E27'):
-            # Identifier is also a number
+            # Identifier is also a number, thus possibly not unique
             url = URIRef(f'https://pbw2016.kcl.ac.uk/location/{identifier}/').n3()
+            # ...so for hashing, we want to use the display name, which is in this case unique.
+            hash_id = dname
         elif agent == c.pbw_agent:
             # Identifier is something like 'Alexios 10102' or 'Alp Arslan 51'.
             # The URL changes it to 'Alexios/10102' or 'Alp+Arslan/51'
@@ -615,33 +620,35 @@ class graphimportSTAR:
             # Even if none of these URLs actually work in PBW.
             url = URIRef(f'https://pbw2016.kdl.kcl.ac.uk/person/{id_urified}/{code}/').n3()
         else:
-            # Identifier is again a number
+            # Identifier is again a number. We can leave this bare, since VIAF doesn't reuse numbers.
             url = URIRef(f'https://viaf.org/viaf/{identifier}/').n3()
 
+        # Create the entity URI based on its name and service
+        entity_uri = c.make_uri(hash_id, str(agent))
         # The entity should have its display name as its label, without a language designation.
         #
-        entitystr = f"?entity a {etype} "
+        entitystr = f"{entity_uri.n3()} a {etype} "
         if dname is not None:
             entitystr += f";\n            {c.label_n3} {Literal(dname).n3()} "
         entitystr += '.'
 
         # Construct the identifier assignment that should exist.
-        # This identifier is marked sameAs the identifier we are copying from.
+        the_e42 = c.make_uri("identifier", hash_id, str(agent))
+        the_e15 = c.make_uri("idassignment", hash_id, str(agent))
         sparql = f"""
-        ?ident {c.get_label('P190')} {Literal(identifier).n3()} ;
-            {c.link_n3} {url} ;
+        {entitystr}
+        {the_e42.n3()} {c.get_label('P190')} {Literal(identifier).n3()} ;
             a {c.get_label('E42')} .
-        ?idass {c.get_label('P37')} ?ident ;
-            {c.star_subject} ?entity ;
+        {the_e15.n3()} {c.get_label('P37')} {the_e42.n3()} ;
+            {c.star_subject} {entity_uri.n3()} ;
             {c.star_auth} {agent.n3()} ;
             a {c.get_label('E15')} .
-        {entitystr}
         """
 
         # Ensure its existence and return the entity in question
-        res = c.ensure_entities_existence(sparql)
-        c.document(None, res['idass'])
-        return res['entity']
+        c.update(sparql)
+        c.document(None, the_e15)
+        return entity_uri
 
     def find_or_create_pbwperson(self, sqlperson):
         # Cache these
