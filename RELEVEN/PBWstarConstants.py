@@ -537,8 +537,11 @@ class PBWstarConstants:
                 minted[var] = self.ns[str(uuid4())]
         return minted
 
-    def update(self, sparql):
+    def update(self, sparql, document=None, *assertions):
         self.graph.update("INSERT DATA { " + sparql + " }")
+        if document is not None:
+            self.document(document, *assertions)
+        return assertions
 
     def ensure_entities_existence(self, sparql, force_create=False):
         # print("SPARQL is:" + sparql)
