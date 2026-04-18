@@ -3,7 +3,9 @@ import re
 import unittest
 from collections import Counter, defaultdict
 from functools import reduce
-from rdflib import RDF, Literal
+from hashlib import sha256
+from typing import cast
+from rdflib import RDF, Literal, Namespace, URIRef
 from rdflib.exceptions import UniquenessError
 from rdflib.plugins.stores import sparqlstore
 from RELEVEN import PBWstarConstants, graphimportSTAR
@@ -19,6 +21,25 @@ def count_result(res):
     return reduce(lambda x, y: x + 1, res, 0)
 
 
+def make_uri(*hash_values):
+    """Calculate a URI using the deterministic hashing policy.
+
+    Multiple hash values are joined with " / " and hashed using SHA256,
+    truncated to the first 36 characters.
+    """
+    if not hash_values:
+        raise ValueError("At least one hash value required")
+
+    _hash_values = map(lambda x: x.strip().lower(), hash_values)
+    hash_value = " / ".join(_hash_values).encode("utf8")
+
+    digest = sha256(hash_value).hexdigest()
+    segment = digest[:36]
+
+    namespace = Namespace("https://r11.eu/rdf/resource/")
+    return namespace[segment]
+
+
 # noinspection PyUnresolvedReferences
 class GraphImportTests(unittest.TestCase):
     graphdriver = None
@@ -28,6 +49,7 @@ class GraphImportTests(unittest.TestCase):
     td_people = {
         'Anna 62': {'gender': ['Female'], 'identifier': 'Ἄννα Κομνηνή',
                     'descriptor': 'Anna Komnene, daughter of Alexios I and historian',
+                    'expected_uri': make_uri('Anna 62', 'https://pbw2016.kdl.kcl.ac.uk/'),
                     'secondname': {'Κομνηνοῦ': {'count': 2}},
                     'death': {'count': 1, 'dated': 0},
                     'religion': {'Christian': ['Georgios 25002']},
@@ -49,27 +71,32 @@ class GraphImportTests(unittest.TestCase):
                     },
         'Anna 64': {'gender': ['Female'], 'identifier': 'τῆς κουροπαλατίσσης Ἄννης',
                     'descriptor': 'Anna the kouropalatissa, mother of Nikephoros Bryennios the usurper',
+                    'expected_uri': make_uri('Anna 64', 'https://pbw2016.kdl.kcl.ac.uk/'),
                     'occupation': {'Kouropalatissa': 1},
                     'kinship': {'grandmother': ['Anonymus 61'],
                                 'mother': ['Ioannes 61', 'Nikephoros 62']}},
         'Anna 101': {'gender': ['Female'], 'identifier': 'Ἄννα',
                      'descriptor': 'Anna, daughter of Konstantinos X',
+                     'expected_uri': make_uri('Anna 101', 'https://pbw2016.kdl.kcl.ac.uk/'),
                      'altname': {'Ἀρετῆς': {'count': 1, 'source': 'Michel Psellos, Chronographie, 2 vols., Paris 1967'}},
                      'occupation': {'Nun': 1},
                      'kinship': {'daughter': ['Eudokia 1', 'Konstantinos 10']},
                      'maybe': ['']},
         'Anna 102': {'gender': ['Female'], 'identifier': ' Ἄννῃ',
                      'descriptor': 'Anna, wife of Eustathios Boilas',
+                     'expected_uri': make_uri('Anna 102', 'https://pbw2016.kdl.kcl.ac.uk/'),
                      'death': {'count': 1, 'dated': 0}, 'occupation': {'Nun': 1},
                      # 'location': {'Cappadocia|https://pleiades.stoa.org/places/628949': 1},
                      'kinship': {'wife': ['Eustathios 105'],
                                  'mother': ['Romanos 106']}},
         'Apospharios 101': {'gender': ['Male'], 'identifier': ' Ἀποσφάριον',
                             'descriptor': 'Apospharios, slave of Eustathios Boilas',
+                            'expected_uri': make_uri('Apospharios 101', 'https://pbw2016.kdl.kcl.ac.uk/'),
                             'legalrole': {'Slave': 1},
                             'kinship': {'husband': ['Selegno 101']}},
         'Bagrat 101': {'gender': ['Male'], 'identifier': 'τῷ Παγκρατίῳ بقراط بن جرجس',
                        'descriptor': 'Bagrat IV, king of Georgia',
+                       'expected_uri': make_uri('Bagrat 101', 'https://pbw2016.kdl.kcl.ac.uk/'),
                        'legalrole': {'King': 3, 'Kouropalates': 2, 'Sebastos': 1},
                        'location': {'Abchasia|https://www.geonames.org/6643410': 5,
                                     # 'Iberia (Kartli)': 2,
@@ -83,9 +110,11 @@ class GraphImportTests(unittest.TestCase):
                                    'husband': ['Helena 104'], 'father': ['Maria 61']}},
         'Balaleca 101': {'gender': ['Male'], 'identifier': 'Βαλαλεχα',
                          'descriptor': 'Balaleca, Georgian monk on Athos (Iveron?)',
+                         'expected_uri': make_uri('Balaleca 101', 'https://pbw2016.kdl.kcl.ac.uk/'),
                          'language': 'Georgian'},
         'Gagik 101': {'gender': ['Male'], 'identifier': 'Κακίκιος',
                       'descriptor': 'Gagik II, king of Armenia',
+                      'expected_uri': make_uri('Gagik 101', 'https://pbw2016.kdl.kcl.ac.uk/'),
                       # Archon should be 1 but is 2 in production, because one of the two factoids had a
                       # geographical designation but they have the same authority and source string.
                       'legalrole': {'Archon': 1, 'King': 1, 'Magistros': 1},
@@ -106,6 +135,7 @@ class GraphImportTests(unittest.TestCase):
                                          ['Aristakes 101', '63.8-9 (55)']}},
         'Herve 101': {'gender': ['Male'], 'identifier': 'Ἐρβέβιον τὸν Φραγγόπωλον',
                       'descriptor': 'Hervé Phrangopoulos/Frankopoulos',
+                      'expected_uri': make_uri('Herve 101', 'https://pbw2016.kdl.kcl.ac.uk/'),
                       'secondname': {'Φραγγόπωλον': {'count': 2}},
                       'ethnicity': {'Norman': 1},
                       'legalrole': {'Stratelates': 1, 'Vestes': 1, 'Magistros': 1},
@@ -117,6 +147,7 @@ class GraphImportTests(unittest.TestCase):
                       'possession': {'House at Dagarabe in Armeniakon': ['Ioannes 110', '485.52']}},
         'Ioannes 62': {'gender': ['Male'], 'identifier': 'Ἰωάννης',
                        'descriptor': 'Ioannes Doukas, kaisar',
+                       'expected_uri': make_uri('Ioannes 62', 'https://pbw2016.kdl.kcl.ac.uk/'),
                        'secondname': {'Δούκα': {'count': 6}},
                        'altname': {'Ἰγνάτιος': {'count': 1,
                                                 'source': '“Commémoraisons des Comnènes dans le typikon liturgique du '
@@ -162,6 +193,7 @@ class GraphImportTests(unittest.TestCase):
                        'maybe': ['Ioannes, protoproedros and doux of Antioch']},
         'Ioannes 68': {'gender': ['Eunuch'], 'identifier': 'τοῦ Ὀρφανοτρόφου',
                        'descriptor': 'Ioannes the Orphanotrophos, brother of Michael IV',
+                       'expected_uri': make_uri('Ioannes 68', 'https://pbw2016.kdl.kcl.ac.uk/'),
                        'death': {'count': 4, 'dated': 1},
                        'legalrole': {'Praipositos': 1, 'Orphanotrophos': 12, 'Synkletikos': 1, 'Monk': 7},
                        'location': {# 'Constantinople: Blachernai': 4,
@@ -185,6 +217,7 @@ class GraphImportTests(unittest.TestCase):
                        },
         'Ioannes 101': {'gender': ['Male'], 'identifier': 'Ἰωάννην',
                         'descriptor': 'Ioannes of Lampe, monk and archbishop of all Bulgaria',
+                        'expected_uri': make_uri('Ioannes 101', 'https://pbw2016.kdl.kcl.ac.uk/'),
                         'death': {'count': 1, 'dated': 0},
                         'legalrole': {'Archbishop': 3, 'Monk': 3},
                         # 'location': {'Bulgaria|': 3,
@@ -193,6 +226,7 @@ class GraphImportTests(unittest.TestCase):
                         },
         'Ioannes 102': {'gender': ['Eunuch'], 'identifier': 'Ἰωάννην',
                         'descriptor': 'Ioannes, metropolitan of Side [1079, 1082, 1094]',
+                        'expected_uri': make_uri('Ioannes 102', 'https://pbw2016.kdl.kcl.ac.uk/'),
                         # Metropolitan should be 12 but is 13 currently in production, because it erroneously
                         # included an out-of-scope letter of Theophylact of Ohrid
                         'legalrole': {'Bishop': 1, 'Metropolitan': 12, 'Protoproedros': 1, 'Hypertimos': 2,
@@ -202,9 +236,11 @@ class GraphImportTests(unittest.TestCase):
                         },
         'Ioannes 110': {'gender': ['Male'], 'identifier': 'Ἰωάννου...τοῦ Σκυλίτζη',
                         'descriptor': 'Ioannes Skylitzes, historian',
+                        'expected_uri': make_uri('Ioannes 110', 'https://pbw2016.kdl.kcl.ac.uk/'),
                         'legalrole': {'Megas droungarios of the vigla': 1, 'Kouropalates': 1}},
         'Konstantinos 62': {'gender': ['Male'], 'identifier': 'Κωνσταντίνῳ',
                             'descriptor': 'Konstantinos Doukas porphyrogennetos, son of Michael VII',
+                            'expected_uri': make_uri('Konstantinos 62', 'https://pbw2016.kdl.kcl.ac.uk/'),
                             'secondname': {'Δούκα': {'count': 1,
                                                      'source': 'Annae Comnenae Alexias, Corpus fontium historiae '
                                                                'Byzantinae 40/1, Berlin – New York 2001'}},
@@ -224,6 +260,7 @@ class GraphImportTests(unittest.TestCase):
                                 'imperial entourage': ['Eustathios 20147', '269.60-62']}},
         'Konstantinos 64': {'gender': ['Eunuch'], 'identifier': 'Κωνσταντῖνος',
                             'descriptor': 'Konstantinos, brother of Michael IV',
+                            'expected_uri': make_uri('Konstantinos 64', 'https://pbw2016.kdl.kcl.ac.uk/'),
                             'altname': {'Θεοδώρῳ': {'count': 1, 'source': '“Βυζαντινὰ χρυσόβουλλα καὶ πιττάκια”,'
                                                                           ' Ἐκκλησιαστικὴ Ἀλήθεια 4 (1883-84) 431'}},
                             'death': {'count': 1, 'dated': 0},
@@ -257,6 +294,7 @@ class GraphImportTests(unittest.TestCase):
                             'maybe': ['unidentified brother of Michael IV']},
         'Konstantinos 101': {'gender': ['Male'], 'identifier': 'Κωνσταντῖνος ὁ Διογένης',
                              'descriptor': 'Konstantinos Diogenes, father of Romanos IV',
+                             'expected_uri': make_uri('Konstantinos 101', 'https://pbw2016.kdl.kcl.ac.uk/'),
                              'secondname': {'Διογένης': {'count': 6}},
                              'death': {'count': 2, 'dated': 0},
                              'legalrole': {'Doux': 4, 'Patrikios': 2, 'Strategos': 3, 'Archon': 1, 'Monk': 1},
@@ -277,6 +315,7 @@ class GraphImportTests(unittest.TestCase):
                                          'nephew (by marriage)': ['Romanos 3']}},
         'Konstantinos 102': {'gender': ['Male'], 'identifier': 'Κωνσταντίνῳ',
                              'descriptor': 'Konstantinos Bodin, king of Duklja',
+                             'expected_uri': make_uri('Konstantinos 102', 'https://pbw2016.kdl.kcl.ac.uk/'),
                              'secondname': {'Βοδίνῳ': {'count': 3}},
                              'altname': {'Πέτρον ἀντὶ Κωνσταντίνου μετονομάσαντες':
                                              {'count': 1,
@@ -296,12 +335,14 @@ class GraphImportTests(unittest.TestCase):
                              'kinship': {'son': ['Michael 101'], 'father': ['Georgios 20253']}},
         'Konstantinos 110': {'gender': ['Male'], 'identifier': 'Κωνσταντῖνος',
                              'descriptor': 'Konstantinos, nephew of Michael IV',
+                             'expected_uri': make_uri('Konstantinos 110', 'https://pbw2016.kdl.kcl.ac.uk/'),
                              'legalrole': {'Patrikios': 1},
                              'location': {'Thessalonike|https://pleiades.stoa.org/places/491741': 1},
                              'kinship': {'nephew': ['Michael 4']},
                              'maybe': ['doux of Thessalonike in 1040']},
         'Liparites 101': {'gender': ['Male'], 'identifier': 'τοῦ Λιπαρίτου قاريط ملك الابخاز',
                           'descriptor': 'Liparit IV, duke of Trialeti',
+                          'expected_uri': make_uri('Liparites 101', 'https://pbw2016.kdl.kcl.ac.uk/'),
                           'ethnicity': {'Georgian': 2},
                           'legalrole': {'Lord of part of the Iberians': 1},
                           # 'location': {'Iberia (Kartli)': 1,
@@ -311,6 +352,9 @@ class GraphImportTests(unittest.TestCase):
                           }
     }
 
+    # Boulloterion URIs follow the pattern: make_uri("Boulloterion title", "https://r11.eu/")
+    # where the boulloterion title is f"Boulloterion of {boulloterion.title}" from the database
+    # To add expected_uri fields, the database title field must be queried for each boulloterionKey
     td_boulloterions = {
         112: {'inscription': 'Κωνσταντῖνος πρόεδρος δομέστικος / τῶν σχολῶν τῆς ᾿Ανατολῆς καὶ δοὺξ ᾿Αντιοχείας',
               'seals': {'1008-8-2706': 'Vienna, private collection of Prof. Werner Seibt'}, 'sources': {
@@ -627,6 +671,10 @@ class GraphImportTests(unittest.TestCase):
                 puri = c.graph.value(e15, c.predicates['P140'], any=False)
                 self.assertIsNotNone(puri)
                 self.td_people[p]['uri'] = puri
+                # Verify the URI matches the expected deterministic URI
+                if 'expected_uri' in self.td_people[p]:
+                    self.assertEqual(self.td_people[p]['expected_uri'], puri,
+                                   f"Person {p} URI should match expected deterministic URI")
             except UniquenessError:
                 self.fail("ID should lead to unique person")
 
@@ -658,7 +706,7 @@ select ?p_uri ?gender where {{
         for person, pinfo in self.td_people.items():
             p_uri = pinfo['uri']
             self.assertIsNotNone(genders.get(p_uri))
-            self.assertListEqual(genders[p_uri], pinfo['gender'],
+            self.assertListEqual(genders[p_uri], pinfo.get('gender', []),  # type: ignore[arg-type]
                                  f"Test gender for {person}")
 
     # The identifier is the name as PBW has it in the original language.
@@ -683,11 +731,11 @@ select ?p_uri ?mainid where {{
             identifiers[row['p_uri']] = row['mainid'].toPython()
         # Check that they are correct
         for person, pinfo in self.td_people.items():
-            p_uri = pinfo['uri']
+            p_uri = cast(URIRef, pinfo['uri'])
             self.assertIsNotNone(identifiers.get(p_uri), f"Identifier found for {person}")
-            self.assertEqual(pinfo['identifier'], identifiers[p_uri], f"Test identifier for {person}")
+            self.assertEqual(pinfo.get('identifier', ''), identifiers[p_uri], f"Test identifier for {person}")  # type: ignore[arg-type]
             # Check that the descriptors are correct too
-            self.assertEqual(pinfo['descriptor'], self.get_object(p_uri, 'label').toPython(),
+            self.assertEqual(pinfo.get('descriptor', ''), self.get_object(p_uri, 'label').toPython(),  # type: ignore[arg-type]
                              f"Test descriptor for {person}")
 
 
@@ -701,9 +749,9 @@ select ?p_uri ?mainid where {{
         for person, pinfo in self.td_people.items():
             names = dict()
             if 'secondname' in pinfo:
-                names.update(pinfo['secondname'])
+                names.update(pinfo.get('secondname', {}))  # type: ignore[arg-type]
             if 'altname' in pinfo:
-                names.update(pinfo['altname'])
+                names.update(pinfo.get('altname', {}))  # type: ignore[arg-type]
             if len(names) > 0:
                 sparql = f"""
 select ?appellation ?src where {{
@@ -767,7 +815,7 @@ select distinct ?person ?de where {{
 
         for person, pinfo in self.td_people.items():
             # Check if the person should have a death event.
-            devent = deathevents.get(pinfo['uri'])
+            devent = deathevents.get(cast(URIRef, pinfo['uri']))
             ddescpred = c.get_assertion_for_predicate('P3')
             ddatepred = c.get_assertion_for_predicate('P4')
             if 'death' not in pinfo:
@@ -874,15 +922,15 @@ select ?occ where {{
 }}"""
                 res = c.graph.query(sparql)
                 ctr = Counter([row['occ'].toPython() for row in res])
-                self.assertDictEqual(pinfo['occupation'], ctr, "Test social roles for %s" % person)
+                self.assertDictEqual(pinfo.get('occupation', {}), ctr, "Test social roles for %s" % person)  # type: ignore[arg-type]
 
     def test_legalrole(self):
         """Test that legal designations are set correctly"""
         c = self.constants
         # Override some of the values if we are testing prod (see comments in people hash).
         if config.dbmode == 'prod':
-            self.td_people['Gagik 101']['legalrole']['Archon'] = 2
-            self.td_people['Ioannes 102']['legalrole']['Metropolitan'] = 13
+            self.td_people['Gagik 101']['legalrole']['Archon'] = 2  # type: ignore[index,call-overload]
+            self.td_people['Ioannes 102']['legalrole']['Metropolitan'] = 13  # type: ignore[index,call-overload]
         for person, pinfo in self.td_people.items():
             # Check that the occupation assertions were created
             if 'legalrole' in pinfo:
@@ -898,7 +946,7 @@ select ?role where {{
 }}"""
                 res = c.graph.query(sparql)
                 ctr = Counter([row['role'].toPython() for row in res])
-                self.assertDictEqual(pinfo['legalrole'], ctr, "Test legal roles for %s" % person)
+                self.assertDictEqual(pinfo.get('legalrole', {}), ctr, "Test legal roles for %s" % person)  # type: ignore[arg-type]
 
     def test_locations(self):
         """Check location assertions."""
@@ -923,7 +971,7 @@ select ?locid ?locuri where {{
 }}"""
                 res = c.graph.query(sparql)
                 ctr = Counter([f"{row['locid'].toPython()}|{row['locuri']}" for row in res])
-                self.assertDictEqual(pinfo['location'], ctr, "Test location assertions for %s" % person)
+                self.assertDictEqual(pinfo.get('location', {}), ctr, "Test location assertions for %s" % person)  # type: ignore[arg-type]
 
     def test_languageskill(self):
         """Test that our Georgian monk has his language skill set correctly"""
@@ -972,7 +1020,7 @@ select distinct ?kin ?kintype where {{
                     foundkin[k].append(self.get_external_id(row['kin']).toPython())
                 for k in foundkin:
                     foundkin[k] = sorted(foundkin[k])
-                self.assertDictEqual(pinfo['kinship'], foundkin, "Kinship links for %s" % person)
+                self.assertDictEqual(pinfo.get('kinship', {}), foundkin, "Kinship links for %s" % person)  # type: ignore[arg-type]
 
     def test_possession(self):
         """Check possession assertions. Test the sources and authors/authorities while we are at it."""
@@ -1219,9 +1267,10 @@ select ?editor ?edition where {{
             if 'passage' in data.asdict():
                 self.check_class(data['passage'], 'F2P' if s == 'yahya' else 'E33')
                 found_struct = {'P3': self.get_object(data['passage'], 'label')}
-                if 'P190' in sinfo['apassage']:
+                apassage = sinfo.get('apassage', {})
+                if 'P190' in apassage:
                     found_struct['P190'] = self.get_object(data['passage'], 'P190')
-                self.assertDictEqual(sinfo['apassage'], found_struct)
+                self.assertDictEqual(apassage, found_struct)  # type: ignore[arg-type]
             if 'wc' in data.asdict():
                 self.check_class(data['wc'], 'F28')
             if 'work' in data.asdict():
@@ -1402,6 +1451,63 @@ select (count(?r) as ?numrdg) where {{
 """
         r2 = list(c.graph.query(sparql))[0]
         self.assertEqual(len(readings), r2['numrdg'].toPython())
+
+    def test_uri_determinism(self):
+        """Test that URIs follow the deterministic hashing policy.
+
+        According to RELEVEN/uri_policy.md:
+        - Persons: hash("Identifier / Service") where Service = https://pbw2016.kdl.kcl.ac.uk/
+        - Types (E55): hash("Column name / Term value")
+        - Births (E67): hash("Person URI / Birth")
+        - Deaths (E69): hash("Person URI / Death")
+        - Boulloterions (E22B): hash("Boulloterion title / https://r11.eu/")
+        - Locations (E27): hash("Reference name / Authority")
+        """
+        c = self.constants
+
+        # Test Person URIs - already verified in setUp
+        # Just ensure all people have expected URIs defined
+        for person, pinfo in self.td_people.items():
+            self.assertIn('expected_uri', pinfo, f"Person {person} should have expected_uri defined")
+            self.assertEqual(pinfo['expected_uri'], pinfo['uri'],
+                           f"Person {person} URI should be deterministic")
+
+        # Test Gender Type URIs (E55_Type for gender)
+        gender_types = {'Male': 'male', 'Female': 'female', 'Eunuch': 'eunuch'}
+        for display_name, term_value in gender_types.items():
+            expected_gender_uri = make_uri('gender', term_value)
+            # Find this type in the graph
+            sparql = f"""
+SELECT ?type WHERE {{
+    ?type a {c.get_label('E55')} ;
+          {c.entity_label.n3()} "{display_name}" ;
+          {c.predicates['P2'].n3()} {c.get_label('GEN').n3()} .
+}}"""
+            res = list(c.graph.query(sparql))
+            if res:
+                actual_gender_uri = res[0]['type']
+                self.assertEqual(expected_gender_uri, actual_gender_uri,
+                               f"Gender type '{display_name}' URI should be deterministic")
+
+        # Test Birth/Death event URIs
+        for person, pinfo in self.td_people.items():
+            person_uri = pinfo['uri']  # type: ignore[misc]
+            death_info = pinfo.get('death', {})
+            if 'death' in pinfo and death_info.get('count', 0) > 0:  # type: ignore[union-attr]
+                # Check that death URI is hash(person_uri / death)
+                expected_death_uri = make_uri(str(person_uri), 'death')
+                sparql = f"""
+SELECT ?death WHERE {{
+    ?death a {c.get_label('E69')} ;
+           {c.predicates['P100'].n3()} {person_uri.n3()} .
+}}"""
+                res = list(c.graph.query(sparql))
+                # Note: May have 0 or 1 death events depending on whether dated
+                if res:
+                    for row in res:
+                        actual_death_uri = row['death']
+                        self.assertEqual(expected_death_uri, actual_death_uri,
+                                       f"Death event for {person} should have deterministic URI")
 
     @unittest.skip("for now")
     def test_repeat(self):
