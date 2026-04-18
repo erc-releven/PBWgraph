@@ -611,7 +611,7 @@ class graphimportSTAR:
         the_e15 = c.make_uri("idassignment", hash_id, str(agent))
         sparql = f"""
         {entitystr}
-        {the_e42.n3()} {c.get_label('P190')} {Literal(identifier).n3()} ;
+        {the_e42.n3()} {c.get_label('P190')} {Literal(str(identifier)).n3()} ;
             a {c.get_label('E42')} .
         {the_e15.n3()} {c.get_label('P37')} {the_e42.n3()} ;
             {c.star_subject} {entity_uri.n3()} ;

@@ -954,7 +954,7 @@ select ?role where {{
         for person, pinfo in self.td_people.items():
             if 'location' in pinfo:
                 sparql = f"""
-select ?locid ?locuri where {{
+select ?locid ?locuri ?locidval where {{
     ?a1 {c.star_object} {pinfo['uri'].n3()} ;
         a {c.get_assertion_for_predicate('P11')} ;
         {c.star_subject} ?locevent ;
@@ -968,10 +968,17 @@ select ?locid ?locuri where {{
     ?locis {c.star_subject} ?loc ;
            a {c.get_assertion_for_predicate('ID7')} ;
            {c.star_object} ?locuri .
+    ?loc_e15 {c.star_subject} ?loc ;
+             {c.star_auth} {c.pbw_agent.n3()} ;
+             {c.get_label('P37')} [a {c.get_label('E42')}; {c.get_label('P190')} ?locidval] .
 }}"""
                 res = c.graph.query(sparql)
                 ctr = Counter([f"{row['locid'].toPython()}|{row['locuri']}" for row in res])
                 self.assertDictEqual(pinfo.get('location', {}), ctr, "Test location assertions for %s" % person)  # type: ignore[arg-type]
+                for row in res:
+                    self.assertTrue(isinstance(row['locidval'].toPython(), str))
+                    # We only need to test one
+                    break
 
     def test_languageskill(self):
         """Test that our Georgian monk has his language skill set correctly"""
