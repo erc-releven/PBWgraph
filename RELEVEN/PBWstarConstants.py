@@ -295,7 +295,8 @@ class PBWstarConstants:
                 try:
                     print("Setting up software execution run...")
                     # Ensure the existence of the software metadata
-                    whoarewe = basename(sys.argv[0])
+                    script_basename = basename(sys.argv[0])
+                    whoarewe = script_basename if script_basename.endswith('.py') else 'graphimportSTAR.py'
                     commit_sha = subprocess.check_output(
                         ["git", "rev-parse", "HEAD"],
                         text=True
@@ -322,7 +323,7 @@ class PBWstarConstants:
                             {self.get_label('P4')} {start_tstamp.n3()} ;
                             {self.get_label('L23')} {ourscript.n3()} ."""
                         self.update(se_query)
-                except TypeError:
+                except Exception:
                     print("Graph is not writable! Continuing in read-only mode")
                     self.readonly = True
 
@@ -539,7 +540,7 @@ class PBWstarConstants:
 
     def update(self, sparql, document=None, *assertions):
         self.graph.update("INSERT DATA { " + sparql + " }")
-        if document is not None:
+        if assertions:
             self.document(document, *assertions)
         return assertions
 
@@ -579,57 +580,15 @@ class PBWstarConstants:
             raise e
 
     def ensure_egroup_existence(self, gclass, glink, members, title=None):
-        # Get the URI list
-        mvalues = ', '.join([x.n3() for x in members])
-        # Get the group label, which is a semicolon-separated list of member labels
-        if title is None:
-            mnames = []
-            for m in members:
-                mname = self.graph.value(m, self.entity_label)
-                if mname is None:
-                    warn(f"Group member {m} has no label?!")
-                    mnames.append('XX ANON')
-                else:
-                    mnames.append(str(mname))
-            mlabel = Literal('; '.join(mnames)).n3()
-        else:
-            mlabel = Literal(title).n3()
-
-        # Look to see if a group with exactly these members exists
-        sparql = f"""
-SELECT ?egroup WHERE {{
-    {{
-        # Filter first to egroups that have our particular members
-        SELECT DISTINCT ?egroup WHERE {{
-            ?egroup a {self.get_label(gclass)} ;
-                {self.label_n3} {mlabel} ;
-                {self.get_label(glink)} {mvalues} .
-        }}
-    }}
-    #  Now make sure the group doesn't have any further members.
-    ?egroup {self.get_label(glink)} ?member .
-}}
-GROUP BY ?egroup HAVING (COUNT(?member) = {len(members)})
-"""
-        rows = [x for x in self.graph.query(sparql)]
-        if len(rows) == 0:
-            # We need to create the group and its members
-            mlist = ', '.join([x.n3() for x in members])
-            # Construct the query
-            sparql = f"""
-        ?egroup {self.get_label(glink)} {mlist} ;
-            {self.label_n3} {mlabel} ;
-            a {self.get_label(gclass)} .
-            """
-            answer = self.ensure_entities_existence(sparql, force_create=True)
-        else:
-            # Make sure there is only one egroup that fits this spec
-            if len(rows) > 1:
-                warn(f"Multiple entity groups found with exactly the given members {mlabel}!")
-            answer = rows[0]
-
-        # Either way, return the entity group
-        return answer.get('egroup')
+        sorted_member_strs = sorted(str(m) for m in members)
+        group_uri = self.make_uri(gclass, *sorted_member_strs)
+        mlist = ', '.join(x.n3() for x in members)
+        sparql = f"    {group_uri.n3()} a {self.get_label(gclass)} ;\n        {self.get_label(glink)} {mlist}"
+        if title is not None:
+            sparql += f" ;\n        {self.label_n3} {Literal(title).n3()}"
+        sparql += " .\n"
+        self.update(sparql)
+        return group_uri
 
     def document(self, pbwpage, *assertions):
         """Make the E31 link between the pbwpage and whatever assertions we just pulled from it, and
@@ -709,7 +668,7 @@ class URIConstructor:
             segment = str(uuid4())
             return self.namespace[segment]
 
-        _hash_values = map(lambda x: x.strip().lower(), hash_values)
+        _hash_values = map(lambda x: str(x).strip().lower(), hash_values)
         hash_value = " / ".join(_hash_values).encode("utf8")
 
         digest = sha256(hash_value).hexdigest()
