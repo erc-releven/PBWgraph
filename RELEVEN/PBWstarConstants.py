@@ -7,7 +7,6 @@ from datetime import datetime
 from hashlib import sha256
 from os.path import join, dirname, basename
 from rdflib import Graph, URIRef, Literal, Namespace, OWL, RDF, RDFS, XSD
-from rdflib.query import Result
 from uuid import uuid4
 from warnings import warn
 
@@ -150,6 +149,7 @@ class PBWstarConstants:
             'P51': self.namespaces['crm']['P51_has_former_or_current_owner'],
             'P67': self.namespaces['crm']['P67_refers_to'],
             'P70': self.namespaces['crm']['P70_documents'],
+            'P79': self.namespaces['crm']['P79_beginning_is_qualified_by'],
             'P80': self.namespaces['crm']['P80_end_is_qualified_by'],
             'P82a': self.namespaces['crm']['P82a_begin_of_the_begin'],
             'P82b': self.namespaces['crm']['P82b_end_of_the_end'],
@@ -354,6 +354,9 @@ class PBWstarConstants:
                 # Store it in self.[key]_agent, e.g. self.pbw_agent
                 self.__setattr__(f"{ent['key']}_agent", ent['uri'])
 
+        # Keep track of any entity groups we have already created.
+        self.resolved_egroups = dict()
+
         # Some of these factoid types have their own controlled vocabularies.
         # Set up our structure for retaining these; we will define them when we encounter them
         # through the accessor functions.
@@ -538,57 +541,31 @@ class PBWstarConstants:
                 minted[var] = self.ns[str(uuid4())]
         return minted
 
+    def ensure_egroup_existence(self, gclass, glink, members, title):
+        """Create a simple group, either of author[itie]s or of publications."""
+        # Did we already create this group?
+        key = f"{gclass} / {title}"
+        if key in self.resolved_egroups:
+            return self.resolved_egroups[key]
+
+        # If it is a group of people, we created it; if a group of publications, PBW created it.
+        # This only matters here for URI generation.
+        agent = self.pbw_agent if gclass == 'E73B' else self.r11_agent
+        group_uri = self.make_uri(title, agent)
+
+        mlist = ', '.join(x.n3() for x in members)
+        sparql = f"""    {group_uri.n3()} a {self.get_label(gclass)} ;
+        {self.get_label(glink)} {mlist}; 
+        {self.label_n3} {Literal(title).n3()} .\n"""
+
+        self.update(sparql)
+        return group_uri
+
     def update(self, sparql, document=None, *assertions):
         self.graph.update("INSERT DATA { " + sparql + " }")
         if assertions:
             self.document(document, *assertions)
         return assertions
-
-    def ensure_entities_existence(self, sparql, force_create=False):
-        # print("SPARQL is:" + sparql)
-        if force_create and self.readonly:
-            raise Exception("Cannot force create triples in readonly mode!")
-        try:
-            if not force_create:
-                res = self.graph.query("SELECT DISTINCT * WHERE {" + sparql + "}")
-                if len(res):
-                    # Did we actually get a result?
-                    if not isinstance(res, Result):
-                        raise RuntimeError(f"Got unexpected result on query: {res}\nSPARQL was: {sparql}")
-                    # We should hopefully have only one row...
-                    if len(res) > 1:
-                        warn(f"More than one row returned for SPARQL expression:\n{sparql}")
-                    # In any case return the variables from the first row as a dictionary.
-                    for row in res:
-                        return row.asdict()
-
-            if self.readonly:
-                # If we got here we didn't get a result, and we can't add one.
-                return dict()
-
-            # Either force_create was specified or res had zero length.
-            new_uris = self.mint_uris_for_query(sparql)
-            q = sparql
-            # Sort the variable keys by descending length to avoid replacing subsets of variable names.
-            # Yes this is a cheap hack.
-            for k in sorted(new_uris.keys(), key=len, reverse=True):
-                q = q.replace(f'?{k}', new_uris[k].n3(self.graph.namespace_manager))
-            self.update(q)
-            return new_uris
-        except Exception as e:
-            print(f"EXCEPTION {e}; SPARQL was {sparql}")
-            raise e
-
-    def ensure_egroup_existence(self, gclass, glink, members, title=None):
-        sorted_member_strs = sorted(str(m) for m in members)
-        group_uri = self.make_uri(gclass, *sorted_member_strs)
-        mlist = ', '.join(x.n3() for x in members)
-        sparql = f"    {group_uri.n3()} a {self.get_label(gclass)} ;\n        {self.get_label(glink)} {mlist}"
-        if title is not None:
-            sparql += f" ;\n        {self.label_n3} {Literal(title).n3()}"
-        sparql += " .\n"
-        self.update(sparql)
-        return group_uri
 
     def document(self, pbwpage, *assertions):
         """Make the E31 link between the pbwpage and whatever assertions we just pulled from it, and

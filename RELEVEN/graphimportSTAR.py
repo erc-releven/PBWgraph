@@ -1,4 +1,5 @@
 import argparse
+import sys
 import traceback
 
 import pbw
@@ -14,7 +15,7 @@ from rdflib.plugins.stores import sparqlstore
 from sqlalchemy import create_engine, and_
 from sqlalchemy.orm import sessionmaker
 from time import sleep
-from urllib.error import URLError
+from urllib.error import URLError, HTTPError
 from warnings import warn
 
 
@@ -303,9 +304,9 @@ class graphimportSTAR:
         for i, seal in enumerate(boulloterion.seals):
             coll = self.find_or_create_seal_collection(seal.collection.collectionName)
             # Make an ID unique for our purposes
-            seal_id = "PBW seal %d-%d-%d" % (seal.collectionKey, seal.collectionRef, seal.sealKey)
+            seal_id = "%d-%d-%d" % (seal.collectionKey, seal.collectionRef, seal.sealKey)
             # Use a hash-based URI derived from the full PBW seal ID, per URI policy
-            seal_uri = c.make_uri(seal_id, str(c.r11_agent))
+            seal_uri = c.make_uri(c.entitylabels['E22S'], seal_id, c.r11_agent)
             sparql_stmts.append(f"""    {seal_uri.n3()} {c.label_n3} {Literal(seal_id).n3()} ;
         a {c.get_label('E22S')} . 
 """)
@@ -359,8 +360,8 @@ class graphimportSTAR:
             # Write the entry for the publication. The short name is an identifier assigned by PBW,
             # so we will record it as such.
             src_uri = c.make_uri("boulloterion source", source.bibKey, c.pbw_agent)
-            src_pbw_identifier = c.make_uri(c.get_label('E42'), short_name, c.pbw_agent)
-            src_pbw_idassignment = c.make_uri(c.get_label('E15'), short_name, c.pbw_agent)
+            src_pbw_identifier = c.make_uri(c.entitylabels['E42'], short_name, c.pbw_agent)
+            src_pbw_idassignment = c.make_uri(c.entitylabels['E15'], short_name, c.pbw_agent)
             src_sparql = f"""    {src_uri.n3()} {c.label_n3} {Literal(latin_bib).n3()} ;
         a {c.get_label('F2P')} .
     {src_pbw_identifier.n3()} {c.get_label('P190')} {Literal(short_name).n3()} ;
@@ -374,7 +375,6 @@ class graphimportSTAR:
             source_nodes.append(src_uri)
         if len(source_nodes) > 1:
             # Find or create a matching bibliography/publication list with only these publication nodes.
-            # TODO REPLACE
             return c.ensure_egroup_existence('E73B', 'P165', source_nodes,
                                              f"Bibliography for boulloterion {boulloterion.boulloterionKey}")
         else:
@@ -411,14 +411,14 @@ class graphimportSTAR:
         if wholesource is None:
             return None
         # In this context, the agent is the PBW editor for this source.
-        sourcekey = self.constants.source(factoid)
+        sourcekey = self.constants.source(factoid)  # e.g. 'Psellos Sathas 12'
         agent = self.get_viaf_agent_node(self.constants.authorities(sourcekey))
-        factoid_label = c.sourceref(factoid)
-        sourceref_uri = (c.make_uri(str(wholesource), factoid_label, factoid.origLDesc)
+        reference_label = c.sourceref(factoid)      # e.g. '37.3-38.2'
+        sourceref_uri = (c.make_uri(str(wholesource), reference_label, factoid.origLDesc)
                          if factoid.origLDesc
-                         else c.make_uri(str(wholesource), factoid_label))
+                         else c.make_uri(str(wholesource), reference_label))
         sparql = f"""    {sourceref_uri.n3()} {c.get_label('P190')} {Literal(factoid.origLDesc).n3()} ;
-            {c.label_n3} {Literal(factoid_label).n3()} ;
+            {c.label_n3} {Literal(reference_label).n3()} ;
             a {c.get_label('E33')} .\n"""
         a, sparql_a = self.create_assertion_sparql('a', 'R15', wholesource, sourceref_uri, agent)
         sparql += sparql_a
@@ -453,29 +453,32 @@ class graphimportSTAR:
         afact_src = None
 
         # Deterministic URIs for the publication and its identifier assignment
-        publ_uri = c.make_uri(edition_id, 'https://r11.eu/')
-        pub_ref_uri = c.make_uri(c.get_label('E42'), sourcekey, str(c.pbw_agent))
-        aid_uri = c.make_uri(c.get_label('E15'), sourcekey, str(c.pbw_agent))
-        real_assertions = [aid_uri]
+        publ_uri = c.make_uri(c.entitylabels['F2P'], edition_id, 'https://r11.eu/')
+        # The same PBW identifier (e.g. 'Psellos') might be used for multiple of our publication objects.
+        # We tie them together with a single E15 assignment event.
+        pub_pbw_e42 = c.make_uri(c.entitylabels['E42'], orig_sourcekey, str(c.pbw_agent))
+        pub_pbw_e15 = c.make_uri(c.entitylabels['E15'], orig_sourcekey, str(c.pbw_agent))
+        real_assertions = [pub_pbw_e15]
 
-        sparql = f"""    {pub_ref_uri.n3()} {c.get_label('P190')} {Literal(orig_sourcekey).n3()} ;
+        sparql = f"""    {pub_pbw_e42.n3()} {c.get_label('P190')} {Literal(orig_sourcekey).n3()} ;
         a {c.get_label('E42')} .
     {publ_uri.n3()} {c.label_n3} {Literal(edition_id).n3()} ;
         a {c.get_label('F2P')} .
-    {aid_uri.n3()} {c.star_subject} {publ_uri.n3()} ;
-        {c.get_label('P37')} {pub_ref_uri.n3()} ;
+    {pub_pbw_e15.n3()} {c.star_subject} {publ_uri.n3()} ;
+        {c.get_label('P37')} {pub_pbw_e42.n3()} ;
         {c.star_auth} {c.pbw_agent.n3()} ;
         a {c.get_label('E15')} .\n"""
 
         # If we modified the identifier, record that too
         if orig_sourcekey != sourcekey:
-            our_ref_uri = c.make_uri(c.get_label('E42'), sourcekey, str(c.r11_agent))
-            aid2_uri = c.make_uri(c.get_label('E15'), sourcekey, str(c.r11_agent))
-            real_assertions.append(aid2_uri)
-            sparql += f"""    {our_ref_uri.n3()} {c.get_label('P190')} {Literal(sourcekey).n3()} ;
+            pub_r11_e42 = c.make_uri(c.entitylabels['E42'], sourcekey, str(c.r11_agent))
+            pub_r11_e15 = c.make_uri(c.entitylabels['E15'], sourcekey, str(c.r11_agent))
+            real_assertions.append(pub_r11_e15)
+
+            sparql += f"""    {pub_r11_e42.n3()} {c.get_label('P190')} {Literal(sourcekey).n3()} ;
         a {c.get_label('E42')} .
-    {aid2_uri.n3()} {c.star_subject} {publ_uri.n3()} ;
-        {c.get_label('P37')} {our_ref_uri.n3()} ;
+    {pub_r11_e15.n3()} {c.star_subject} {publ_uri.n3()} ;
+        {c.get_label('P37')} {pub_r11_e42.n3()} ;
         {c.star_auth} {c.r11_agent.n3()} ;
         a {c.get_label('E15')} .\n"""
 
@@ -483,7 +486,7 @@ class graphimportSTAR:
             # We are dealing with a secondary source. Assert a publication creation instead of a
             # text (expression) creation, with the editors; we will have to go back later and say that this
             # depended on another work (the primary source).
-            ec_uri = c.make_uri('publication creation', edition_id, str(editors))
+            ec_uri = c.make_uri(c.entitylabels['F28'], edition_id, str(editors))
             a1, sparql_a1 = self.create_assertion_sparql('a1', 'R17', ec_uri, publ_uri, editors, publ_uri)
             a2, sparql_a2 = self.create_assertion_sparql('a2', 'P14', ec_uri, editors, editors, publ_uri)
             sparql += f"    {ec_uri.n3()} a {c.get_label('F28')} .\n"
@@ -493,9 +496,8 @@ class graphimportSTAR:
             # We are dealing with a primary source, so we need to make a bunch of assertions.
             # First, the editors assert that the edition (that is, the publication) belongs to
             # the work; the source for this is, well, the edition.
-            work_uri = c.make_uri(text_id, 'https://r11.eu/')
-            sparql += f"""    {work_uri.n3()} {c.label_n3} {Literal(text_id).n3()} ;
-        a {c.get_label('F2T')} .\n"""
+            work_uri = c.make_uri(c.entitylabels['F2T'], text_id, 'https://r11.eu/')
+            sparql += f"""    {work_uri.n3()} {c.label_n3} {Literal(text_id).n3()} ; a {c.get_label('F2T')} .\n"""
             a1, sparql_a1 = self.create_assertion_sparql('a1', 'R76', publ_uri, work_uri, editors, publ_uri)
             sparql += sparql_a1
             real_assertions.append(a1)
@@ -562,7 +564,7 @@ class graphimportSTAR:
 
                 # We have now dealt with extracting information from some relevant authorship factoid, if it exists.
                 # Move on to the assertion that the author authored the work
-                wc_uri = c.make_uri('work creation', text_id, str(aship_authority))
+                wc_uri = c.make_uri(c.entitylabels['F28'], text_id, str(aship_authority))
                 a3, sparql_a3 = self.create_assertion_sparql('a3', 'R17', wc_uri, work_uri,
                                                               aship_authority, aship_source_uri)
                 a4, sparql_a4 = self.create_assertion_sparql('a4', 'P14', wc_uri, author,
@@ -572,11 +574,10 @@ class graphimportSTAR:
                 real_assertions.extend([a3, a4])
 
         # Whatever we just made, insert it and document the assertions.
-        c.update(sparql)
         if afact_src:
-            c.document(afact_src, *real_assertions)
+            c.update(sparql, afact_src, *real_assertions)
         else:
-            c.document(None, *real_assertions)
+            c.update(sparql, None, *real_assertions)
         self.resolved_publications[edition_id] = publ_uri
         return publ_uri
 
@@ -588,12 +589,12 @@ class graphimportSTAR:
         hash_id = identifier
         if etype == c.get_label('E22B'):
             # Identifier is a number, thus possibly not unique
-            url = URIRef(f'https://pbw2016.kdl.kcl.ac.uk/boulloterion/{identifier}/').n3()
+            url = URIRef(f'https://pbw2016.kdl.kcl.ac.uk/boulloterion/{identifier}/')
             # ...so for hashing, we want to prepend 'boulloterion'.
-            hash_id = f'boulloterion / {identifier}'
+            hash_id = f'{c.entitylabels['E22B']} / {identifier}'
         elif etype == c.get_label('E27'):
             # Identifier is also a number, thus possibly not unique
-            url = URIRef(f'https://pbw2016.kcl.ac.uk/location/{identifier}/').n3()
+            url = URIRef(f'https://pbw2016.kcl.ac.uk/location/{identifier}/')
             # ...so for hashing, we want to use the display name, which is in this case unique.
             hash_id = dname
         elif agent == c.pbw_agent:
@@ -606,10 +607,10 @@ class graphimportSTAR:
             id_urified = '+'.join(idparts).replace('[', '').replace(']', '')
             # Now we have Alp+Arslan/51, Gostri.../101, and Nizam+al-Mulk/101 respectively.
             # Even if none of these URLs actually work in PBW.
-            url = URIRef(f'https://pbw2016.kdl.kcl.ac.uk/person/{id_urified}/{code}/').n3()
+            url = URIRef(f'https://pbw2016.kdl.kcl.ac.uk/person/{id_urified}/{code}/')
         else:
             # Identifier is again a number. We can leave this bare, since VIAF doesn't reuse numbers.
-            url = URIRef(f'https://viaf.org/viaf/{identifier}/').n3()
+            url = URIRef(f'https://viaf.org/viaf/{identifier}/')
 
         # Create the entity URI based on its name and service
         entity_uri = c.make_uri(hash_id, str(agent))
@@ -621,11 +622,12 @@ class graphimportSTAR:
         entitystr += '.'
 
         # Construct the identifier assignment that should exist.
-        the_e42 = c.make_uri(c.get_label('E42'), hash_id, str(agent))
-        the_e15 = c.make_uri(c.get_label('E15'), hash_id, str(agent))
+        the_e42 = c.make_uri(c.entitylabels['E42'], hash_id, str(agent))
+        the_e15 = c.make_uri(c.entitylabels['E15'], hash_id, str(agent))
         sparql = f"""
         {entitystr}
         {the_e42.n3()} {c.get_label('P190')} {Literal(str(identifier)).n3()} ;
+            {c.link_n3} {url.n3()} ;
             a {c.get_label('E42')} .
         {the_e15.n3()} {c.get_label('P37')} {the_e42.n3()} ;
             {c.star_subject} {entity_uri.n3()} ;
@@ -672,12 +674,12 @@ class graphimportSTAR:
             to_doc = []
             if sqlloc.pleiades_id:
                 pleiades_uri = URIRef(f'https://pleiades.stoa.org/places/{sqlloc.pleiades_id}')
-                ap, ap_sparql = self.create_assertion_sparql('ap', 'ID7', loc_ent, pleiades_uri, geoagent)
+                ap, ap_sparql = self.create_assertion_sparql('ap', 'ID8', loc_ent, pleiades_uri, geoagent)
                 loc_sparql += ap_sparql
                 to_doc.append(ap)
             if sqlloc.geonames_id:
                 geonames_uri = URIRef(f'https://www.geonames.org/{sqlloc.geonames_id}')
-                ag, ag_sparql = self.create_assertion_sparql('ag', 'ID7', loc_ent, geonames_uri, geoagent)
+                ag, ag_sparql = self.create_assertion_sparql('ag', 'ID8', loc_ent, geonames_uri, geoagent)
                 loc_sparql += ag_sparql
                 to_doc.append(ag)
             if loc_sparql:
@@ -745,14 +747,14 @@ class graphimportSTAR:
         c = self.constants
         title = '; '.join(sorted(name for _, name in members_with_names))
         members = [uri for uri, _ in members_with_names]
-        return c.ensure_egroup_existence('E74A', 'P107', members, title=title)
+        return c.ensure_egroup_existence('E74A', 'P107', members, title)
 
     def maka_handler(self, factoid, graphperson):
         """Associate the person with another person, provisionally. This is the one use of the
         uncertainty typing on assertions that we use here."""
         c = self.constants
         pbwdoc = c.pbw_uri(factoid)
-        # Avoid 'uncertain' identity factoids where
+        # Avoid 'uncertain' identity factoids that are about group membership
         exclude_strings = ['the two collectively are',
             'included in',
             'was one of'
@@ -763,21 +765,22 @@ class graphimportSTAR:
                 return
 
         # Fish out the other person(s) with whom identity is being asserted
+        sparql = ''
         assertions = []
-        for otherperson in factoid.referents():
+        for i, otherperson in enumerate(factoid.referents()):
             if otherperson.name in ['Anonymi', 'Anonymae']:
                 print(f"Skipping group membership for uncertain identity in factoid {factoid.factoidKey}: {factoid.replace_referents()}")
                 return
-            othergraph = self.find_or_create_pbwperson(otherperson)
-            a1, sparql = self.create_assertion_sparql('a1', 'ID8', graphperson, othergraph, c.pbw_agent)
+            graphother = self.find_or_create_pbwperson(otherperson)
+            a, sparql_part = self.create_assertion_sparql(f"a{i}", 'ID8', graphperson, graphother, c.pbw_agent)
+            sparql += sparql_part
             # Mark it as a suggestion rather than a full-on assertion
-            sparql += f"    {a1.n3()} a {c.get_label('S5')} .\n"
-            c.update(sparql)
-            assertions.append(a1)
+            sparql += f"    {a.n3()} a {c.get_label('S5')} .\n"
+            assertions.append(a)
 
         if len(assertions):
-            # Mark the uncertainty
-            c.document(pbwdoc, *assertions)
+            # Add them to the graph
+            c.update(sparql, pbwdoc, *assertions)
 
     def appellation_handler(self, sourcenode, agent, factoid, graphperson):
         """This handler deals with Second Name factoids and also Alternative Name factoids.
@@ -831,7 +834,7 @@ class graphimportSTAR:
                 olang = _get_source_lang(factoid) or 'grc'
             print("Adding second name %s (%s '%s')" % (name_en, olang, name_ol))
 
-        appel_uri = c.make_uri('appellation', str(graphperson), str(agent), name_ol)
+        appel_uri = c.make_uri(c.entitylabels['E33A'], name_ol, name_en)
         sparql = f"""    {appel_uri.n3()} {c.get_label('P190')} {Literal(name_ol, olang).n3()} ;
             {c.get_label('P190')} {Literal(name_en, 'en').n3()} ;
             a {c.get_label('E33A')} .\n"""
@@ -855,7 +858,6 @@ class graphimportSTAR:
         # proxies for the death event as necessary.
         c = self.constants
         pbwdoc = c.pbw_uri(factoid)
-        assertions_created = []
 
         # Create the new assertion that says the death happened. Start by gathering all our existing
         # nodes and reified predicates:
@@ -873,40 +875,53 @@ class graphimportSTAR:
 
         # Set up the death event with a deterministic URI. We take for granted that every 11th-c.
         # person has exactly one death.
+        # For ease of understanding we also give the death event a label with the person's PBW identifier.
         death_event_uri = c.make_uri(str(graphperson), 'death')
-        a0, sparql_a0 = self.create_assertion_sparql('death event', 'P100', death_event_uri,
-                                                      graphperson, c.pbw_agent)
-        sparql_event = f"    {death_event_uri.n3()} a {c.get_label('E69')} .\n" + sparql_a0
-        c.update(sparql_event, pbwdoc, a0)
-        assertions_created.extend([a0])
-        deathevent = death_event_uri
-        # For ease of understanding we should give the death event a label with the person's PBW identifier.
-        # Add the label if it doesn't already exist, in a backwards-compatible way
         pbwperson = factoid.main_person()[0]
-        person_pbwid = f"{pbwperson.name} {pbwperson.mdbCode}"
-        if c.graph.value(deathevent, c.predicates['P3']) is None:
-            c.graph.add((deathevent, c.predicates['P3'], Literal("Death event for " + person_pbwid)))
+        death_event_label = f"Death of {pbwperson.name} {pbwperson.mdbCode}, {pbwperson.descName}"
+        deathof_uri = c.make_uri(c.get_assertion_for_predicate('P100'), death_event_uri, graphperson)
+        # Since there is no authority, we don't use create_assertion_sparql
+        sparql_event = f"""    {death_event_uri.n3()} a {c.get_label('E69')} ;
+        {c.label_n3} {Literal(death_event_label).n3()} .
+    {deathof_uri.n3()} {c.star_subject} {death_event_uri.n3()} ;
+        {c.star_object} {graphperson.n3()} .\n"""
+        assertions_created = [deathof_uri]
+        deathevent = death_event_uri
 
         # Get the description of the death in English and the original language
         olang = _get_source_lang(factoid) or 'grc'
         descriptions = [Literal(factoid.replace_referents(), 'en'), Literal(factoid.origLDesc, olang)]
-        a1, sparql_desc = self.create_assertion_sparql('a1', 'P3', deathevent, descriptions, agent, sourcenode)
+        desc_e33_uri = c.make_uri(sourcenode, factoid.replace_referents(), agent)
+        a1, sparql_desc = self.create_assertion_sparql('a1', 'P67', deathevent, desc_e33_uri, agent, sourcenode)
+        assertions_created.append(a1)
+        sparql_desc += f"""    {desc_e33_uri.n3()} a {c.get_label('E33')} ;
+        {c.get_label('P190')} {descriptions[0].n3()} ;
+        {c.get_label('P190')} {descriptions[1].n3()} .\n"""
 
         # See if the death is dated and, if so, add the date
         deathdate = factoid.deathRecord.sourceDate
-        a2 = None
         sparql_date = ""
         if deathdate:
-            deathdate_uri = c.make_uri('deathdate', str(deathevent))
-            sparql_date = f"""    {deathdate_uri.n3()} a {c.get_label('E52')} ;
-        {c.get_label('P80')} {Literal(deathdate).n3()} .\n"""
-            a2, sparql_date2 = self.create_assertion_sparql('a2', 'P4', deathevent, deathdate_uri,
-                                                             agent, sourcenode)
-            sparql_date += sparql_date2
+            deathdate_uri = c.make_uri(c.entitylabels['E52'], deathdate, str(deathevent))
+            a2, sparql_date = self.create_assertion_sparql('a2', 'P4', deathevent, deathdate_uri,
+                                                            agent, sourcenode)
+            assertions_created.append(a2)
 
-        factoid_assertions = [x for x in [a1, a2] if x is not None]
-        c.update(sparql_desc + sparql_date, pbwdoc, *factoid_assertions)
-        assertions_created.extend(factoid_assertions)
+            # The "deathdate" is a string description of the time period.
+            # If it says "after" something, then it qualifies the beginning (P79);
+            # if it says "before" something, then it qualifies the end (P80).
+            # If it doesn't say either, then we assume it qualifies the beginning and the end.
+            date_preds = ['P79', 'P80']
+            if 'after' in deathdate:
+                date_preds.remove('P80')
+            elif 'before' in deathdate:
+                date_preds.remove('P79')
+            sparql_parts = [f"    {deathdate_uri.n3()} a {c.get_label('E52')}"]
+            for dp in date_preds:
+                sparql_parts.append(f"        {c.get_label(dp)} {Literal(deathdate).n3()}")
+            sparql_date += " ;\n".join(sparql_parts) + " .\n"
+
+        c.update(sparql_event + sparql_desc + sparql_date, pbwdoc, *assertions_created)
         return assertions_created
 
     def ethnicity_handler(self, sourcenode, agent, factoid, graphperson):
@@ -923,7 +938,7 @@ class graphimportSTAR:
         return c.update(sparql, pbwdoc, a1)
 
     # Helper to create the assertions for our various social designation groups
-    def _find_or_create_social_designation(self, sourcenode, agent, factoid, graphperson, des, label, whopred,
+    def _find_or_create_social_designation(self, sourcenode, agent, factoid, graphperson, des, eclass, whopred,
                                            whichpred):
         # (grouping:label) [:whopred] person
         # (grouping) [:whichpred] rnode
@@ -932,10 +947,10 @@ class graphimportSTAR:
         # We will sometimes have duplicate assertions originating from different geographic
         # scopes, which we have chopped off in the title name. For now we keep these duplicate.
         # TODO we should add the geographic scopes to these when we can...
-        des_uri = c.make_uri('social designation', str(graphperson), str(des), str(pbwdoc))
+        des_uri = c.make_uri(eclass, str(graphperson), str(des), str(pbwdoc))
         a1, sparql_a1 = self.create_assertion_sparql('a1', whopred, des_uri, graphperson, agent, sourcenode)
         a2, sparql_a2 = self.create_assertion_sparql('a2', whichpred, des_uri, des, agent, sourcenode)
-        sparql = f"    {des_uri.n3()} a {label} .\n"
+        sparql = f"    {des_uri.n3()} a {eclass.n3()} .\n"
         sparql += sparql_a1 + sparql_a2
 
         # Document it in either case as coming from this factoid
@@ -954,18 +969,18 @@ class graphimportSTAR:
         # (r:C23 Religious identity) [rwho:P36 pertains to] person
         # (r:C23 Religious identity) [rwhich:P35 is defined by] rnode
         return self._find_or_create_social_designation(sourcenode, agent, factoid, graphperson, relid,
-                                                self.constants.get_label('C23'), 'SP36', 'SP35')
+                                                self.constants.entitylabels['C23'], 'SP36', 'SP35')
 
     def societyrole_handler(self, sourcenode, agent, factoid, graphperson):
         if factoid.occupation is None:
             return None
         roleid, roleclass = self.constants.get_societyrole(factoid.occupation)
-        roletype = self.constants.get_label('C1')
+        roletype = self.constants.entitylabels['C1']
         whopred = 'SP13'
         whichpred = 'SP14'
         if roleclass == self.constants.get_label('C12'):
             # We need to treat it as a legal role instead of a social role / occupation
-            roletype = self.constants.get_label('C13')
+            roletype = self.constants.entitylabels['C13']
             whopred = 'SP26'
             whichpred = 'SP33'
         # (r:C1 Social Quality of an Actor) [rwho:P13 pertains to] person
@@ -977,12 +992,12 @@ class graphimportSTAR:
         if factoid.dignityOffice is None:
             return None
         dignity_id, dignity_class = self.constants.get_dignity(factoid.dignityOffice.stdName)
-        roletype = self.constants.get_label('C13')
+        roletype = self.constants.entitylabels['C13']
         whopred = 'SP26'
         whichpred = 'SP33'
         if dignity_class == self.constants.get_label('C2'):
             # We need to treat it as a social instead of a legal role
-            roletype = self.constants.get_label('C1')
+            roletype = self.constants.entitylabels['C1']
             whopred = 'SP13'
             whichpred = 'SP14'
         # We treat (most) dignities as legal roles
@@ -1002,7 +1017,7 @@ class graphimportSTAR:
         # This doesn't chain quite the same way as the others do
         # person [rwho:P38 has skill] (r:C21 Skill)
         # (r:C21 Skill) [rwhich:P37 concerns] (l:C29 Know-How)
-        lskill_uri = c.make_uri('language skill', str(graphperson), str(lkhid))
+        lskill_uri = c.make_uri(c.entitylabels['C21'], str(graphperson), str(lkhid), str(pbwdoc))
         a1, sparql_a1 = self.create_assertion_sparql('a1', 'SP38', graphperson, lskill_uri, agent, sourcenode)
         a2, sparql_a2 = self.create_assertion_sparql('a2', 'SP37', lskill_uri, lkhid, agent, sourcenode)
         sparql = f"    {lskill_uri.n3()} a {c.get_label('C21')} .\n"
@@ -1023,34 +1038,13 @@ class graphimportSTAR:
         loc_ent = self.find_or_create_location(factoid.locationInfo.location)
         # Now connect the person to the location via the extremely generic 'event', as that is all PBW gives us
         # Label the event with the factoid key for easier resolution from the spreadsheets later
-        locevent_uri = c.make_uri('location event', str(graphperson), str(loc_ent), str(agent), str(sourcenode))
+        locevent_uri = c.make_uri(c.entitylabels['E5'], str(graphperson), str(loc_ent), str(agent), str(sourcenode))
         lfactlabel = Literal(f"Location event for factoid {factoid.factoidKey}")
         sparql = f"    {locevent_uri.n3()} {c.label_n3} {lfactlabel.n3()} ;\n        a {c.get_label('E5')} .\n"
         a1, sparql_a1 = self.create_assertion_sparql('a1', 'P7', locevent_uri, loc_ent, agent, sourcenode)
         a2, sparql_a2 = self.create_assertion_sparql('a2', 'P11', locevent_uri, graphperson, agent, sourcenode)
         sparql += sparql_a1 + sparql_a2
         return c.update(sparql, pbwdoc, a1, a2)
-
-    def _find_kinship(self, graphperson, graphkin):
-        # See if there is an existing kinship group of any sort with the person as source and their
-        # kin as target. If not, return a new (not yet connected) C3 Social Relationship node.
-        c = self.constants
-        # The pattern to match. TODO maybe we want to add the kinship type to this search pattern?
-        sparql_check = f"""select distinct ?kstate where {{
-        ?a1 {c.star_object} {graphperson.n3()} ;
-            a {c.get_assertion_for_predicate('SP17')} ;
-            {c.star_subject} ?kstate .
-        ?a2 {c.star_object} {graphkin.n3()} ;
-            {c.star_subject} ?kstate ;
-            a {c.get_assertion_for_predicate('SP18')} .
-        ?kstate a {c.get_label('C3')} .}}
-"""
-        res = self.g.query(sparql_check)
-        if len(res):
-            # We found a kinship between these two people. Return it
-            return _get_single_key(res, 'kstate')
-        else:
-            return None
 
     def kinship_handler(self, sourcenode, agent, factoid, graphperson):
         # These are social relationships as opposed to social roles, so they need a partner.
@@ -1092,7 +1086,7 @@ class graphimportSTAR:
         pbwdoc = c.pbw_uri(factoid)
 
         # Give the possession its description, which comes out of the factoid's engDesc
-        possession_uri = c.make_uri('possession', str(graphperson), str(agent), str(sourcenode))
+        possession_uri = c.make_uri(c.entitylabels['E18'], str(graphperson), str(agent), str(sourcenode))
         sparql = f"""    {possession_uri.n3()} {c.label_n3} {Literal(factoid.replace_referents()).n3()} ;
             a {c.get_label('E18')} .\n"""
         # Assert ownership of the possession
@@ -1191,7 +1185,7 @@ class graphimportSTAR:
                         continue
 
                     # First get the timestamp on the factoid. Deterministic URI so the same date reuses the same node.
-                    factoid_ts = c.make_uri('timestamp', str(f.creationDate))
+                    factoid_ts = c.make_uri(c.entitylabels['E52'], str(f.creationDate))
                     ts_sparql = f"    {factoid_ts.n3()} a {c.get_label('E52')} ; {c.get_label('P82b')} {Literal(f.creationDate).n3()} .\n"
                     c.update(ts_sparql)
 
@@ -1268,11 +1262,15 @@ class graphimportSTAR:
                         print(f"Restart with the arguments: -r '{person_pbwstr}' -x '{self.constants.swrun}'")
                         exit(1)
                     else:
-                        if isinstance(e, URLError):
-                            if e.code > 399 and e.code < 500:
+                        if isinstance(e, HTTPError):
+                            if 399 < e.code < 500:
                                 traceback.print_exc()
-                                print(f"Obtained 4xx error; check your SPARQL!")
-                                raise e
+                                print(f"Obtained 4xx error; check your SPARQL!", file=sys.stderr)
+                                print(f"Process started at {self.starttime} and ending at {datetime.now()}.",
+                                      file=sys.stderr)
+                                print(f"Restart with the arguments: -r '{person_pbwstr}' -x '{self.constants.swrun}'",
+                                      file=sys.stderr)
+                                exit(1)
                             print(f"Obtained URLerror {e.reason}; will retry")
                         else:
                             print(f"Persistent connection error {e}; will retry")
