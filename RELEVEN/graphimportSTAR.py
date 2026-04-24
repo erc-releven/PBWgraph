@@ -186,7 +186,7 @@ class graphimportSTAR:
 """
         # and add the source, if it is given.
         if src is not None:
-            sparql += f"\n        {src.n3()} {c.star_src} {assertion_uri.n3()} . "
+            sparql += f"    {src.n3()} {c.star_src} {assertion_uri.n3()} . \n"
 
         # All done.
         return assertion_uri, sparql
@@ -884,30 +884,39 @@ class graphimportSTAR:
         sparql_event = f"""    {death_event_uri.n3()} a {c.get_label('E69')} ;
         {c.label_n3} {Literal(death_event_label).n3()} .
     {deathof_uri.n3()} {c.star_subject} {death_event_uri.n3()} ;
-        {c.star_object} {graphperson.n3()} .\n"""
+        {c.star_object} {graphperson.n3()} ;
+        a {c.get_assertion_for_predicate('P100')}.\n"""
         assertions_created = [deathof_uri]
         deathevent = death_event_uri
 
-        # Get the description of the death in English and the original language
+        # Get the description of the death in English and the original language, if applicable
         olang = _get_source_lang(factoid) or 'grc'
-        descriptions = [Literal(factoid.replace_referents(), 'en'), Literal(factoid.origLDesc, olang)]
-        desc_e33_uri = c.make_uri(sourcenode, factoid.replace_referents(), agent)
-        a1, sparql_desc = self.create_assertion_sparql('a1', 'P67', deathevent, desc_e33_uri, agent, sourcenode)
-        assertions_created.append(a1)
-        sparql_desc += f"""    {desc_e33_uri.n3()} a {c.get_label('E33')} ;
-        {c.get_label('P190')} {descriptions[0].n3()} ;
-        {c.get_label('P190')} {descriptions[1].n3()} .\n"""
+        descriptions = [Literal(factoid.replace_referents(), 'en')]
+        if len(factoid.origLDesc):
+            descriptions.append(Literal(factoid.origLDesc, olang))
+        desc_lines = ' ; '.join([f"{c.get_label('P190')} {x.n3()}" for x in descriptions])
 
-        # See if the death is dated and, if so, add the date
+        # Assert the description(s) that we found
+        desc_e33_uri = c.make_uri(sourcenode, factoid.replace_referents(), agent)
+        a1, sparql_desc = self.create_assertion_sparql('a1', 'P67', desc_e33_uri, deathevent, agent, sourcenode)
+        assertions_created.append(a1)
+        # Add the description content
+        sparql_desc += f"    {desc_e33_uri.n3()} a {c.get_label('E33')} ; {desc_lines} .\n"
+
+        # See if the death is dated and, if so, add the date.
         deathdate = factoid.deathRecord.sourceDate
         sparql_date = ""
         if deathdate:
             deathdate_uri = c.make_uri(c.entitylabels['E52'], deathdate, str(deathevent))
+            # The date is actually asserted by the PBW editor for the factoid, based on the source but documented
+            # in the factoid record!
+            pbw_ed = self.get_viaf_agent_node(c.authorities(c.source(factoid)))
             a2, sparql_date = self.create_assertion_sparql('a2', 'P4', deathevent, deathdate_uri,
-                                                            agent, sourcenode)
+                                                            pbw_ed, pbwdoc, sourcenode)
             assertions_created.append(a2)
 
-            # The "deathdate" is a string description of the time period.
+            # Add the date content.
+            # The "deathdate" is a string description of when the death happened.
             # If it says "after" something, then it qualifies the beginning (P79);
             # if it says "before" something, then it qualifies the end (P80).
             # If it doesn't say either, then we assume it qualifies the beginning and the end.

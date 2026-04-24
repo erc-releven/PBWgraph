@@ -292,6 +292,7 @@ class PBWstarConstants:
             self.label_n3 = self.entity_label.n3(self.graph.namespace_manager)
             self.link_n3 = self.entity_link.n3(self.graph.namespace_manager)
             if not self.readonly:
+                # noinspection PyBroadException
                 try:
                     print("Setting up software execution run...")
                     # Ensure the existence of the software metadata
