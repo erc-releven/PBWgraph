@@ -21,7 +21,7 @@ def add_viewpoint_structures(c):
     res = c.graph.query(expression_sparql)
     for row in res:
         # The viewpoints will be named after the last component of the expression's URI
-        expressions[row['expression']] = {'tag': row['expression'].split('-')[-1],
+        expressions[row['expression']] = {'tag': row['expression'].split('/')[-1],
                                           'author': row['author'],
                                           'label': row['label']}
 
