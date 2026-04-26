@@ -440,7 +440,7 @@ class PBWstarConstants:
         return self.sourcelist.sourceref(factoid.source, factoid.sourceRef)
 
     def composite_source(self, a):
-        return self.sourcelist.get_composite_bibstring(a)
+        return self.sourcelist.composite_bibs.get(a)
 
     def get_label(self, lbl):
         """Return the namespaced entity (class) or predicate string given the short name.

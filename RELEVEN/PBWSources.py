@@ -217,7 +217,7 @@ class PBWSources:
         }
         # These are our composite sources; we will have to store a function for each which takes a
         # reference string and returns the right source part.
-        self.composites = {
+        self.composite_parsers = {
             'Alexios Stoudites': lambda x: self.ref_substring(x, 'Alexios Stoudites',
                                                               self.stripped['Alexios Stoudites']),
             'Docheiariou': lambda x: self.page_to_key(x, 'Docheiariou'),
@@ -267,16 +267,26 @@ class PBWSources:
         self.authorities['matthew'] = {'identifier': 'Matthew of Edessa', 'viaf': '67980167'}
         self.authorities['michael'] = {'identifier': 'Michael I, Syrian Orthodox Patriarch of Antioch',
                                        'viaf': '12704144'}
+
+        self.composite_bibs = dict()
         with open(csvfile, encoding='utf-8', newline='') as fh:
             reader = csv.DictReader(fh)
             for row in reader:
                 # Make an object for the source information
                 source_id = row['PBW Source ID']
+                source_analyst = row['PBW editor']
+                if source_analyst == 'pbw' and source_id in self.composite_parsers.keys():
+                    # Just save the bibliography string.
+                    self.composite_bibs[source_id] = row['Source edition used']
+                    continue
+                elif source_analyst == 'pbw':
+                    warn(f"Generic pbw editor listed for a source not known as composite: {source_id}")
+                    continue
                 source_data = dict()
                 add_authors(source_data, source_id, row['Author(ity)'], self.authorities)
                 add_provenance(source_data, source_id, row['Evidence of authorship'])
                 try:
-                    add_pbw_authorities(source_data, row['PBW editor'], self.authorities)
+                    add_pbw_authorities(source_data, source_analyst, self.authorities)
                 except KeyError:
                     # We don't yet have a hardcoded entry for this authority
                     warn(f"Skipping source '{source_id}' due to unknown PBW authority")
@@ -292,8 +302,8 @@ class PBWSources:
     def key_for(self, source, refstring):
         if source in self.sourcelist:
             return source
-        if source in self.composites:
-            key = self.composites[source](refstring)
+        if source in self.composite_parsers:
+            key = self.composite_parsers[source](refstring)
             if key is None:
                 key = 'OUT_OF_SCOPE'
             return key
@@ -301,29 +311,6 @@ class PBWSources:
 
     def get(self, source):
         return self.sourcelist.get(source)
-
-    def get_composite_bibstring(self, composite_key):
-        """Return what, as best we can figure, is the GCD bibliographic string for a particular composite key."""
-        if composite_key not in self.composites:
-            return None
-        bibstring = None
-        for k, v in self.sourcelist.items():
-            if k.startswith(composite_key):
-                if bibstring:
-                    part_bibstring = v.get('expression')
-                    new_bibstring = ''
-                    for i, c in enumerate(bibstring):
-                        if i < len(part_bibstring) and part_bibstring[i] == c:
-                            new_bibstring += c
-                        else:
-                            break
-                    bibstring = re.sub(r'[,;.]$', '', new_bibstring.strip())
-                    if len(bibstring) == 0:
-                        # We wore it away to nothing.
-                        return None
-                else:
-                    bibstring = v.get('expression')
-        return bibstring
 
     def sourceref(self, source, refstring):
         """Return the source reference, modified to account for our aggregate sources."""

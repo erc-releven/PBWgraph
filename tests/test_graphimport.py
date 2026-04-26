@@ -618,7 +618,7 @@ class GraphImportTests(unittest.TestCase):
 
     source_composites = {
         'Iveron': {
-            'citation': 'Actes d’Iviron II, Actes de l’Athos XVI, Paris 1990',
+            'citation': 'Actes d’Iviron, Actes de l’Athos XIV and XVI, Paris 1985-1990',
             'components': ['Iveron 28']},
         'Kleinchroniken': {
             'citation': 'Die byzantinischen Kleinchroniken, 3 vols., Vienna 1975-1979',
@@ -1306,8 +1306,34 @@ select ?pbwed (count(?passage) as ?pct) where {{
                 self.assertGreaterEqual(row['pct'].toPython(), sinfo.get('passages'))
 
     def test_text_composites(self):
-        """Check that the two PBW composite sources in the test data were set up correctly."""
-        pass
+        """Check that the PBW composite sources in the test data were set up correctly."""
+        c = self.constants
+        for ckey, cinfo in self.source_composites.items():
+            # Check that the composite source exists and is connected to only its components.
+            sparql = f"""
+    select ?things where {{
+        ?c a {c.get_label('F2P')} ;
+           {c.label_n3} {Literal(cinfo['citation']).n3()} .
+        ?cid a {c.get_label('E15')} ;
+             {c.star_subject} ?c ;
+             {c.star_auth} {c.pbw_agent.n3()} ;
+             {c.get_label('P37')} [ a {c.get_label('E42')} ; {c.get_label('P190')} {Literal(ckey).n3()} ] .
+        ?link a {c.get_assertion_for_predicate('R5')} ;
+              {c.star_subject} ?c ;
+              {c.star_object} ?part ;
+              {c.star_auth} {c.r11_agent.n3()} ;
+              {c.star_based} ?c .
+        ?partid a {c.get_label('E15')} ;
+                {c.star_subject} ?part ;
+                {c.star_auth} {c.r11_agent.n3()} ;
+                {c.get_label('P37')} [ a {c.get_label('E42')} ; {c.get_label('P190')} ?things ] .
+    }}
+"""
+            composite_links = [row for row in c.graph.query(sparql)]
+            self.assertEqual(len(cinfo['components']), len(composite_links))
+            for row in composite_links:
+                self.assertIn(row['things'].toPython(), cinfo['components'])
+
 
     def test_readings(self):
         """Check that the CRMinf structures for interpretative readings are set up correctly."""
@@ -1315,6 +1341,7 @@ select ?pbwed (count(?passage) as ?pct) where {{
         # First make sure that the assertion types without interpretative reading shouldn't have them
         exempt = [c.get_assertion_for_predicate(x) for x in ('P41', 'P42',  # gender, no explicit editor
                                                              'P1',  # identifier, no explicit editor
+                                                             'R5',  # links to composite sources
                                                              'L1', 'P46', 'P128',  # setting up boulloteria
                                                              'P14', 'R15', 'R17', 'R76',  # setting up text  metadata
                                                              'ID7',  # mapping to external ID, no explicit source

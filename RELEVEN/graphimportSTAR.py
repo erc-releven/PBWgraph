@@ -396,10 +396,10 @@ class graphimportSTAR:
             agent = self.constants.pbw_agent
         if author:
             return author
-        print("No author given for source %s; using edition editor" % fsource)
+        # print("No author given for source %s; using edition editor" % fsource)
         if editor:
             return editor
-        print("...no editor either! Using PBW authority")
+        print(f"No author nor editor listed for source {fsource}. Using PBW authority")
         return agent
 
     def get_text_sourceref(self, factoid):
@@ -581,7 +581,7 @@ class graphimportSTAR:
         denote a single publication."""
         c = self.constants
         # Don't bother with these
-        if pbw_id_string in ['Alexios Stoudites', 'Eustathios Romaios', 'Nea Mone', 'Psellos']:
+        if pbw_id_string in ['Alexios Stoudites', 'Eustathios Romaios', 'Nea Mone,', 'Psellos']:
             return
         # Warn if we don't get a bibliography string for the composite
         composite_bibstring = c.composite_source(pbw_id_string)
@@ -844,7 +844,7 @@ class graphimportSTAR:
                 name_en = factoid.engDesc
                 name_ol = factoid.origLDesc
                 olang = _get_source_lang(factoid) or 'grc'
-            print("Adding second name %s (%s '%s')" % (name_en, olang, name_ol))
+            # print("Adding second name %s (%s '%s')" % (name_en, olang, name_ol))
 
         appel_uri = c.make_uri(c.entitylabels['E33A'], name_ol, name_en)
         sparql = f"""    {appel_uri.n3()} {c.get_label('P190')} {Literal(name_ol, olang).n3()} ;
@@ -1142,7 +1142,7 @@ class graphimportSTAR:
             print(f"...adding {len(info['parts'])} publication parts to {key}")
             for i, pubpart in enumerate(info['parts']):
                 # Assert that we say the part is part of the whole
-                a, sparql_a = self.create_assertion_sparql(f'a{i}', 'R5', composite_uri, pubpart, c.r11_agent, composite_uri)
+                a, sparql_a = self.create_assertion_sparql(f'a{i}', 'R5', composite_uri, pubpart, c.r11_agent, based=composite_uri)
                 asserted.append(a)
                 sparql += sparql_a
             c.update(sparql, URIRef('https://pbw2016.kdl.kcl.ac.uk/ref/sources/'), *asserted)
@@ -1330,11 +1330,14 @@ class graphimportSTAR:
                     self._print_restart_line(person_pbwstr)
                     raise e
 
-        # Make a pass through the authored sources and add viewpoints for all of them
-        RELEVEN.author_viewpoints.add_viewpoint_structures(self.constants)
+
 
         try:
+            # Make a pass through the authored sources and add viewpoints for all of them
+            RELEVEN.author_viewpoints.add_viewpoint_structures(self.constants)
+            # Record all the composite sources we pulled information from
             self.record_pbw_composite_sources()
+            # Link the assertions that were created to this run of the script
             self.record_assertion_factoids()
         except Exception as e:
             self._print_restart_line(file=sys.stderr)
