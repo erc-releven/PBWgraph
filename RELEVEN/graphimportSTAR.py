@@ -128,6 +128,7 @@ class graphimportSTAR:
         self.resolved_locations = dict()
         self.resolved_boulloteria = dict()
         self.resolved_publications = dict()
+        self.pbw_composites = dict()
 
     def _urify(self, label):
         """Utility function to turn STAR predicates into real URIref objects"""
@@ -454,33 +455,27 @@ class graphimportSTAR:
 
         # Deterministic URIs for the publication and its identifier assignment
         publ_uri = c.make_uri(c.entitylabels['F2P'], edition_id, 'https://r11.eu/')
-        # The same PBW identifier (e.g. 'Psellos') might be used for multiple of our publication objects.
-        # We tie them together with a single E15 assignment event.
-        pub_pbw_e42 = c.make_uri(c.entitylabels['E42'], orig_sourcekey, str(c.pbw_agent))
-        pub_pbw_e15 = c.make_uri(c.entitylabels['E15'], orig_sourcekey, str(c.pbw_agent))
-        real_assertions = [pub_pbw_e15]
+        if orig_sourcekey == sourcekey:
+            # If we haven't changed the sourcekey, the identifier for this edition comes from PBW.
+            pub_agent = c.pbw_agent
+        else:
+            # If we did change the sourcekey, the identifier for this edition comes from us *and*
+            # we are going to need to add the PBW source that this is a part of.
+            pub_agent = c.r11_agent
+            self._track_pbw_orig_source(orig_sourcekey, publ_uri)
 
-        sparql = f"""    {pub_pbw_e42.n3()} {c.get_label('P190')} {Literal(orig_sourcekey).n3()} ;
+        # Whatever the case, make the identifier for this particular source.
+        pub_e42 = c.make_uri(c.entitylabels['E42'], sourcekey, pub_agent)
+        pub_e15 = c.make_uri(c.entitylabels['E15'], sourcekey, pub_agent)
+        sparql = f"""    {pub_e42.n3()} {c.get_label('P190')} {Literal(sourcekey).n3()} ;
         a {c.get_label('E42')} .
     {publ_uri.n3()} {c.label_n3} {Literal(edition_id).n3()} ;
         a {c.get_label('F2P')} .
-    {pub_pbw_e15.n3()} {c.star_subject} {publ_uri.n3()} ;
-        {c.get_label('P37')} {pub_pbw_e42.n3()} ;
-        {c.star_auth} {c.pbw_agent.n3()} ;
+    {pub_e15.n3()} {c.star_subject} {publ_uri.n3()} ;
+        {c.get_label('P37')} {pub_e42.n3()} ;
+        {c.star_auth} {pub_agent.n3()} ;
         a {c.get_label('E15')} .\n"""
-
-        # If we modified the identifier, record that too
-        if orig_sourcekey != sourcekey:
-            pub_r11_e42 = c.make_uri(c.entitylabels['E42'], sourcekey, str(c.r11_agent))
-            pub_r11_e15 = c.make_uri(c.entitylabels['E15'], sourcekey, str(c.r11_agent))
-            real_assertions.append(pub_r11_e15)
-
-            sparql += f"""    {pub_r11_e42.n3()} {c.get_label('P190')} {Literal(sourcekey).n3()} ;
-        a {c.get_label('E42')} .
-    {pub_r11_e15.n3()} {c.star_subject} {publ_uri.n3()} ;
-        {c.get_label('P37')} {pub_r11_e42.n3()} ;
-        {c.star_auth} {c.r11_agent.n3()} ;
-        a {c.get_label('E15')} .\n"""
+        real_assertions = [pub_e15]
 
         if text_id is None:
             # We are dealing with a secondary source. Assert a publication creation instead of a
@@ -580,6 +575,23 @@ class graphimportSTAR:
             c.update(sparql, None, *real_assertions)
         self.resolved_publications[edition_id] = publ_uri
         return publ_uri
+
+    def _track_pbw_orig_source(self, pbw_id_string, part_uri):
+        """Initialise or update a PBW source that we split up. Exclude the PBW 'sources' that don't actually
+        denote a single publication."""
+        c = self.constants
+        # Don't bother with these
+        if pbw_id_string in ['Alexios Stoudites', 'Eustathios Romaios', 'Nea Mone', 'Psellos']:
+            return
+        # Warn if we don't get a bibliography string for the composite
+        composite_bibstring = c.composite_source(pbw_id_string)
+        if composite_bibstring is None:
+            warn(f"Unable to find composite bibliography string for PBW source {pbw_id_string}")
+        # Make a note of it
+        if pbw_id_string not in self.pbw_composites:
+            self.pbw_composites[pbw_id_string] = {'parts': [part_uri], 'citation': composite_bibstring}
+        else:
+            self.pbw_composites[pbw_id_string]['parts'].append(part_uri)
 
     def _find_or_create_identified_entity(self, etype, agent, identifier, dname):
         """Return an identified entity URIRef. This can be a Boulloterion (E22 subclass) or an E21 Person
@@ -1106,6 +1118,35 @@ class graphimportSTAR:
             sparql += f"    {a1.n3()} {c.get_label('P3')} {Literal(factoid.possession).n3()} .\n"
         return c.update(sparql, pbwdoc, a1)
 
+    def record_pbw_composite_sources(self):
+        """To be run after most other things are done. Creates the composite source for each PBW source
+        that we split up, and adds the E15/E42 identifier to that source as well as the links to its parts."""
+        c = self.constants
+        for key, info in self.pbw_composites.items():
+            print(f"Creating composite PBW source for {key}")
+            # Make the items
+            composite_uri = c.make_uri(c.entitylabels['F2P'], info['citation'], c.pbw_agent)
+            pbw_e15 = c.make_uri(c.entitylabels['E15'], key, c.pbw_agent)
+            pbw_e42 = c.make_uri(c.entitylabels['E42'], key, c.pbw_agent)
+            asserted = [pbw_e15]
+            # Make the assertions
+            sparql = f"""    {composite_uri.n3()} a {c.get_label('F2P')} ;
+        {c.label_n3} {Literal(info['citation']).n3()} .
+    {pbw_e42.n3()} a {c.get_label('E42')} ; 
+        {c.get_label('P190')} {Literal(key).n3()} .
+    {pbw_e15.n3()} a {c.get_label('E15')} ;
+        {c.star_subject} {composite_uri.n3()} ;
+        {c.get_label('P37')} {pbw_e42.n3()} ;
+        {c.star_auth} {c.pbw_agent.n3()} .
+"""
+            print(f"...adding {len(info['parts'])} publication parts to {key}")
+            for i, pubpart in enumerate(info['parts']):
+                # Assert that we say the part is part of the whole
+                a, sparql_a = self.create_assertion_sparql(f'a{i}', 'R5', composite_uri, pubpart, c.r11_agent, composite_uri)
+                asserted.append(a)
+                sparql += sparql_a
+            c.update(sparql, URIRef('https://pbw2016.kdl.kcl.ac.uk/ref/sources/'), *asserted)
+
     def record_assertion_factoids(self):
         """To be run after everything else is done. Creates the assertion record for all assertions created here,
         tying each to the factoid or person record that originated it and tying all the assertion records to the
@@ -1267,17 +1308,18 @@ class graphimportSTAR:
                             print(f"Persistent URLerror {e.reason}.")
                         else:
                             print(f"Persistent connection error {e}.")
-                        print(f"Process started at {self.starttime} and ending at {datetime.now()}.")
-                        print(f"Restart with the arguments: -r '{person_pbwstr}' -x '{self.constants.swrun}'")
+                        self._print_restart_line(person_pbwstr)
                         exit(1)
                     else:
                         if isinstance(e, HTTPError):
                             if 399 < e.code < 500:
                                 traceback.print_exc()
                                 print(f"Obtained 4xx error; check your SPARQL!", file=sys.stderr)
+                                self._print_restart_line(person_pbwstr, sys.stderr)
+                                exit(1)
                                 print(f"Process started at {self.starttime} and ending at {datetime.now()}.",
                                       file=sys.stderr)
-                                print(f"Restart with the arguments: -r '{person_pbwstr}' -x '{self.constants.swrun}'",
+                                print(f'Restart with the arguments: -r "{person_pbwstr}" -x "{self.constants.swrun}"',
                                       file=sys.stderr)
                                 exit(1)
                             print(f"Obtained URLerror {e.reason}; will retry")
@@ -1285,17 +1327,29 @@ class graphimportSTAR:
                             print(f"Persistent connection error {e}; will retry")
                         sleep(attempt * 30)
                 except Exception as e:
-                    print(f"Process started at {self.starttime} and ending at {datetime.now()}.")
-                    print(f"Restart with the arguments: -r '{person_pbwstr}' -x '{self.constants.swrun}'")
+                    self._print_restart_line(person_pbwstr)
                     raise e
 
         # Make a pass through the authored sources and add viewpoints for all of them
         RELEVEN.author_viewpoints.add_viewpoint_structures(self.constants)
 
-        self.record_assertion_factoids()
+        try:
+            self.record_pbw_composite_sources()
+            self.record_assertion_factoids()
+        except Exception as e:
+            self._print_restart_line(file=sys.stderr)
+            raise e
         print(f"Processed {processed} person records.")
         print(f"Used the following sources: {sorted(used_sources)}")
         print(f"Used the following boulloterion IDs: {sorted(boulloteria)}")
+
+    def _print_restart_line(self, person_pbwstr=None, file=sys.stdout):
+        restart_args = f'-x "{self.constants.swrun}"'
+        if person_pbwstr is not None:
+            restart_args += f' -r "{person_pbwstr}"'
+        print(f'Process started at {self.starttime} and ending at {datetime.now()}.', file=file)
+        print(f'Restart with the arguments: {restart_args}"', file=file)
+
 
 
 # If we are running as main, execute the script

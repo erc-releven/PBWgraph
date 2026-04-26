@@ -439,6 +439,9 @@ class PBWstarConstants:
         """Return the source reference, modified to account for our aggregate sources."""
         return self.sourcelist.sourceref(factoid.source, factoid.sourceRef)
 
+    def composite_source(self, a):
+        return self.sourcelist.get_composite_bibstring(a)
+
     def get_label(self, lbl):
         """Return the namespaced entity (class) or predicate string given the short name.
         We want this to throw an exception if nothing is found."""

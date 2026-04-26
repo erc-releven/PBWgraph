@@ -616,6 +616,18 @@ class GraphImportTests(unittest.TestCase):
 
     }
 
+    source_composites = {
+        'Iveron': {
+            'citation': 'Actes d’Iviron II, Actes de l’Athos XVI, Paris 1990',
+            'components': ['Iveron 28']},
+        'Kleinchroniken': {
+            'citation': 'Die byzantinischen Kleinchroniken, 3 vols., Vienna 1975-1979',
+            'components': ['Kleinchroniken 5', 'Kleinchroniken 16']},
+        'Patmos: Acts': {
+            'citation': 'Βυζαντινὰ ἔγγραφα τῆς μονῆς Πάτμου 1. Αὐτοκρατορικά, 2. Δημοσίων λειτουργῶν, Athens 1980',
+            'components': ['Patmos: Acts 50']},
+    }
+
     # Helper functions
     def check_class(self, uri, ocl):
         """Helper to check that a URI is defined as the given class"""
@@ -1292,6 +1304,10 @@ select ?pbwed (count(?passage) as ?pct) where {{
                 # When we test against production we can't guarantee an exact number, but there should be
                 # at least the number from the test database.
                 self.assertGreaterEqual(row['pct'].toPython(), sinfo.get('passages'))
+
+    def test_text_composites(self):
+        """Check that the two PBW composite sources in the test data were set up correctly."""
+        pass
 
     def test_readings(self):
         """Check that the CRMinf structures for interpretative readings are set up correctly."""

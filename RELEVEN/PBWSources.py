@@ -302,6 +302,29 @@ class PBWSources:
     def get(self, source):
         return self.sourcelist.get(source)
 
+    def get_composite_bibstring(self, composite_key):
+        """Return what, as best we can figure, is the GCD bibliographic string for a particular composite key."""
+        if composite_key not in self.composites:
+            return None
+        bibstring = None
+        for k, v in self.sourcelist.items():
+            if k.startswith(composite_key):
+                if bibstring:
+                    part_bibstring = v.get('expression')
+                    new_bibstring = ''
+                    for i, c in enumerate(bibstring):
+                        if i < len(part_bibstring) and part_bibstring[i] == c:
+                            new_bibstring += c
+                        else:
+                            break
+                    bibstring = re.sub(r'[,;.]$', '', new_bibstring.strip())
+                    if len(bibstring) == 0:
+                        # We wore it away to nothing.
+                        return None
+                else:
+                    bibstring = v.get('expression')
+        return bibstring
+
     def sourceref(self, source, refstring):
         """Return the source reference, modified to account for our aggregate sources."""
         if source in self.stripped:
