@@ -1,5 +1,4 @@
 import config
-import re
 import unittest
 from collections import Counter, defaultdict
 from functools import reduce
