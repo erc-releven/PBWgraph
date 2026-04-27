@@ -1,11 +1,12 @@
 import pbw
 import re
 import RELEVEN.PBWSources
+import subprocess
 import sys
 from datetime import datetime
+from hashlib import sha256
 from os.path import join, dirname, basename
 from rdflib import Graph, URIRef, Literal, Namespace, OWL, RDF, RDFS, XSD
-from rdflib.query import Result
 from uuid import uuid4
 from warnings import warn
 
@@ -29,6 +30,7 @@ class PBWstarConstants:
 
         datauri = 'https://r11.eu/rdf/resource/'
         self.ns = Namespace(datauri)
+        self.make_uri = URIConstructor(datauri)
         self.namespaces = {
             'crm':   Namespace('http://www.cidoc-crm.org/cidoc-crm/'),
             'crmdig': Namespace('http://www.ics.forth.gr/isl/CRMdig/'),
@@ -147,6 +149,7 @@ class PBWstarConstants:
             'P51': self.namespaces['crm']['P51_has_former_or_current_owner'],
             'P67': self.namespaces['crm']['P67_refers_to'],
             'P70': self.namespaces['crm']['P70_documents'],
+            'P79': self.namespaces['crm']['P79_beginning_is_qualified_by'],
             'P80': self.namespaces['crm']['P80_end_is_qualified_by'],
             'P82a': self.namespaces['crm']['P82a_begin_of_the_begin'],
             'P82b': self.namespaces['crm']['P82b_end_of_the_end'],
@@ -289,18 +292,20 @@ class PBWstarConstants:
             self.label_n3 = self.entity_label.n3(self.graph.namespace_manager)
             self.link_n3 = self.entity_link.n3(self.graph.namespace_manager)
             if not self.readonly:
+                # noinspection PyBroadException
                 try:
                     print("Setting up software execution run...")
                     # Ensure the existence of the software metadata
-                    # TODO should this be a string?
-                    whoarewe = basename(sys.argv[0])
-                    ourscript = Literal(f"https://github.com/erc-releven/PBWgraph/RELEVEN/{whoarewe}")
-                    md_query = f"""
-                    ?thisurl a {self.get_label('E42')} ;
-                        {self.get_label('P190')} {ourscript.n3()} .
-                    ?this a {self.get_label('D14')} ;
-                        {self.get_label('P1')} ?thisurl ."""
-                    res = self.ensure_entities_existence(md_query)
+                    script_basename = basename(sys.argv[0])
+                    whoarewe = script_basename if script_basename.endswith('.py') else 'graphimportSTAR.py'
+                    commit_sha = subprocess.check_output(
+                        ["git", "rev-parse", "HEAD"],
+                        text=True
+                    ).strip()
+                    ourscript = URIRef(f"https://github.com/erc-releven/PBWgraph/blob/{commit_sha}/RELEVEN/{whoarewe}")
+                    scriptlabel = Literal("RELEVEN import script for PBW data").n3()
+                    md_query = f"""{ourscript.n3()} a {self.get_label('D14')} ; {self.label_n3} {scriptlabel} ."""
+                    self.update(md_query)
                     # Create the software execution for this run, so that we can create the markers at the end
                     if execution is not None:
                         # If we are resuming a run, we use the same software execution entity
@@ -310,14 +315,16 @@ class PBWstarConstants:
                         # If we are not resuming, we have to create the entity with the current timestamp,
                         # assuming we have a writable store.
                         self.swrun = self.namespaces['data'][str(uuid4())]
+                        start_literal = Literal(datetime.now(), datatype=XSD.dateTimeStamp).n3()
+                        start_tstamp = self.make_uri("timestamp", start_literal)
                         se_query = f"""
-                        ?tstamp a {self.get_label('E52')} ;
-                            {self.get_label('P82a')} {Literal(datetime.now(), datatype=XSD.dateTimeStamp).n3()} .
+                        {start_tstamp.n3()} a {self.get_label('E52')} ;
+                            {self.get_label('P82a')} {start_literal} .
                         {self.swrun.n3()} a {self.get_label('D10')} ;
-                            {self.get_label('P4')} ?tstamp ;
-                            {self.get_label('L23')} {res['this'].n3()} ."""
-                        self.ensure_entities_existence(se_query)
-                except TypeError:
+                            {self.get_label('P4')} {start_tstamp.n3()} ;
+                            {self.get_label('L23')} {ourscript.n3()} ."""
+                        self.update(se_query)
+                except Exception:
                     print("Graph is not writable! Continuing in read-only mode")
                     self.readonly = True
 
@@ -340,14 +347,16 @@ class PBWstarConstants:
                      'title': Literal('RELEVEN project', 'en'),
                      'uri': URIRef('https://r11.eu/')}]
             for ent in f11s:
-                f11_query = f"""
-                ?a a {self.get_label('F11')} ;
-                    {self.label_n3} {ent['title'].n3()} ;
-                    {self.link_n3} {ent['uri'].n3()} ."""
-                uris = self.ensure_entities_existence(f11_query)
-                f11_uri = uris['a']
+                if not self.readonly:
+                    # Make sure our entities exist
+                    f11_query = f"""{ent['uri'].n3()} a {self.get_label('F11')} ;
+                        {self.label_n3} {ent['title'].n3()} ."""
+                    self.update(f11_query)
                 # Store it in self.[key]_agent, e.g. self.pbw_agent
-                self.__setattr__(f"{ent['key']}_agent", f11_uri)
+                self.__setattr__(f"{ent['key']}_agent", ent['uri'])
+
+        # Keep track of any entity groups we have already created.
+        self.resolved_egroups = dict()
 
         # Some of these factoid types have their own controlled vocabularies.
         # Set up our structure for retaining these; we will define them when we encounter them
@@ -355,11 +364,11 @@ class PBWstarConstants:
         self.cv = {
             'Gender': dict(),
             'Ethnicity': dict(),
-            'Religion': dict(),
+            'Religious affiliation': dict(),
             'Language': dict(),
-            'SocietyRole': dict(),
-            'Dignity': dict(),
-            'Kinship': dict()
+            'Social role (C2)': dict(),
+            'Legal role (C12)': dict(),
+            'Social relationship': dict()
         }
         # Special-case 'slave' and ordained/consecrated roles out of 'occupations'. TODO add Nun, rethink feminine titles
         self.legal_designations = ['Bishops', 'Cantor', 'Captain', 'Chamberlain', 'Hieromonk', 'Imperial courier',
@@ -430,6 +439,9 @@ class PBWstarConstants:
         """Return the source reference, modified to account for our aggregate sources."""
         return self.sourcelist.sourceref(factoid.source, factoid.sourceRef)
 
+    def composite_source(self, a):
+        return self.sourcelist.composite_bibs.get(a)
+
     def get_label(self, lbl):
         """Return the namespaced entity (class) or predicate string given the short name.
         We want this to throw an exception if nothing is found."""
@@ -469,12 +481,11 @@ class PBWstarConstants:
         # If we haven't made this label yet, do it
         if label not in self.cv[category]:
             # We have to create the node, possibly attaching it to a superclass
+            cv_uri = self.make_uri(category, label)
             litlabel = Literal(label, lang='en')
-            sparql = f"""
-            ?cventry a {nodeclass} ;
-                {self.label_n3} {litlabel.n3()} ."""
-            res = self.ensure_entities_existence(sparql)
-            self.cv[category][label] = res['cventry']
+            sparql = f"""{cv_uri.n3()} a {nodeclass} ; {self.label_n3} {litlabel.n3()} ."""
+            self.update(sparql)
+            self.cv[category][label] = cv_uri
 
         # Return the label we have
         return self.cv[category][label]
@@ -483,7 +494,7 @@ class PBWstarConstants:
         return self._find_or_create_cv_entry('Gender', self.get_label('C11'), gender)
 
     def get_religion(self, rel):
-        return self._find_or_create_cv_entry('Religion', self.get_label('C24'), rel)
+        return self._find_or_create_cv_entry('Religious affiliation', self.get_label('C24'), rel)
 
     def get_ethnicity(self, ethlabel):
         return self._find_or_create_cv_entry('Ethnicity', self.get_label('E74E'), ethlabel)
@@ -492,26 +503,33 @@ class PBWstarConstants:
         return self._find_or_create_cv_entry('Language', self.get_label('C29'), lang)
 
     def get_kinship(self, kinlabel):
-        return self._find_or_create_cv_entry('Kinship', self.get_label('C4'), kinlabel)
+        return self._find_or_create_cv_entry('Social relationship', self.get_label('C4'), kinlabel)
+
+    # "Dignity" and "occupation" from PBW aren't clean mappings onto C2 and C12 social roles, so we have to
+    # handle this in a more complicated way
+    def _get_social_designation(self, requested, rolelabel):
+        c2class = self.get_label('C2')
+        c12class = self.get_label('C12')
+        sdhsscat = {c2class: 'Social role (C2)', c12class: 'Legal role (C12)'}
+        sdhssclass = c2class if requested == 'C2' else c12class
+        if requested == 'C2' and rolelabel in self.legal_designations:
+            sdhssclass = c12class
+        elif requested == 'C12' and rolelabel in self.generic_social_roles:
+            sdhssclass = c2class
+        return self._find_or_create_cv_entry(sdhsscat[sdhssclass], sdhssclass, rolelabel), sdhssclass
 
     def get_societyrole(self, srlabel):
-        srclass = self.get_label('C2')
-        if srlabel in self.legal_designations:
-            srclass = self.get_label('C12')
-        return self._find_or_create_cv_entry('SocietyRole', srclass, srlabel), srclass
+        return self._get_social_designation('C2', srlabel)
 
     def get_dignity(self, dignity):
         # Dignities in PBW tend to be specific to institutions / areas;
         # make an initial selection by breaking on the 'of'
         diglabel = dignity
-        digclass = self.get_label('C12')
         if ' of the ' not in dignity:  # Don't split (yet) titles that probably don't refer to places
             diglabel = dignity.split(' of ')[0]
-        if diglabel in self.generic_social_roles:
-            digclass = self.get_label('C2')
-        dig_uri = self._find_or_create_cv_entry('Dignity', digclass, diglabel)
+        dig_uri, digclass = self._get_social_designation('C12', diglabel)
         # Make sure that the URI also appears under the original label, if we shortened it
-        self.cv['Dignity'][dignity] = dig_uri
+        self.cv['Legal role (C12)'][dignity] = dig_uri
         return dig_uri, digclass
 
     def inrange(self, floruit):
@@ -527,93 +545,31 @@ class PBWstarConstants:
                 minted[var] = self.ns[str(uuid4())]
         return minted
 
-    def ensure_entities_existence(self, sparql, force_create=False):
-        # print("SPARQL is:" + sparql)
-        if force_create and self.readonly:
-            raise Exception("Cannot force create triples in readonly mode!")
-        try:
-            if not force_create:
-                res = self.graph.query("SELECT DISTINCT * WHERE {" + sparql + "}")
-                if len(res):
-                    # Did we actually get a result?
-                    if not isinstance(res, Result):
-                        raise RuntimeError(f"Got unexpected result on query: {res}\nSPARQL was: {sparql}")
-                    # We should hopefully have only one row...
-                    if len(res) > 1:
-                        warn(f"More than one row returned for SPARQL expression:\n{sparql}")
-                    # In any case return the variables from the first row as a dictionary.
-                    for row in res:
-                        return row.asdict()
+    def ensure_egroup_existence(self, gclass, glink, members, title):
+        """Create a simple group, either of author[itie]s or of publications."""
+        # Did we already create this group?
+        key = f"{gclass} / {title}"
+        if key in self.resolved_egroups:
+            return self.resolved_egroups[key]
 
-            if self.readonly:
-                # If we got here we didn't get a result, and we can't add one.
-                return dict()
+        # If it is a group of people, we created it; if a group of publications, PBW created it.
+        # This only matters here for URI generation.
+        agent = self.pbw_agent if gclass == 'E73B' else self.r11_agent
+        group_uri = self.make_uri(title, agent)
 
-            # Either force_create was specified or res had zero length.
-            new_uris = self.mint_uris_for_query(sparql)
-            q = sparql
-            # Sort the variable keys by descending length to avoid replacing subsets of variable names.
-            # Yes this is a cheap hack.
-            for k in sorted(new_uris.keys(), key=len, reverse=True):
-                q = q.replace(f'?{k}', new_uris[k].n3(self.graph.namespace_manager))
-            self.graph.update("INSERT DATA {" + q + "}")
-            return new_uris
-        except Exception as e:
-            print(f"EXCEPTION {e}; SPARQL was {sparql}")
-            raise e
+        mlist = ', '.join(x.n3() for x in members)
+        sparql = f"""    {group_uri.n3()} a {self.get_label(gclass)} ;
+        {self.get_label(glink)} {mlist}; 
+        {self.label_n3} {Literal(title).n3()} .\n"""
 
-    def ensure_egroup_existence(self, gclass, glink, members, title=None):
-        # Get the URI list
-        mvalues = ', '.join([x.n3() for x in members])
-        # Get the group label, which is a semicolon-separated list of member labels
-        if title is None:
-            mnames = []
-            for m in members:
-                mname = self.graph.value(m, self.entity_label)
-                if mname is None:
-                    warn(f"Group member {m} has no label?!")
-                    mnames.append('XX ANON')
-                else:
-                    mnames.append(str(mname))
-            mlabel = Literal('; '.join(mnames)).n3()
-        else:
-            mlabel = Literal(title).n3()
+        self.update(sparql)
+        return group_uri
 
-        # Look to see if a group with exactly these members exists
-        sparql = f"""
-SELECT ?egroup WHERE {{
-    {{
-        # Filter first to egroups that have our particular members
-        SELECT DISTINCT ?egroup WHERE {{
-            ?egroup a {self.get_label(gclass)} ;
-                {self.label_n3} {mlabel} ;
-                {self.get_label(glink)} {mvalues} .
-        }}
-    }}
-    #  Now make sure the group doesn't have any further members.
-    ?egroup {self.get_label(glink)} ?member .
-}}
-GROUP BY ?egroup HAVING (COUNT(?member) = {len(members)})
-"""
-        rows = [x for x in self.graph.query(sparql)]
-        if len(rows) == 0:
-            # We need to create the group and its members
-            mlist = ', '.join([x.n3() for x in members])
-            # Construct the query
-            sparql = f"""
-        ?egroup {self.get_label(glink)} {mlist} ;
-            {self.label_n3} {mlabel} ;
-            a {self.get_label(gclass)} .
-            """
-            answer = self.ensure_entities_existence(sparql, force_create=True)
-        else:
-            # Make sure there is only one egroup that fits this spec
-            if len(rows) > 1:
-                warn(f"Multiple entity groups found with exactly the given members {mlabel}!")
-            answer = rows[0]
-
-        # Either way, return the entity group
-        return answer.get('egroup')
+    def update(self, sparql, document=None, *assertions):
+        self.graph.update("INSERT DATA { " + sparql + " }")
+        if assertions:
+            self.document(document, *assertions)
+        return assertions
 
     def document(self, pbwpage, *assertions):
         """Make the E31 link between the pbwpage and whatever assertions we just pulled from it, and
@@ -666,3 +622,37 @@ GROUP BY ?egroup HAVING (COUNT(?member) = {len(members)})
             self.graph.update(sparql_update)
         else:
             print("No new assertions created on this run.")
+
+
+# A donation from lupl
+#
+#     Persons: "Identifier / Service"
+#     Places: "Reference name"
+#     Controlled Vocabulary Terms: "Column name / type term"
+
+class URIConstructor:
+    """Namespaced URI constructor.
+
+    The URIConstructor class is initialized given a namespace.
+    Calls to the initialized object will construct rdflib.URIRefs for that namespace.
+
+    If a hash_value argument of type str | bytes is provided, the URIRef
+    will be generated with the sha256 hash of the hash_value argument as component;
+    else a URIRef with a unique component will be generated using UUID4.
+    """
+
+    def __init__(self, namespace):
+        self.namespace = Namespace(namespace)
+
+    def __call__(self, *hash_values):
+        if not hash_values:
+            segment = str(uuid4())
+            return self.namespace[segment]
+
+        _hash_values = map(lambda x: str(x).strip().lower(), hash_values)
+        hash_value = " / ".join(_hash_values).encode("utf8")
+
+        digest = sha256(hash_value).hexdigest()
+        segment = digest[:36]
+
+        return self.namespace[segment]

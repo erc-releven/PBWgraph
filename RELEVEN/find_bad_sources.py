@@ -46,7 +46,7 @@ for person in ourpeople:
         if factoid.factoidType in skip_types:
             continue
         # We only care about factoids from our composite sources
-        if factoid.source not in srces.composites:
+        if factoid.source not in srces.composite_parsers:
             continue
         # Find out which source this factoid should reference
         real_src_key = srces.key_for(factoid.source, factoid.sourceRef)

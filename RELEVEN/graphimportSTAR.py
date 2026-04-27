@@ -1,4 +1,7 @@
 import argparse
+import sys
+import traceback
+
 import pbw
 import RELEVEN.PBWstarConstants
 import RELEVEN.author_viewpoints
@@ -12,7 +15,7 @@ from rdflib.plugins.stores import sparqlstore
 from sqlalchemy import create_engine, and_
 from sqlalchemy.orm import sessionmaker
 from time import sleep
-from urllib.error import URLError
+from urllib.error import URLError, HTTPError
 from warnings import warn
 
 
@@ -125,6 +128,7 @@ class graphimportSTAR:
         self.resolved_locations = dict()
         self.resolved_boulloteria = dict()
         self.resolved_publications = dict()
+        self.pbw_composites = dict()
 
     def _urify(self, label):
         """Utility function to turn STAR predicates into real URIref objects"""
@@ -150,63 +154,43 @@ class graphimportSTAR:
         return relevant
 
     def create_assertion_sparql(self, label, ptype, subj, obj, auth, src=None, based=None):
-        """Create the SPARQL query that corresponds to an assertion with the given parameters.
+        """Create the SPARQL INSERT statement that corresponds to an assertion with the given parameters.
            Note that the object might be a list of literals."""
-        # Get the predicates for the STAR assertion in question
-
-        # Try to optimize this by putting the subject or object first, if it is a literal
         c = self.constants
-        subject = subj
-        objectfirst = None
-        if hasattr(subj, 'n3'):
-            subject = subj.n3()
-            objectfirst = False
-        sparqlsubj = f"{c.star_subject} {subject} ;"
 
-        # Deal with the object
-        sparqlobj = ""
+        # Mint a URI for this assertion based on the label. We hash respectively on label, ptype, subject, object,
+        # authority, and source and base if they exist.
+        hash_obj = " , ".join(str(o) for o in obj) if isinstance(obj, list) else obj
+        hashargs = [label, ptype, subj, hash_obj, auth]
+        if src is not None:
+            hashargs.append(src)
+        if based is not None:
+            hashargs.append(based)
+        assertion_uri = c.make_uri(*hashargs)
+
+        # We may or may not have a basis for the assertion.
+        basisstmt = ""
+        if based is not None:
+            basisstmt = f"{c.star_based} {based.n3()} ; \n        "
+
+        # The object may be a list. Roleplay accordingly
         if isinstance(obj, list):
-            # Ensure that the list are all literals
-            disallowed = [x for x in obj if not isinstance(x, Literal)]
-            if len(disallowed):
-                warn("Object can only be a list if it is a list of literals")
-                return None
-            objectfirst = True
             sparqlobj = f"{c.star_object} " + ",".join([o.n3() for o in obj]) + " ;"
         else:
-            objec_t = obj
-            if hasattr(obj, 'n3'):
-                objec_t = obj.n3()
-                objectfirst = True
-            sparqlobj += f"{c.star_object} {objec_t} ;"
+            sparqlobj = f"{c.star_object} {obj.n3()} ;"
 
-        # Construct the SPARQL
-        first, second = (sparqlobj, sparqlsubj) if objectfirst else (sparqlsubj, sparqlobj)
-        sparql = f"""
-        ?{label} {first}
-            {second}
-            a {c.get_assertion_for_predicate(ptype)} ;
+        # Given all this, construct the statement
+        sparql = f"""    {assertion_uri.n3()} a {c.get_assertion_for_predicate(ptype)} ;
+        {c.star_subject} {subj.n3()} ;
+        {sparqlobj} ;
+        {basisstmt}{c.star_auth} {auth.n3()} .
 """
+        # and add the source, if it is given.
+        if src is not None:
+            sparql += f"    {src.n3()} {c.star_src} {assertion_uri.n3()} . \n"
 
-        # The assertion might or might not be based on something
-        if based:
-            evidence = based
-            if hasattr(based, 'n3'):
-                evidence = based.n3()
-            sparql += f"            {c.star_based} {evidence} ; \n"
-        # ...but it should always have an authority.
-        authority = auth
-        if hasattr(auth, 'n3'):
-            authority = auth.n3()
-        sparql += f"""            {c.star_auth} {authority} .
-        """
-        # It might also have a source, which needs to be in the subject position.
-        if src:
-            provenance = src
-            if hasattr(src, 'n3'):
-                provenance = src.n3()
-            sparql += f"\n        {provenance} {c.star_src} ?{label} . "
-        return sparql
+        # All done.
+        return assertion_uri, sparql
 
     def gender_handler(self, sqlperson, graphperson):
         c = self.constants
@@ -226,12 +210,12 @@ class graphimportSTAR:
         if pbw_sex != "Unknown":
             # print("...setting gender assignment to %s%s" % (pbw_sex, " (maybe)" if uncertain else ""))
             # Create the SPARQL expression
-            sparql = self.create_assertion_sparql('a1', 'P41', '?gass', graphperson, c.pbw_agent)
-            sparql += self.create_assertion_sparql('a2', 'P42', '?gass', c.get_gender(pbw_sex), c.pbw_agent)
-            sparql += f"?gass a {c.get_label('E17G')} . "
-            # Check and create it if necessary
-            res = c.ensure_entities_existence(sparql)
-            return c.document(pbwdoc, res['a1'], res['a2'])
+            person_gender = c.make_uri('gender', graphperson, c.pbw_agent)
+            a1, sparql1 = self.create_assertion_sparql('ga1', 'P41', person_gender, graphperson, c.pbw_agent)
+            a2, sparql2 = self.create_assertion_sparql('ga2', 'P42', person_gender, c.get_gender(pbw_sex), c.pbw_agent)
+            sparql = sparql1 + sparql2 + f"    {person_gender.n3()} a {c.get_label('E17G')} . \n"
+            # Create it
+            return c.update(sparql, pbwdoc, a1, a2)
         return None
 
     def identifier_handler(self, sqlperson, graphperson):
@@ -247,13 +231,13 @@ class graphimportSTAR:
             appellation = sqlperson.nameOL.rstrip()
 
         # Create the SPARQL expression.
-        sparql = self.create_assertion_sparql('a1', 'P1', graphperson, '?appellation', c.pbw_agent)
-        sparql += f"""?appellation a {c.get_label('E33A')} ;
+        appellation_uri = c.make_uri('appellation', graphperson, c.pbw_agent)
+        a1, sparql = self.create_assertion_sparql('appel', 'P1', graphperson, appellation_uri, c.pbw_agent)
+        sparql += f"""{appellation_uri.n3()} a {c.get_label('E33A')} ;
             {c.get_label('P190')} {Literal(appellation, lang=_get_source_lang(sqlperson)).n3()} .
         """
-        # Check and create it if necessary
-        res = c.ensure_entities_existence(sparql)
-        return c.document(pbwdoc, res['a1'])
+        # Create it
+        return c.update(sparql, pbwdoc, a1)
 
     def get_source_and_agent(self, factoid):
         """Returns a pair of entities that represent the documentary source and the agent for this factoid.
@@ -302,54 +286,43 @@ class graphimportSTAR:
         keystr = str(boulloterion.boulloterionKey)
         btitle = f"Boulloterion of {boulloterion.title}"
         boul_node = self.find_or_create_boulloterion(keystr, btitle)
-        # See if the boulloterion already exists with an inscription. Be sure to document it if so
-        sparql_check = self.create_assertion_sparql('a1', 'P128', boul_node, '?inscription', pbweditor)
-        res = self.g.query("SELECT ?a1 ?inscription WHERE { " + sparql_check + "}")
-        if len(res):
-            c.document(pbwdoc, _get_single_key(res, 'a1'))
-            return boul_node, _get_single_key(res, 'inscription')
-
-        # If the boulloterion does not yet have an assertion that it carries any inscription, it
-        # will need to be created with its inscription, its seals, and its source list
+        # Create the boulloterion with its inscription, its seals, and its source list
         # Get the sources that PBW used for this boulloterion, if any
         source_node = self.get_boulloterion_sourcelist(boulloterion)
 
         # Make the assertion(s) concerning its inscription. Mark the inscription explicitly as E33 as well as
         # E34, since we can't always rely on having inferencing
-        sparql = f"""
-        ?inscription {c.get_label('P190')} {Literal(boulloterion.origLText, lang=_get_source_lang(boulloterion)).n3()} ;
-            a {c.get_label('E34')}, {c.get_label('E33')} . """
-        sparql += self.create_assertion_sparql('a', 'P128', boul_node, '?inscription', pbweditor, based=source_node)
-
+        inscription_uri = c.make_uri(str(boul_node), boulloterion.origLText)
+        sparql_stmts = [f"""    {inscription_uri.n3()} {c.get_label('P190')} {Literal(boulloterion.origLText, 
+                                                                          lang=_get_source_lang(boulloterion)).n3()} ;
+        a {c.get_label('E34')}, {c.get_label('E33')} . \n"""]
+        a1, asp = self.create_assertion_sparql('boulloterion inscription', 'P128', boul_node,
+                                               inscription_uri, pbweditor, based=source_node)
+        sparql_stmts.append(asp)
+        assertions = [a1]
         # Create the seals that belong to this boulloterion; assert that they
         # belong to their collection and that they came from this boulloterion.
         for i, seal in enumerate(boulloterion.seals):
             coll = self.find_or_create_seal_collection(seal.collection.collectionName)
-            # Is it one of the happy items with a collection URL that we can construct?
-            seal_link = ''
-            if seal.collection.baseURL is not None:
-                seal_uri = f"{seal.collection.baseURL}{seal.collectionKey}"
-                if 'doaks' in seal_uri:  # only DOaks URIs are recoverable directly from the database
-                    seal_link = f"\n            {c.link_n3} <{seal_uri}> ;"
             # Make an ID unique for our purposes
             seal_id = "%d-%d-%d" % (seal.collectionKey, seal.collectionRef, seal.sealKey)
-            sparql += f"""
-        ?seal{i} {c.label_n3} {Literal(seal_id).n3()} ;{seal_link}
-            a {c.get_label('E22S')} . """
-            sparql += self.create_assertion_sparql(f"a{i}c", 'P46', coll, f'?seal{i}', pbweditor, src=source_node)
-            sparql += self.create_assertion_sparql(f"a{i}b", 'L1', boul_node, f'?seal{i}', pbweditor, based=source_node)
+            # Use a hash-based URI derived from the full PBW seal ID, per URI policy
+            seal_uri = c.make_uri(c.entitylabels['E22S'], seal_id, c.r11_agent)
+            sparql_stmts.append(f"""    {seal_uri.n3()} {c.label_n3} {Literal(seal_id).n3()} ;
+        a {c.get_label('E22S')} . 
+""")
+            sa1, sq1 = self.create_assertion_sparql(f"seal collection", 'P46',
+                                                    coll, seal_uri, pbweditor, src=source_node)
+            sa2, sq2 = self.create_assertion_sparql(f"seal boulloterion", 'L1',
+                                                    boul_node, seal_uri, pbweditor, based=source_node)
+            assertions.extend([sa1, sa2])
+            sparql_stmts.extend([sq1, sq2])
 
-        # Possible optimization: We have already established that this boulloterion (and therefore the
-        # inscription and seals) don't exist yet, so just run the statement as an update
-        # For now, do it the slow way
-        res = c.ensure_entities_existence(sparql)
-        # Get the documentation
-        assertionkeys = ['a']
-        assertionkeys.extend([f'a{n}c' for n in range(len(boulloterion.seals))])
-        assertionkeys.extend([f'a{n}b' for n in range(len(boulloterion.seals))])
-        c.document(pbwdoc, *[res[x] for x in assertionkeys])
+        # Update the graph and document its assertions
+        c.update('\n'.join(sparql_stmts), pbwdoc, *assertions)
+
         # Return the boulloterion and inscription
-        return boul_node, res['inscription']
+        return boul_node, inscription_uri
 
     def get_boulloterion_inscription(self, boulloterion, pbweditor):
         # This factoid is taken from one or more seal inscriptions. Let's pull that out into CRM objects.
@@ -387,24 +360,24 @@ class graphimportSTAR:
             latin_bib = source.latinBib if source.bibKey == 816 else re_encode(source.latinBib)
             # Write the entry for the publication. The short name is an identifier assigned by PBW,
             # so we will record it as such.
-            sn = f"""
-        ?src {c.label_n3} {Literal(latin_bib).n3()} ;
-            a {c.get_label('F2P')} .
-        ?srcref {c.get_label('P190')} {Literal(short_name).n3()} ;
-            a {c.get_label('E42')} .
-        ?a1 {c.star_auth} {c.pbw_agent.n3()};
-            {c.star_subject} ?src ;
-            {c.get_label('P37')} ?srcref ;
-            a {c.get_label('E15')}  .
-        """
-            res = c.ensure_entities_existence(sn)
-            c.document(None, res['a1'])
-            source_nodes.append(res['src'])
+            src_uri = c.make_uri("boulloterion source", source.bibKey, c.pbw_agent)
+            src_pbw_identifier = c.make_uri(c.entitylabels['E42'], short_name, c.pbw_agent)
+            src_pbw_idassignment = c.make_uri(c.entitylabels['E15'], short_name, c.pbw_agent)
+            src_sparql = f"""    {src_uri.n3()} {c.label_n3} {Literal(latin_bib).n3()} ;
+        a {c.get_label('F2P')} .
+    {src_pbw_identifier.n3()} {c.get_label('P190')} {Literal(short_name).n3()} ;
+        a {c.get_label('E42')} .
+    {src_pbw_idassignment.n3()} {c.star_auth} {c.pbw_agent.n3()};
+        {c.star_subject} {src_uri.n3()} ;
+        {c.get_label('P37')} {src_pbw_identifier.n3()} ;
+        a {c.get_label('E15')}  .
+"""
+            c.update(src_sparql, None, src_pbw_idassignment)
+            source_nodes.append(src_uri)
         if len(source_nodes) > 1:
             # Find or create a matching bibliography/publication list with only these publication nodes.
             return c.ensure_egroup_existence('E73B', 'P165', source_nodes,
                                              f"Bibliography for boulloterion {boulloterion.boulloterionKey}")
-
         else:
             # There was only a single source. We just return it.
             return source_nodes[0]
@@ -423,10 +396,10 @@ class graphimportSTAR:
             agent = self.constants.pbw_agent
         if author:
             return author
-        print("No author given for source %s; using edition editor" % fsource)
+        # print("No author given for source %s; using edition editor" % fsource)
         if editor:
             return editor
-        print("...no editor either! Using PBW authority")
+        print(f"No author nor editor listed for source {fsource}. Using PBW authority")
         return agent
 
     def get_text_sourceref(self, factoid):
@@ -439,16 +412,19 @@ class graphimportSTAR:
         if wholesource is None:
             return None
         # In this context, the agent is the PBW editor for this source.
-        sourcekey = self.constants.source(factoid)
+        sourcekey = self.constants.source(factoid)  # e.g. 'Psellos Sathas 12'
         agent = self.get_viaf_agent_node(self.constants.authorities(sourcekey))
-        sparql = f"""
-        ?sourceref {c.get_label('P190')} {Literal(factoid.origLDesc).n3()} ;
-            {c.label_n3} {Literal(c.sourceref(factoid)).n3()} ;
-            a {c.get_label('E33')} . """
-        sparql += self.create_assertion_sparql('a', 'R15', wholesource, '?sourceref', agent)
-        res = c.ensure_entities_existence(sparql)
-        c.document(pbwdoc, res['a'])
-        return res['sourceref']
+        reference_label = c.sourceref(factoid)      # e.g. '37.3-38.2'
+        sourceref_uri = (c.make_uri(str(wholesource), reference_label, factoid.origLDesc)
+                         if factoid.origLDesc
+                         else c.make_uri(str(wholesource), reference_label))
+        sparql = f"""    {sourceref_uri.n3()} {c.get_label('P190')} {Literal(factoid.origLDesc).n3()} ;
+            {c.label_n3} {Literal(reference_label).n3()} ;
+            a {c.get_label('E33')} .\n"""
+        a, sparql_a = self.create_assertion_sparql('a', 'R15', wholesource, sourceref_uri, agent)
+        sparql += sparql_a
+        c.update(sparql, pbwdoc, a)
+        return sourceref_uri
 
     def get_source_work_expression(self, factoid):
         # Ensure the existence of the work and, if it has a declared author, link the author to it via
@@ -475,49 +451,52 @@ class graphimportSTAR:
         if edition_id in self.resolved_publications:
             return self.resolved_publications[edition_id]
 
-        # Keep track of the assertions we may have created
-        assertions_set = []
         afact_src = None
-        # Express the edition/publication, and assign it the identifier from PBW
-        sparql = f"""
-        ?pub_ref {c.get_label('P190')} {Literal(orig_sourcekey).n3()}; 
-            a {c.get_label('E42')} .
-        ?publ {c.label_n3} {Literal(edition_id).n3()} ;
-            a {c.get_label('F2P')} . 
-        ?aid {c.star_subject} ?publ ;
-            {c.get_label('P37')} ?pub_ref ;
-            {c.star_auth} {c.pbw_agent.n3()} ;
-            a {c.get_label('E15')} ."""
-        assertions_set.append('aid')
-        # If we modified the identifier, record that too
-        if orig_sourcekey != sourcekey:
-            sparql += f"""
-        ?our_ref {c.get_label('P190')} {Literal(sourcekey).n3()}; 
-            a {c.get_label('E42')} .
-        ?aid2 {c.star_subject} ?publ ;
-            {c.get_label('P37')} ?our_ref ;
-            {c.star_auth} {c.r11_agent.n3()} ;
-            a {c.get_label('E15')}  ."""
-            assertions_set.append('aid2')
+
+        # Deterministic URIs for the publication and its identifier assignment
+        publ_uri = c.make_uri(c.entitylabels['F2P'], edition_id, 'https://r11.eu/')
+        if orig_sourcekey == sourcekey:
+            # If we haven't changed the sourcekey, the identifier for this edition comes from PBW.
+            pub_agent = c.pbw_agent
+        else:
+            # If we did change the sourcekey, the identifier for this edition comes from us *and*
+            # we are going to need to add the PBW source that this is a part of.
+            pub_agent = c.r11_agent
+            self._track_pbw_orig_source(orig_sourcekey, publ_uri)
+
+        # Whatever the case, make the identifier for this particular source.
+        pub_e42 = c.make_uri(c.entitylabels['E42'], sourcekey, pub_agent)
+        pub_e15 = c.make_uri(c.entitylabels['E15'], sourcekey, pub_agent)
+        sparql = f"""    {pub_e42.n3()} {c.get_label('P190')} {Literal(sourcekey).n3()} ;
+        a {c.get_label('E42')} .
+    {publ_uri.n3()} {c.label_n3} {Literal(edition_id).n3()} ;
+        a {c.get_label('F2P')} .
+    {pub_e15.n3()} {c.star_subject} {publ_uri.n3()} ;
+        {c.get_label('P37')} {pub_e42.n3()} ;
+        {c.star_auth} {pub_agent.n3()} ;
+        a {c.get_label('E15')} .\n"""
+        real_assertions = [pub_e15]
 
         if text_id is None:
             # We are dealing with a secondary source. Assert a publication creation instead of a
             # text (expression) creation, with the editors; we will have to go back later and say that this
             # depended on another work (the primary source).
-            sparql += self.create_assertion_sparql('a1', 'R17', '?ec', '?publ', editors, '?publ')
-            sparql += self.create_assertion_sparql('a2', 'P14', '?ec', editors, editors, '?publ')
-            sparql += f"""
-        ?ec a {c.get_label('F28')} . """
-            assertions_set.extend(['a1', 'a2'])
+            ec_uri = c.make_uri(c.entitylabels['F28'], edition_id, str(editors))
+            a1, sparql_a1 = self.create_assertion_sparql('a1', 'R17', ec_uri, publ_uri, editors, publ_uri)
+            a2, sparql_a2 = self.create_assertion_sparql('a2', 'P14', ec_uri, editors, editors, publ_uri)
+            sparql += f"    {ec_uri.n3()} a {c.get_label('F28')} .\n"
+            sparql += sparql_a1 + sparql_a2
+            real_assertions.extend([a1, a2])
         else:
             # We are dealing with a primary source, so we need to make a bunch of assertions.
             # First, the editors assert that the edition (that is, the publication) belongs to
             # the work; the source for this is, well, the edition.
-            sparql += f"""
-        ?work {c.label_n3} {Literal(text_id).n3()} ;
-            a {c.get_label('F2T')} . """
-            sparql += self.create_assertion_sparql('a1', 'R76', '?publ', '?work', editors, '?publ')
-            assertions_set.append('a1')
+            work_uri = c.make_uri(c.entitylabels['F2T'], text_id, 'https://r11.eu/')
+            sparql += f"""    {work_uri.n3()} {c.label_n3} {Literal(text_id).n3()} ; a {c.get_label('F2T')} .\n"""
+            a1, sparql_a1 = self.create_assertion_sparql('a1', 'R76', publ_uri, work_uri, editors, publ_uri)
+            sparql += sparql_a1
+            real_assertions.append(a1)
+
             # Now we need to see if authorship has to be asserted.
             author = self.get_author_node(self.constants.author(sourcekey))
             if author is not None:
@@ -526,7 +505,9 @@ class graphimportSTAR:
                 # Otherwise, the authority (for now) is the editor.
                 # If we don't have a specific reference for the claim, we just use the edition (again).
                 aship_authority = editors
-                aship_source = '?publ'
+                aship_source_uri = publ_uri
+                has_srcref = False
+
                 if 'factoid' in workinfo:
                     # Pull in the authorship factoid that describes the authorship of this work
                     afact = self.mysqlsession.query(pbw.Factoid).filter_by(factoidKey=workinfo['factoid']).scalar()
@@ -548,61 +529,86 @@ class graphimportSTAR:
                     # it is a narrative factoid, then the PBW editor is making the claim
                     # Either way, the PBW editor will be who says this passage belongs to the edition
                     aship_authority = author if afact.factoidType == 'Authorship' else pbw_authority
-                    # We have to make a sourceref node, connected to this text, for
-                    # the factoid source.
-                    sparql += f"""
-        ?srcref {c.get_label('P190')} {Literal(afact.origLDesc, lang=_get_source_lang(afact)).n3()} ;
-            {c.label_n3} {Literal(afact.sourceRef).n3()} ;
-            a {c.get_label('E33')} . """
-                    aship_source = '?srcref'
+                    # We have to make a sourceref node, connected to this text, for the factoid source.
+                    srcref_uri = (c.make_uri(str(publ_uri), afact.sourceRef, afact.origLDesc)
+                                  if afact.origLDesc
+                                  else c.make_uri(str(publ_uri), afact.sourceRef))
+                    sparql += f"""    {srcref_uri.n3()} {c.get_label('P190')} {Literal(afact.origLDesc, lang=_get_source_lang(afact)).n3()} ;
+        {c.label_n3} {Literal(afact.sourceRef).n3()} ;
+        a {c.get_label('E33')} .\n"""
+                    aship_source_uri = srcref_uri
+                    has_srcref = True
                 elif 'provenance' in workinfo:
                     # We have a page number. This makes our authorship authority the editor(s), with the source
                     # being the passage in this very edition.
-                    sparql += f"""
-        ?srcref {c.label_n3} {Literal(workinfo['provenance']).n3()} ;
-            a {c.get_label('E33')} . """
-                    aship_source = '?srcref'
+                    srcref_uri = c.make_uri(str(publ_uri), workinfo['provenance'])
+                    sparql += f"""    {srcref_uri.n3()} {c.label_n3} {Literal(workinfo['provenance']).n3()} ;
+        a {c.get_label('E33')} .\n"""
+                    aship_source_uri = srcref_uri
+                    has_srcref = True
 
-                if aship_source == '?srcref':
-                    # It is the PBW editor who says that a particular passage exists and belongs to the respective
-                    # edition. We have no further source or evidence of this, apart from the DB record that will get
-                    # documented via an E31 link.
+                if has_srcref:
+                    # It is the PBW editor who says that a particular passage exists and belongs to the
+                    # respective edition. We have no further source or evidence of this, apart from the DB
+                    # record that will get documented via an E31 link.
                     # n.b. We will need to fix/change this manually for non-factoid provenance!
-                    sparql += self.create_assertion_sparql('a2', 'R15', '?publ', aship_source, pbw_authority)
-                    assertions_set.append('a2')
+                    a2, sparql_a2 = self.create_assertion_sparql('a2', 'R15', publ_uri, aship_source_uri,
+                                                                  pbw_authority)
+                    sparql += sparql_a2
+                    real_assertions.append(a2)
 
                 # We have now dealt with extracting information from some relevant authorship factoid, if it exists.
                 # Move on to the assertion that the author authored the work
-                sparql += self.create_assertion_sparql('a3', 'R17', '?wc', '?work', aship_authority, aship_source)
-                sparql += self.create_assertion_sparql('a4', 'P14', '?wc', author, aship_authority, aship_source)
-                sparql += f"""
-        ?wc a {c.get_label('F28')} . """
-                assertions_set.extend(['a3', 'a4'])
+                wc_uri = c.make_uri(c.entitylabels['F28'], text_id, str(aship_authority))
+                a3, sparql_a3 = self.create_assertion_sparql('a3', 'R17', wc_uri, work_uri,
+                                                              aship_authority, aship_source_uri)
+                a4, sparql_a4 = self.create_assertion_sparql('a4', 'P14', wc_uri, author,
+                                                              aship_authority, aship_source_uri)
+                sparql += f"    {wc_uri.n3()} a {c.get_label('F28')} .\n"
+                sparql += sparql_a3 + sparql_a4
+                real_assertions.extend([a3, a4])
 
-        # Whatever we just made, return the edition/publication, which is what we are after.
-        res = c.ensure_entities_existence(sparql)
-
-        # Document the assertions we just made
+        # Whatever we just made, insert it and document the assertions.
         if afact_src:
-            # It comes from an authorship factoid
-            c.document(afact_src, *[res[x] for x in assertions_set])
+            c.update(sparql, afact_src, *real_assertions)
         else:
-            # It comes from our reading of the database structure
-            c.document(None, *[res[x] for x in assertions_set])
-        self.resolved_publications[edition_id] = res['publ']
-        return res['publ']
+            c.update(sparql, None, *real_assertions)
+        self.resolved_publications[edition_id] = publ_uri
+        return publ_uri
+
+    def _track_pbw_orig_source(self, pbw_id_string, part_uri):
+        """Initialise or update a PBW source that we split up. Exclude the PBW 'sources' that don't actually
+        denote a single publication."""
+        c = self.constants
+        # Don't bother with these
+        if pbw_id_string in ['Alexios Stoudites', 'Eustathios Romaios', 'Nea Mone,', 'Psellos']:
+            return
+        # Warn if we don't get a bibliography string for the composite
+        composite_bibstring = c.composite_source(pbw_id_string)
+        if composite_bibstring is None:
+            warn(f"Unable to find composite bibliography string for PBW source {pbw_id_string}")
+        # Make a note of it
+        if pbw_id_string not in self.pbw_composites:
+            self.pbw_composites[pbw_id_string] = {'parts': [part_uri], 'citation': composite_bibstring}
+        else:
+            self.pbw_composites[pbw_id_string]['parts'].append(part_uri)
 
     def _find_or_create_identified_entity(self, etype, agent, identifier, dname):
         """Return an identified entity URIRef. This can be a Boulloterion (E22 subclass) or an E21 Person
         depending on context. It is labeled with the identifier via an E15 Identifier Assignment
         carried out by the given agent, with dname becoming our preferred human-readable identifier."""
         c = self.constants
+        hash_id = identifier
         if etype == c.get_label('E22B'):
-            # Identifier is a number
-            url = URIRef(f'https://pbw2016.kdl.kcl.ac.uk/boulloterion/{identifier}/').n3()
+            # Identifier is a number, thus possibly not unique
+            url = URIRef(f'https://pbw2016.kdl.kcl.ac.uk/boulloterion/{identifier}/')
+            # ...so for hashing, we want to prepend 'boulloterion'.
+            hash_id = f'{c.entitylabels['E22B']} / {identifier}'
         elif etype == c.get_label('E27'):
-            # Identifier is also a number
-            url = URIRef(f'https://pbw2016.kcl.ac.uk/location/{identifier}/').n3()
+            # Identifier is also a number, thus possibly not unique
+            url = URIRef(f'https://pbw2016.kcl.ac.uk/location/{identifier}/')
+            # ...so for hashing, we want to use the display name, which is in this case unique.
+            hash_id = dname
         elif agent == c.pbw_agent:
             # Identifier is something like 'Alexios 10102' or 'Alp Arslan 51'.
             # The URL changes it to 'Alexios/10102' or 'Alp+Arslan/51'
@@ -613,35 +619,37 @@ class graphimportSTAR:
             id_urified = '+'.join(idparts).replace('[', '').replace(']', '')
             # Now we have Alp+Arslan/51, Gostri.../101, and Nizam+al-Mulk/101 respectively.
             # Even if none of these URLs actually work in PBW.
-            url = URIRef(f'https://pbw2016.kdl.kcl.ac.uk/person/{id_urified}/{code}/').n3()
+            url = URIRef(f'https://pbw2016.kdl.kcl.ac.uk/person/{id_urified}/{code}/')
         else:
-            # Identifier is again a number
-            url = URIRef(f'https://viaf.org/viaf/{identifier}/').n3()
+            # Identifier is again a number. We can leave this bare, since VIAF doesn't reuse numbers.
+            url = URIRef(f'https://viaf.org/viaf/{identifier}/')
 
+        # Create the entity URI based on its name and service
+        entity_uri = c.make_uri(hash_id, str(agent))
         # The entity should have its display name as its label, without a language designation.
         #
-        entitystr = f"?entity a {etype} "
+        entitystr = f"{entity_uri.n3()} a {etype} "
         if dname is not None:
             entitystr += f";\n            {c.label_n3} {Literal(dname).n3()} "
         entitystr += '.'
 
         # Construct the identifier assignment that should exist.
-        # This identifier is marked sameAs the identifier we are copying from.
+        the_e42 = c.make_uri(c.entitylabels['E42'], hash_id, str(agent))
+        the_e15 = c.make_uri(c.entitylabels['E15'], hash_id, str(agent))
         sparql = f"""
-        ?ident {c.get_label('P190')} {Literal(identifier).n3()} ;
-            {c.link_n3} {url} ;
+        {entitystr}
+        {the_e42.n3()} {c.get_label('P190')} {Literal(str(identifier)).n3()} ;
+            {c.link_n3} {url.n3()} ;
             a {c.get_label('E42')} .
-        ?idass {c.get_label('P37')} ?ident ;
-            {c.star_subject} ?entity ;
+        {the_e15.n3()} {c.get_label('P37')} {the_e42.n3()} ;
+            {c.star_subject} {entity_uri.n3()} ;
             {c.star_auth} {agent.n3()} ;
             a {c.get_label('E15')} .
-        {entitystr}
         """
 
         # Ensure its existence and return the entity in question
-        res = c.ensure_entities_existence(sparql)
-        c.document(None, res['idass'])
-        return res['entity']
+        c.update(sparql, None, the_e15)
+        return entity_uri
 
     def find_or_create_pbwperson(self, sqlperson):
         # Cache these
@@ -678,26 +686,27 @@ class graphimportSTAR:
             to_doc = []
             if sqlloc.pleiades_id:
                 pleiades_uri = URIRef(f'https://pleiades.stoa.org/places/{sqlloc.pleiades_id}')
-                loc_sparql += self.create_assertion_sparql('ap', 'ID7', loc_ent, pleiades_uri, geoagent)
-                to_doc.append('ap')
+                ap, ap_sparql = self.create_assertion_sparql('ap', 'ID8', loc_ent, pleiades_uri, geoagent)
+                loc_sparql += ap_sparql
+                to_doc.append(ap)
             if sqlloc.geonames_id:
                 geonames_uri = URIRef(f'https://www.geonames.org/{sqlloc.geonames_id}')
-                loc_sparql += self.create_assertion_sparql('ag', 'ID7', loc_ent, geonames_uri, geoagent)
-                to_doc.append('ag')
+                ag, ag_sparql = self.create_assertion_sparql('ag', 'ID8', loc_ent, geonames_uri, geoagent)
+                loc_sparql += ag_sparql
+                to_doc.append(ag)
             if loc_sparql:
-                res = c.ensure_entities_existence(loc_sparql)
-                c.document(None, *[res[x] for x in to_doc])
+                c.update(loc_sparql, None, *to_doc)
         return self.resolved_locations[k]
 
     # This one doesn't use an E15 assertion, it is just a thing with a name
     def find_or_create_seal_collection(self, collname):
         c = self.constants
-        sparql = f"""
-        ?collection a {c.get_label('E78')} ;
+        coll_uri = c.make_uri(collname, c.pbw_agent)
+        sparql = f"""    {coll_uri.n3()} a {c.get_label('E78')} ;
             {c.label_n3} {Literal(collname).n3()} .
-        """
-        res = c.ensure_entities_existence(sparql)
-        return res['collection']
+"""
+        c.update(sparql)
+        return coll_uri
 
     def get_author_node(self, authorlist):
         """Return the E21 Person node for the author of a text, or a group of authors if authorship was composite"""
@@ -710,16 +719,16 @@ class graphimportSTAR:
             # Hackish, but after all this is a script... If the code is longer than five digits, we are
             # dealing with a VIAF person; otherwise we are dealing with a PBW person.
             if len(str(pcode)) > 5:
-                authors.append(self.find_or_create_viafperson(pname, pcode))
+                authors.append((self.find_or_create_viafperson(pname, pcode), pname))
             else:
                 # We need to get the SQL record for the author since we might still need to create them in the graphdb
                 sqlperson = self.mysqlsession.query(pbw.Person).filter_by(name=pname, mdbCode=pcode).scalar()
-                authors.append(self.find_or_create_pbwperson(sqlperson))
+                authors.append((self.find_or_create_pbwperson(sqlperson), sqlperson.descName))
         if len(authors) > 1:
             # It is our multi-authored text. Make a group because both authors share authority.
             return self._find_or_create_authority_group(authors)
         else:
-            return authors[0]
+            return authors[0][0]
 
     def get_viaf_agent_node(self, authoritylist):
         """Create or find the node for the given authority in our (modern) authority list."""
@@ -733,7 +742,7 @@ class graphimportSTAR:
         # Ensure the existence of the people, and then ensure the existence of their group
         scholars = []
         for p in authoritylist:
-            scholars.append(self._lookup_authority_node(p))
+            scholars.append((self._lookup_authority_node(p), p['identifier']))
         return self._find_or_create_authority_group(scholars)
 
     def _lookup_authority_node(self, authority):
@@ -742,20 +751,22 @@ class graphimportSTAR:
             self.resolved_authorities[viaf_id] = self.find_or_create_viafperson(authority['identifier'], viaf_id)
         return self.resolved_authorities[viaf_id]
 
-    def _find_or_create_authority_group(self, members):
-        if len(members) < 2:
-            warn(f"Tried to create authority group with {len(members)} member(s)!")
+    def _find_or_create_authority_group(self, members_with_names):
+        if len(members_with_names) < 2:
+            warn(f"Tried to create authority group with {len(members_with_names)} member(s)!")
             return None
 
         c = self.constants
-        return c.ensure_egroup_existence('E74A', 'P107', members)
+        title = '; '.join(sorted(name for _, name in members_with_names))
+        members = [uri for uri, _ in members_with_names]
+        return c.ensure_egroup_existence('E74A', 'P107', members, title)
 
     def maka_handler(self, factoid, graphperson):
         """Associate the person with another person, provisionally. This is the one use of the
         uncertainty typing on assertions that we use here."""
         c = self.constants
         pbwdoc = c.pbw_uri(factoid)
-        # Avoid 'uncertain' identity factoids where
+        # Avoid 'uncertain' identity factoids that are about group membership
         exclude_strings = ['the two collectively are',
             'included in',
             'was one of'
@@ -766,21 +777,22 @@ class graphimportSTAR:
                 return
 
         # Fish out the other person(s) with whom identity is being asserted
+        sparql = ''
         assertions = []
-        for otherperson in factoid.referents():
+        for i, otherperson in enumerate(factoid.referents()):
             if otherperson.name in ['Anonymi', 'Anonymae']:
                 print(f"Skipping group membership for uncertain identity in factoid {factoid.factoidKey}: {factoid.replace_referents()}")
                 return
-            sparql = self.create_assertion_sparql('a1', 'ID8', graphperson,
-                                                  self.find_or_create_pbwperson(otherperson), c.pbw_agent)
+            graphother = self.find_or_create_pbwperson(otherperson)
+            a, sparql_part = self.create_assertion_sparql(f"a{i}", 'ID8', graphperson, graphother, c.pbw_agent)
+            sparql += sparql_part
             # Mark it as a suggestion rather than a full-on assertion
-            sparql += f"        ?a1 a {c.get_label('S5')} .\n"
-            res = c.ensure_entities_existence(sparql)
-            assertions.append(res['a1'])
+            sparql += f"    {a.n3()} a {c.get_label('S5')} .\n"
+            assertions.append(a)
 
         if len(assertions):
-            # Mark the uncertainty
-            c.document(pbwdoc, *assertions)
+            # Add them to the graph
+            c.update(sparql, pbwdoc, *assertions)
 
     def appellation_handler(self, sourcenode, agent, factoid, graphperson):
         """This handler deals with Second Name factoids and also Alternative Name factoids.
@@ -832,15 +844,15 @@ class graphimportSTAR:
                 name_en = factoid.engDesc
                 name_ol = factoid.origLDesc
                 olang = _get_source_lang(factoid) or 'grc'
-            print("Adding second name %s (%s '%s')" % (name_en, olang, name_ol))
+            # print("Adding second name %s (%s '%s')" % (name_en, olang, name_ol))
 
-        sparql = f"""
-        ?appel {c.get_label('P190')} {Literal(name_ol, olang).n3()} ;
+        appel_uri = c.make_uri(c.entitylabels['E33A'], name_ol, name_en)
+        sparql = f"""    {appel_uri.n3()} {c.get_label('P190')} {Literal(name_ol, olang).n3()} ;
             {c.get_label('P190')} {Literal(name_en, 'en').n3()} ;
-            a {c.get_label('E33A')} . """
-        sparql += self.create_assertion_sparql('a1', 'P1', graphperson, '?appel', agent, sourcenode)
-        res = c.ensure_entities_existence(sparql)
-        return c.document(pbwdoc, res['a1'])
+            a {c.get_label('E33A')} .\n"""
+        a1, sparql_a1 = self.create_assertion_sparql('a1', 'P1', graphperson, appel_uri, agent, sourcenode)
+        sparql += sparql_a1
+        return c.update(sparql, pbwdoc, a1)
 
     def description_handler(self, sourcenode, agent, factoid, graphperson):
         """Record the descriptions given in the sources as P3 data-property assertions."""
@@ -849,9 +861,8 @@ class graphimportSTAR:
 
         olang = _get_source_lang(factoid) or 'grc'
         descriptions = [Literal(factoid.replace_referents(), 'en'), Literal(factoid.origLDesc, olang)]
-        sparql = self.create_assertion_sparql('a1', 'P3', graphperson, descriptions, agent, sourcenode)
-        res = c.ensure_entities_existence(sparql)
-        return c.document(pbwdoc, res['a1'])
+        a1, sparql = self.create_assertion_sparql('a1', 'P3', graphperson, descriptions, agent, sourcenode)
+        return c.update(sparql, pbwdoc, a1)
 
     def death_handler(self, sourcenode, agent, factoid, graphperson):
         # Each factoid is its own set of assertions pertaining to the single death of a person.
@@ -859,7 +870,6 @@ class graphimportSTAR:
         # proxies for the death event as necessary.
         c = self.constants
         pbwdoc = c.pbw_uri(factoid)
-        assertions_created = []
 
         # Create the new assertion that says the death happened. Start by gathering all our existing
         # nodes and reified predicates:
@@ -875,42 +885,64 @@ class graphimportSTAR:
                 factoid.factoidKey, factoid.engDesc))
             return None
 
-        # Set up the death event. We take for granted that every 11th-c. person has exactly one death,
-        # so we set this event separately and we don't bother with source or authority, as those will be
-        # attached to the date/place/etc. of the event.
-        de_query = f"""
-        ?a0 {c.star_object} {graphperson.n3()} ;
-            a {c.get_assertion_for_predicate('P100')} ;
-            {c.star_subject} ?de .
-        ?de a {c.get_label('E69')} .
-        """
-        res = c.ensure_entities_existence(de_query)
-        assertions_created.extend(c.document(pbwdoc, res['a0']))
-        deathevent = res['de']
-        # For ease of understanding we should give the death event a label with the person's PBW identifier.
-        # Add the label if it doesn't already exist, in a backwards-compatible way
+        # Set up the death event with a deterministic URI. We take for granted that every 11th-c.
+        # person has exactly one death.
+        # For ease of understanding we also give the death event a label with the person's PBW identifier.
+        death_event_uri = c.make_uri(str(graphperson), 'death')
         pbwperson = factoid.main_person()[0]
-        person_pbwid = f"{pbwperson.name} {pbwperson.mdbCode}"
-        if c.graph.value(deathevent, c.predicates['P3']) is None:
-            c.graph.add((deathevent, c.predicates['P3'], Literal("Death event for " + person_pbwid)))
+        death_event_label = f"Death of {pbwperson.name} {pbwperson.mdbCode}, {pbwperson.descName}"
+        deathof_uri = c.make_uri(c.get_assertion_for_predicate('P100'), death_event_uri, graphperson)
+        # Since there is no authority, we don't use create_assertion_sparql
+        sparql_event = f"""    {death_event_uri.n3()} a {c.get_label('E69')} ;
+        {c.label_n3} {Literal(death_event_label).n3()} .
+    {deathof_uri.n3()} {c.star_subject} {death_event_uri.n3()} ;
+        {c.star_object} {graphperson.n3()} ;
+        a {c.get_assertion_for_predicate('P100')}.\n"""
+        assertions_created = [deathof_uri]
+        deathevent = death_event_uri
 
-        # Get the description of the death in English and the original language
+        # Get the description of the death in English and the original language, if applicable
         olang = _get_source_lang(factoid) or 'grc'
-        descriptions = [Literal(factoid.replace_referents(), 'en'), Literal(factoid.origLDesc, olang)]
-        sparql = self.create_assertion_sparql('a1', 'P3', deathevent, descriptions, agent, sourcenode)
+        descriptions = [Literal(factoid.replace_referents(), 'en')]
+        if len(factoid.origLDesc):
+            descriptions.append(Literal(factoid.origLDesc, olang))
+        desc_lines = ' ; '.join([f"{c.get_label('P190')} {x.n3()}" for x in descriptions])
 
-        # See if the death is dated and, if so, add the date
+        # Assert the description(s) that we found
+        desc_e33_uri = c.make_uri(sourcenode, factoid.replace_referents(), agent)
+        a1, sparql_desc = self.create_assertion_sparql('a1', 'P67', desc_e33_uri, deathevent, agent, sourcenode)
+        assertions_created.append(a1)
+        # Add the description content
+        sparql_desc += f"    {desc_e33_uri.n3()} a {c.get_label('E33')} ; {desc_lines} .\n"
+
+        # See if the death is dated and, if so, add the date.
         deathdate = factoid.deathRecord.sourceDate
+        sparql_date = ""
         if deathdate:
-            sparql += f"""
-        ?deathdate a {c.get_label('E52')} ;
-            {c.get_label('P80')} {Literal(deathdate).n3()} . """
-            sparql += self.create_assertion_sparql('a2', 'P4', deathevent, '?deathdate', agent, sourcenode)
+            deathdate_uri = c.make_uri(c.entitylabels['E52'], deathdate, str(deathevent))
+            # The date is actually asserted by the PBW editor for the factoid, based on the source but documented
+            # in the factoid record!
+            pbw_ed = self.get_viaf_agent_node(c.authorities(c.source(factoid)))
+            a2, sparql_date = self.create_assertion_sparql('a2', 'P4', deathevent, deathdate_uri,
+                                                            pbw_ed, pbwdoc, sourcenode)
+            assertions_created.append(a2)
 
-        res = c.ensure_entities_existence(sparql)
-        assertions_created.extend(c.document(pbwdoc, res['a1']))
-        if deathdate:
-            assertions_created.extend(c.document(pbwdoc, res['a2']))
+            # Add the date content.
+            # The "deathdate" is a string description of when the death happened.
+            # If it says "after" something, then it qualifies the beginning (P79);
+            # if it says "before" something, then it qualifies the end (P80).
+            # If it doesn't say either, then we assume it qualifies the beginning and the end.
+            date_preds = ['P79', 'P80']
+            if 'after' in deathdate:
+                date_preds.remove('P80')
+            elif 'before' in deathdate:
+                date_preds.remove('P79')
+            sparql_parts = [f"    {deathdate_uri.n3()} a {c.get_label('E52')}"]
+            for dp in date_preds:
+                sparql_parts.append(f"        {c.get_label(dp)} {Literal(deathdate).n3()}")
+            sparql_date += " ;\n".join(sparql_parts) + " .\n"
+
+        c.update(sparql_event + sparql_desc + sparql_date, pbwdoc, *assertions_created)
         return assertions_created
 
     def ethnicity_handler(self, sourcenode, agent, factoid, graphperson):
@@ -923,12 +955,11 @@ class graphimportSTAR:
             return None
         elabel = factoid.ethnicityInfo.ethnicity.ethName
         groupid = c.get_ethnicity(elabel)
-        sparql = self.create_assertion_sparql('a1', 'P107', groupid, graphperson, agent, sourcenode)
-        res = c.ensure_entities_existence(sparql)
-        return c.document(pbwdoc, res['a1'])
+        a1, sparql = self.create_assertion_sparql('a1', 'P107', groupid, graphperson, agent, sourcenode)
+        return c.update(sparql, pbwdoc, a1)
 
     # Helper to create the assertions for our various social designation groups
-    def _find_or_create_social_designation(self, sourcenode, agent, factoid, graphperson, des, label, whopred,
+    def _find_or_create_social_designation(self, sourcenode, agent, factoid, graphperson, des, eclass, whopred,
                                            whichpred):
         # (grouping:label) [:whopred] person
         # (grouping) [:whichpred] rnode
@@ -937,13 +968,14 @@ class graphimportSTAR:
         # We will sometimes have duplicate assertions originating from different geographic
         # scopes, which we have chopped off in the title name. For now we keep these duplicate.
         # TODO we should add the geographic scopes to these when we can...
-        sparql = self.create_assertion_sparql('a1', whopred, '?designation', graphperson, agent, sourcenode)
-        sparql += self.create_assertion_sparql('a2', whichpred, '?designation', des, agent, sourcenode)
-        sparql += f"?designation a {label} . \n"
-        res = c.ensure_entities_existence(sparql)
+        des_uri = c.make_uri(eclass, str(graphperson), str(des), str(pbwdoc))
+        a1, sparql_a1 = self.create_assertion_sparql('a1', whopred, des_uri, graphperson, agent, sourcenode)
+        a2, sparql_a2 = self.create_assertion_sparql('a2', whichpred, des_uri, des, agent, sourcenode)
+        sparql = f"    {des_uri.n3()} a {eclass.n3()} .\n"
+        sparql += sparql_a1 + sparql_a2
 
         # Document it in either case as coming from this factoid
-        return c.document(pbwdoc, res['a1'], res['a2'])
+        return c.update(sparql, pbwdoc, a1, a2)
 
     def religion_handler(self, sourcenode, agent, factoid, graphperson):
         """Assign a group membership for the given religious confession to the person"""
@@ -958,18 +990,18 @@ class graphimportSTAR:
         # (r:C23 Religious identity) [rwho:P36 pertains to] person
         # (r:C23 Religious identity) [rwhich:P35 is defined by] rnode
         return self._find_or_create_social_designation(sourcenode, agent, factoid, graphperson, relid,
-                                                self.constants.get_label('C23'), 'SP36', 'SP35')
+                                                self.constants.entitylabels['C23'], 'SP36', 'SP35')
 
     def societyrole_handler(self, sourcenode, agent, factoid, graphperson):
         if factoid.occupation is None:
             return None
         roleid, roleclass = self.constants.get_societyrole(factoid.occupation)
-        roletype = self.constants.get_label('C1')
+        roletype = self.constants.entitylabels['C1']
         whopred = 'SP13'
         whichpred = 'SP14'
         if roleclass == self.constants.get_label('C12'):
             # We need to treat it as a legal role instead of a social role / occupation
-            roletype = self.constants.get_label('C13')
+            roletype = self.constants.entitylabels['C13']
             whopred = 'SP26'
             whichpred = 'SP33'
         # (r:C1 Social Quality of an Actor) [rwho:P13 pertains to] person
@@ -981,12 +1013,12 @@ class graphimportSTAR:
         if factoid.dignityOffice is None:
             return None
         dignity_id, dignity_class = self.constants.get_dignity(factoid.dignityOffice.stdName)
-        roletype = self.constants.get_label('C13')
+        roletype = self.constants.entitylabels['C13']
         whopred = 'SP26'
         whichpred = 'SP33'
         if dignity_class == self.constants.get_label('C2'):
             # We need to treat it as a social instead of a legal role
-            roletype = self.constants.get_label('C1')
+            roletype = self.constants.entitylabels['C1']
             whopred = 'SP13'
             whichpred = 'SP14'
         # We treat (most) dignities as legal roles
@@ -1006,12 +1038,12 @@ class graphimportSTAR:
         # This doesn't chain quite the same way as the others do
         # person [rwho:P38 has skill] (r:C21 Skill)
         # (r:C21 Skill) [rwhich:P37 concerns] (l:C29 Know-How)
-        sparql = self.create_assertion_sparql('a1', 'SP38', graphperson, '?lskill', agent, sourcenode)
-        sparql += self.create_assertion_sparql('a2', 'SP37', '?lskill', lkhid, agent, sourcenode)
-        sparql += f"""
-        ?lskill a {c.get_label('C21')} ."""
-        res = c.ensure_entities_existence(sparql)
-        return c.document(pbwdoc, res['a1'], res['a2'])
+        lskill_uri = c.make_uri(c.entitylabels['C21'], str(graphperson), str(lkhid), str(pbwdoc))
+        a1, sparql_a1 = self.create_assertion_sparql('a1', 'SP38', graphperson, lskill_uri, agent, sourcenode)
+        a2, sparql_a2 = self.create_assertion_sparql('a2', 'SP37', lskill_uri, lkhid, agent, sourcenode)
+        sparql = f"    {lskill_uri.n3()} a {c.get_label('C21')} .\n"
+        sparql += sparql_a1 + sparql_a2
+        return c.update(sparql, pbwdoc, a1, a2)
 
     def location_handler(self, sourcenode, agent, factoid, graphperson):
         """Associate the person with a location. These are honestly very inexact factoids, so we
@@ -1027,34 +1059,13 @@ class graphimportSTAR:
         loc_ent = self.find_or_create_location(factoid.locationInfo.location)
         # Now connect the person to the location via the extremely generic 'event', as that is all PBW gives us
         # Label the event with the factoid key for easier resolution from the spreadsheets later
+        locevent_uri = c.make_uri(c.entitylabels['E5'], str(graphperson), str(loc_ent), str(agent), str(sourcenode))
         lfactlabel = Literal(f"Location event for factoid {factoid.factoidKey}")
-        sparql = f"""?locevent {c.label_n3} {lfactlabel.n3()}; a {c.get_label('E5')} . """
-        sparql += self.create_assertion_sparql('a1', 'P7', '?locevent', loc_ent, agent, sourcenode)
-        sparql += self.create_assertion_sparql('a2', 'P11', '?locevent', graphperson, agent, sourcenode)
-
-        res = c.ensure_entities_existence(sparql)
-        return c.document(pbwdoc, res['a1'], res['a2'])
-
-    def _find_kinship(self, graphperson, graphkin):
-        # See if there is an existing kinship group of any sort with the person as source and their
-        # kin as target. If not, return a new (not yet connected) C3 Social Relationship node.
-        c = self.constants
-        # The pattern to match. TODO maybe we want to add the kinship type to this search pattern?
-        sparql_check = f"""select distinct ?kstate where {{
-        ?a1 {c.star_object} {graphperson.n3()} ;
-            a {c.get_assertion_for_predicate('SP17')} ;
-            {c.star_subject} ?kstate .
-        ?a2 {c.star_object} {graphkin.n3()} ;
-            {c.star_subject} ?kstate ;
-            a {c.get_assertion_for_predicate('SP18')} .
-        ?kstate a {c.get_label('C3')} .}}
-"""
-        res = self.g.query(sparql_check)
-        if len(res):
-            # We found a kinship between these two people. Return it
-            return _get_single_key(res, 'kstate')
-        else:
-            return None
+        sparql = f"    {locevent_uri.n3()} {c.label_n3} {lfactlabel.n3()} ;\n        a {c.get_label('E5')} .\n"
+        a1, sparql_a1 = self.create_assertion_sparql('a1', 'P7', locevent_uri, loc_ent, agent, sourcenode)
+        a2, sparql_a2 = self.create_assertion_sparql('a2', 'P11', locevent_uri, graphperson, agent, sourcenode)
+        sparql += sparql_a1 + sparql_a2
+        return c.update(sparql, pbwdoc, a1, a2)
 
     def kinship_handler(self, sourcenode, agent, factoid, graphperson):
         # These are social relationships as opposed to social roles, so they need a partner.
@@ -1077,22 +1088,15 @@ class graphimportSTAR:
                 # We skip self-referential kinship factoids
                 warn("Person %s listed as related to self" % kin)
                 continue
-            # Look for any existing kinship state between these two persons
-            kstate = self._find_kinship(graphperson, graphkin)
-            kscreate = ""
-            if kstate is None:
-                # We don't have a URIref yet; the kinship state is a new variable.
-                kstate = '?kstate'
-                # We will also have to append the class of the new kinship state to the SPARQL query.
-                kscreate = f"        ?kstate a {c.get_label('C3')} ."
+            # Mint a deterministic URI for the kinship state from the C3 class URI and the two persons
+            kstate_uri = c.make_uri(str(c.namespaces['sdhss']['C3']), str(graphperson), str(graphkin))
             # Now set up the three kinship assertions
-            sparql = self.create_assertion_sparql('a1', 'SP16', kstate, ktype, agent, sourcenode)
-            sparql += self.create_assertion_sparql('a2', 'SP17', kstate, graphperson, agent, sourcenode)
-            sparql += self.create_assertion_sparql('a3', 'SP18', kstate, graphkin, agent, sourcenode)
-            sparql += kscreate
-
-            res = c.ensure_entities_existence(sparql)
-            return c.document(pbwdoc, res['a1'], res['a2'], res['a3'])
+            a1, sparql_a1 = self.create_assertion_sparql('a1', 'SP16', kstate_uri, ktype, agent, sourcenode)
+            a2, sparql_a2 = self.create_assertion_sparql('a2', 'SP17', kstate_uri, graphperson, agent, sourcenode)
+            a3, sparql_a3 = self.create_assertion_sparql('a3', 'SP18', kstate_uri, graphkin, agent, sourcenode)
+            sparql = f"    {kstate_uri.n3()} a {c.get_label('C3')} .\n"
+            sparql += sparql_a1 + sparql_a2 + sparql_a3
+            return c.update(sparql, pbwdoc, a1, a2, a3)
         return None
 
     def possession_handler(self, sourcenode, agent, factoid, graphperson):
@@ -1103,17 +1107,45 @@ class graphimportSTAR:
         pbwdoc = c.pbw_uri(factoid)
 
         # Give the possession its description, which comes out of the factoid's engDesc
-        sparql = f"""
-        ?possession {c.label_n3} {Literal(factoid.replace_referents()).n3()} ;
-            a {c.get_label('E18')} ."""
+        possession_uri = c.make_uri(c.entitylabels['E18'], str(graphperson), str(agent), str(sourcenode))
+        sparql = f"""    {possession_uri.n3()} {c.label_n3} {Literal(factoid.replace_referents()).n3()} ;
+            a {c.get_label('E18')} .\n"""
         # Assert ownership of the possession
-        sparql += self.create_assertion_sparql('a1', 'P51', '?possession', graphperson, agent, sourcenode)
+        a1, sparql_a1 = self.create_assertion_sparql('a1', 'P51', possession_uri, graphperson, agent, sourcenode)
+        sparql += sparql_a1
         if factoid.possession is not None and factoid.possession != '':
             # Give the assertion a note, if such note exists in the poorly-named PossessionFactoid.possessionName field
-            sparql += f"""
-        ?a1 {c.get_label('P3')} {Literal(factoid.possession).n3()}"""
-        res = c.ensure_entities_existence(sparql)
-        return c.document(pbwdoc, res['a1'])
+            sparql += f"    {a1.n3()} {c.get_label('P3')} {Literal(factoid.possession).n3()} .\n"
+        return c.update(sparql, pbwdoc, a1)
+
+    def record_pbw_composite_sources(self):
+        """To be run after most other things are done. Creates the composite source for each PBW source
+        that we split up, and adds the E15/E42 identifier to that source as well as the links to its parts."""
+        c = self.constants
+        for key, info in self.pbw_composites.items():
+            print(f"Creating composite PBW source for {key}")
+            # Make the items
+            composite_uri = c.make_uri(c.entitylabels['F2P'], info['citation'], c.pbw_agent)
+            pbw_e15 = c.make_uri(c.entitylabels['E15'], key, c.pbw_agent)
+            pbw_e42 = c.make_uri(c.entitylabels['E42'], key, c.pbw_agent)
+            asserted = [pbw_e15]
+            # Make the assertions
+            sparql = f"""    {composite_uri.n3()} a {c.get_label('F2P')} ;
+        {c.label_n3} {Literal(info['citation']).n3()} .
+    {pbw_e42.n3()} a {c.get_label('E42')} ; 
+        {c.get_label('P190')} {Literal(key).n3()} .
+    {pbw_e15.n3()} a {c.get_label('E15')} ;
+        {c.star_subject} {composite_uri.n3()} ;
+        {c.get_label('P37')} {pbw_e42.n3()} ;
+        {c.star_auth} {c.pbw_agent.n3()} .
+"""
+            print(f"...adding {len(info['parts'])} publication parts to {key}")
+            for i, pubpart in enumerate(info['parts']):
+                # Assert that we say the part is part of the whole
+                a, sparql_a = self.create_assertion_sparql(f'a{i}', 'R5', composite_uri, pubpart, c.r11_agent, based=composite_uri)
+                asserted.append(a)
+                sparql += sparql_a
+            c.update(sparql, URIRef('https://pbw2016.kdl.kcl.ac.uk/ref/sources/'), *asserted)
 
     def record_assertion_factoids(self):
         """To be run after everything else is done. Creates the assertion record for all assertions created here,
@@ -1202,9 +1234,10 @@ class graphimportSTAR:
                         warn(f"No PBW reader/editor found for source {source_key} on factoid {f.factoidKey}")
                         continue
 
-                    # First get the timestamp on the factoid. Do this separately so we don't have duplicate timestamps
-                    ts_sparql = f"?ts a {c.get_label('E52')}; {c.get_label('P82b')} {Literal(f.creationDate).n3()} ."
-                    factoid_ts = c.ensure_entities_existence(ts_sparql)['ts']
+                    # First get the timestamp on the factoid. Deterministic URI so the same date reuses the same node.
+                    factoid_ts = c.make_uri(c.entitylabels['E52'], str(f.creationDate))
+                    ts_sparql = f"    {factoid_ts.n3()} a {c.get_label('E52')} ; {c.get_label('P82b')} {Literal(f.creationDate).n3()} .\n"
+                    c.update(ts_sparql)
 
                     # An I16 Meaning Comprehension was P14 carried out by the authority on the given date,
                     # which P16 used specific object the source,
@@ -1275,27 +1308,51 @@ class graphimportSTAR:
                             print(f"Persistent URLerror {e.reason}.")
                         else:
                             print(f"Persistent connection error {e}.")
-                        print(f"Process started at {self.starttime} and ending at {datetime.now()}.")
-                        print(f"Restart with the arguments: -r '{person_pbwstr}' -x '{self.constants.swrun}'")
+                        self._print_restart_line(person_pbwstr)
                         exit(1)
                     else:
-                        if isinstance(e, URLError):
+                        if isinstance(e, HTTPError):
+                            if 399 < e.code < 500:
+                                traceback.print_exc()
+                                print(f"Obtained 4xx error; check your SPARQL!", file=sys.stderr)
+                                self._print_restart_line(person_pbwstr, sys.stderr)
+                                exit(1)
+                                print(f"Process started at {self.starttime} and ending at {datetime.now()}.",
+                                      file=sys.stderr)
+                                print(f'Restart with the arguments: -r "{person_pbwstr}" -x "{self.constants.swrun}"',
+                                      file=sys.stderr)
+                                exit(1)
                             print(f"Obtained URLerror {e.reason}; will retry")
                         else:
                             print(f"Persistent connection error {e}; will retry")
                         sleep(attempt * 30)
                 except Exception as e:
-                    print(f"Process started at {self.starttime} and ending at {datetime.now()}.")
-                    print(f"Restart with the arguments: -r '{person_pbwstr}' -x '{self.constants.swrun}'")
+                    self._print_restart_line(person_pbwstr)
                     raise e
 
-        # Make a pass through the authored sources and add viewpoints for all of them
-        RELEVEN.author_viewpoints.add_viewpoint_structures(self.constants)
 
-        self.record_assertion_factoids()
+
+        try:
+            # Make a pass through the authored sources and add viewpoints for all of them
+            RELEVEN.author_viewpoints.add_viewpoint_structures(self.constants)
+            # Record all the composite sources we pulled information from
+            self.record_pbw_composite_sources()
+            # Link the assertions that were created to this run of the script
+            self.record_assertion_factoids()
+        except Exception as e:
+            self._print_restart_line(file=sys.stderr)
+            raise e
         print(f"Processed {processed} person records.")
         print(f"Used the following sources: {sorted(used_sources)}")
         print(f"Used the following boulloterion IDs: {sorted(boulloteria)}")
+
+    def _print_restart_line(self, person_pbwstr=None, file=sys.stdout):
+        restart_args = f'-x "{self.constants.swrun}"'
+        if person_pbwstr is not None:
+            restart_args += f' -r "{person_pbwstr}"'
+        print(f'Process started at {self.starttime} and ending at {datetime.now()}.', file=file)
+        print(f'Restart with the arguments: {restart_args}"', file=file)
+
 
 
 # If we are running as main, execute the script
