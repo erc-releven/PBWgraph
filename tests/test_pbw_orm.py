@@ -12,7 +12,7 @@ class TestConnections(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         engine = create_engine('mysql+mysqlconnector://' + config.dbstring)
-        smaker = sessionmaker(bind=engine)
+        smaker = sessionmaker(engine)
         cls.session = smaker()
 
     def lookup_person(self, name, num):

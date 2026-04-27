@@ -326,8 +326,8 @@ def parse_date_info(nunit):
 
 if __name__ == '__main__':
     # Connect to the SQL DB
-    engine = create_engine('mysql+pymysql://' + config.dbstring)
-    smaker = sessionmaker(bind=engine)
+    engine = create_engine('mysql+mysqlconnector://' + config.dbstring)
+    smaker = sessionmaker(engine)
     mysqlsession = smaker()
     # Get all the narrative dates
     unparsed = 0

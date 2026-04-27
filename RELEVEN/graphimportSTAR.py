@@ -93,7 +93,7 @@ class graphimportSTAR:
         self.starttime = datetime.now()
         # Connect to the SQL DB
         engine = create_engine('mysql+mysqlconnector://' + config.dbstring)
-        smaker = sessionmaker(bind=engine)
+        smaker = sessionmaker(engine)
         self.mysqlsession = smaker()
         # Are we connecting to the remote service?
         if origgraph == config.graphuri:

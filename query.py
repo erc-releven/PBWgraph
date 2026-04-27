@@ -4,8 +4,8 @@ import re
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-engine = create_engine('mysql+pymysql://' + config.dbstring)
-smaker = sessionmaker(bind=engine)
+engine = create_engine('mysql+mysqlconnector://' + config.dbstring)
+smaker = sessionmaker(engine)
 session = smaker()
 
 
@@ -83,10 +83,10 @@ for f in session.query(pbw.Factoid).all():
     match = persref_re.search(f.engDesc)
     if match is not None:
         persref = int(match.group(1))
-        fprecord = session.query(pbw.FactoidPerson).get(persref)
+        fprecord = session.get(pbw.FactoidPerson, persref)
         person = None
         if fprecord is not None:
-            person = session.query(pbw.Person).get(fprecord.personKey)
+            person = session.get(pbw.Person, fprecord.personKey)
         if person is None or fprecord is None:
             print("Factoid %d (%s) has an invalid person reference %d" % (f.factoidKey, f.engDesc, persref))
     match = persref_re.search(f.origLDesc)

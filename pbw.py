@@ -1,10 +1,12 @@
 import re
 from sqlalchemy import Column, ForeignKey, Table  # DB components
 from sqlalchemy import DateTime, Integer, SmallInteger, String, Text  # Column types
-from sqlalchemy.orm import declarative_base, relationship, backref
+from sqlalchemy.orm import DeclarativeBase, relationship, backref
 from sqlalchemy.ext.associationproxy import association_proxy
 
-Base = declarative_base()
+
+class Base(DeclarativeBase):
+    pass
 
 
 # ## Simple key-value lookup tables
