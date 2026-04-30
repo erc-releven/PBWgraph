@@ -105,6 +105,7 @@ class PBWSources:
                 matchstring = refstring.replace(strip, '').lstrip()
             if matchstring.startswith(mstr):
                 return key
+        return None
 
     def page_to_key(self, refstring, prefix, strip=None):
         """Given a refstring, the common prefix, and a dictionary of items and their page ranges,
@@ -127,6 +128,7 @@ class PBWSources:
                     if (ref.startswith(i)
                             and top == re.split(r'[\s.]', i)[0]):
                         return k
+        return None
 
     # Some of the sources are special
     def parse_psellos_ref(self, refstring):
@@ -180,14 +182,16 @@ class PBWSources:
             kstr = 'Nea Mone, Miklosich-Müller'
             return self.page_to_key(refstring, kstr, strip="Miklosich-Müller 5.")
 
-    def parse_parthenon(self, refstring):
+    @staticmethod
+    def parse_parthenon(refstring):
         m = re.match(r'cols?\. \d+( and \d+)?, nos?\. (\d+)', refstring)
         if m:
             return 'Parthenon inscriptions %s' % m.group(2)
         else:
             return None
 
-    def parse_epistle(self, refstring, work):
+    @staticmethod
+    def parse_epistle(refstring, work):
         m = re.match(r'[Ee]p\.\s+(.*)\s+\(Will\)', refstring)
         if m:
             return f'{work} ep. {m.group(1)}'

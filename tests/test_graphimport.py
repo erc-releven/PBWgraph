@@ -755,6 +755,7 @@ select ?p_uri ?mainid where {{
         c = self.constants
         # Prod has wrong data; allow this for the time being
         if config.dbmode == 'prod':
+            # noinspection PyTypeChecker
             self.td_people['Konstantinos 64']['altname']['Θεοδώρῳ']['source'] = \
             '“Βυζαντινὰ χρυσόβουλλα καὶ πιττάκια”, Ἐκκλησιαστικὴ Ἀλήθεια 4 (1883-84) 405-406'
         for person, pinfo in self.td_people.items():

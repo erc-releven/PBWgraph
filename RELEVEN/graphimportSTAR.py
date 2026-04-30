@@ -1317,11 +1317,6 @@ class graphimportSTAR:
                                 print(f"Obtained 4xx error; check your SPARQL!", file=sys.stderr)
                                 self._print_restart_line(person_pbwstr, sys.stderr)
                                 exit(1)
-                                print(f"Process started at {self.starttime} and ending at {datetime.now()}.",
-                                      file=sys.stderr)
-                                print(f'Restart with the arguments: -r "{person_pbwstr}" -x "{self.constants.swrun}"',
-                                      file=sys.stderr)
-                                exit(1)
                             print(f"Obtained URLerror {e.reason}; will retry")
                         else:
                             print(f"Persistent connection error {e}; will retry")
